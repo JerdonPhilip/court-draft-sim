@@ -60,7 +60,7 @@ export function PlayerPool({ pool, draftedPlayerIds, onDraftPlayer, emptyPositio
           </p>
         )}
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3" role="list">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4" role="list">
           {availablePlayers.map((player: Player, index: number) => {
             const fits = fittingEmptySlots(player, lineupSlots);
             const isDraftable = fits.length > 0;
@@ -92,37 +92,37 @@ export function PlayerPool({ pool, draftedPlayerIds, onDraftPlayer, emptyPositio
                   style={{ backgroundColor: getPositionColor(player.position) }}
                   aria-hidden="true"
                 />
-                <div className="flex items-start gap-3 p-3">
+                <div className="flex items-start gap-4 p-5">
                   <div
-                    className="w-14 h-14 rounded-xl flex items-center justify-center font-display font-bold text-white flex-shrink-0"
+                    className="w-16 h-16 rounded-xl flex items-center justify-center font-display font-bold text-white flex-shrink-0"
                     style={{ backgroundColor: getPositionColor(player.position) }}
                     aria-hidden="true"
                   >
-                    <span className="text-sm text-center leading-tight">{getPlayerPositions(player).join('/')}</span>
+                    <span className="text-sm text-center leading-tight px-1 break-words">{getPlayerPositions(player).join('/')}</span>
                   </div>
 
                   <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 mb-1 flex-wrap">
-                      <h4 className="font-semibold text-white truncate">{player.name}</h4>
-                      <span className="px-2 py-0.5 text-xs font-medium rounded-full bg-broadcast-accent/20 text-broadcast-accent border border-broadcast-accent/30">
-                        {getPlayerPositions(player).join('/')}
+                    <h4 className="font-semibold text-white text-lg leading-snug break-words">{player.name}</h4>
+                    <div className="flex items-center gap-1.5 mt-1.5 mb-2 flex-wrap">
+                      <span className="px-2 py-0.5 text-xs font-medium rounded-full bg-broadcast-accent/20 text-broadcast-accent border border-broadcast-accent/30 whitespace-nowrap">
+                        {getPlayerPositions(player).join(' / ')}
                       </span>
                       {isFlex && (
-                        <span className="px-2 py-0.5 text-xs font-medium rounded-full bg-broadcast-gold/20 text-broadcast-gold border border-broadcast-gold/30">
+                        <span className="px-2 py-0.5 text-xs font-medium rounded-full bg-broadcast-gold/20 text-broadcast-gold border border-broadcast-gold/30 whitespace-nowrap">
                           FLEX
                         </span>
                       )}
                     </div>
 
-                    <div className="flex items-center gap-2 text-sm text-broadcast-text-secondary mb-1">
-                      <span className="font-medium">{FRANCHISES.find(f => f.id === player.team)?.abbreviation ?? player.team}</span>
+                    <div className="flex items-center gap-x-2 gap-y-1 text-sm text-broadcast-text-secondary mb-1.5 flex-wrap">
+                      <span className="font-medium whitespace-nowrap">{FRANCHISES.find(f => f.id === player.team)?.abbreviation ?? player.team}</span>
                       <span aria-hidden="true">•</span>
-                      <span>{DECADES.find(d => d.id === player.decade)?.label ?? player.decade}</span>
+                      <span className="whitespace-nowrap">{DECADES.find(d => d.id === player.decade)?.label ?? player.decade}</span>
                       <span aria-hidden="true">•</span>
-                      <span className="text-broadcast-gold">{player.archetype}</span>
+                      <span className="text-broadcast-gold break-words">{player.archetype}</span>
                     </div>
 
-                    <div className="text-xs mb-2">
+                    <div className="text-xs mb-2.5">
                       {isDraftable ? (
                         <span className="text-broadcast-accent font-medium">Fits: {fits.join(', ')}</span>
                       ) : (
@@ -130,23 +130,23 @@ export function PlayerPool({ pool, draftedPlayerIds, onDraftPlayer, emptyPositio
                       )}
                     </div>
 
-                    <div className="flex items-center gap-4 text-xs">
-                      <div className="flex items-center gap-1 text-broadcast-accent">
-                        <Star className="w-3 h-3" aria-hidden="true" />
-                        <span className="font-bold">{player.overall}</span>
+                    <div className="flex items-center gap-5 text-xs">
+                      <div className="flex items-center gap-1.5 text-broadcast-accent">
+                        <Star className="w-3.5 h-3.5" aria-hidden="true" />
+                        <span className="font-bold text-sm">{player.overall}</span>
                         <span className="text-broadcast-text-muted">OVR</span>
                       </div>
-                      <div className="flex items-center gap-1 text-broadcast-gold">
-                        <Trophy className="w-3 h-3" aria-hidden="true" />
-                        <span className="font-medium">{player.stats.pts} PPG</span>
+                      <div className="flex items-center gap-1.5 text-broadcast-gold">
+                        <Trophy className="w-3.5 h-3.5" aria-hidden="true" />
+                        <span className="font-medium text-sm">{player.stats.pts} PPG</span>
                       </div>
                     </div>
                   </div>
 
-                  <ChevronRight className="w-5 h-5 text-broadcast-text-muted group-hover:text-broadcast-accent transition-colors" aria-hidden="true" />
+                  <ChevronRight className="w-5 h-5 flex-shrink-0 mt-1 text-broadcast-text-muted group-hover:text-broadcast-accent transition-colors" aria-hidden="true" />
                 </div>
 
-                <div className="grid grid-cols-5 gap-1 px-3 pb-3 border-t border-broadcast-border">
+                <div className="grid grid-cols-5 gap-2 px-5 pb-4 pt-3 border-t border-broadcast-border">
                   <StatMini label="PTS" value={player.stats.pts} color="text-broadcast-accent" />
                   <StatMini label="REB" value={player.stats.reb} color="text-broadcast-gold" />
                   <StatMini label="AST" value={player.stats.ast} color="text-broadcast-blue" />
@@ -177,9 +177,9 @@ export function PlayerPool({ pool, draftedPlayerIds, onDraftPlayer, emptyPositio
 
 function StatMini({ label, value, color }: { label: string; value: number; color: string }) {
   return (
-    <div className="text-center">
-      <div className={cn('font-bold font-mono text-sm', color)}>{value}</div>
-      <div className="text-[10px] text-broadcast-text-muted uppercase">{label}</div>
+    <div className="text-center py-1">
+      <div className={cn('font-bold font-mono text-base', color)}>{value}</div>
+      <div className="text-[10px] text-broadcast-text-muted uppercase tracking-wide mt-0.5">{label}</div>
     </div>
   );
 }

@@ -27,7 +27,7 @@ function Slot({ slot, index, hasAnyEmpty, onRemove }: SlotProps) {
     >
       <div
         className={cn(
-          'relative p-3 rounded-xl transition-all duration-300',
+          'relative p-4 rounded-xl transition-all duration-300',
           hasPlayer
             ? 'bg-broadcast-card border-2 border-broadcast-accent/50 shadow-glow-accent player-card-selected'
             : isNextUp
@@ -37,65 +37,65 @@ function Slot({ slot, index, hasAnyEmpty, onRemove }: SlotProps) {
       >
         {slot.player ? (
           <>
-            <div className="flex items-center justify-between mb-2">
-              <div className="flex items-center gap-2">
+            <div className="flex items-center justify-between gap-2 mb-3">
+              <div className="flex items-center gap-2 min-w-0 flex-1">
                 <div
-                  className="w-8 h-8 rounded-lg flex items-center justify-center font-bold text-white text-xs px-1"
+                  className="rounded-lg flex items-center justify-center font-bold text-white text-xs px-2 h-8 flex-shrink-0 whitespace-nowrap"
                   style={{ backgroundColor: getPositionColor(slot.player.position) }}
                 >
                   {flexLabel ?? slot.player.position}
                 </div>
-                <span className="font-medium text-broadcast-text-secondary text-sm">
-                  {getPositionLabel(slot.position)} slot{flexLabel ? ` • plays ${flexLabel}` : ''}
+                <span className="font-medium text-broadcast-text-secondary text-sm truncate">
+                  {getPositionLabel(slot.position)} slot{flexLabel ? ` • ${flexLabel}` : ''}
                 </span>
               </div>
               <button
                 onClick={(e) => { e.stopPropagation(); onRemove(index); }}
-                className="p-1 rounded-lg hover:bg-broadcast-red/20 text-broadcast-red transition-colors opacity-100 sm:opacity-0 sm:group-hover:opacity-100 sm:focus-within:opacity-100 focus:opacity-100 focus-visible:ring-2 focus-visible:ring-broadcast-red"
+                className="p-1.5 rounded-lg hover:bg-broadcast-red/20 text-broadcast-red transition-colors flex-shrink-0 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 sm:focus-within:opacity-100 focus:opacity-100 focus-visible:ring-2 focus-visible:ring-broadcast-red"
                 aria-label={`Remove ${slot.player.name}`}
               >
                 <X className="w-4 h-4" aria-hidden="true" />
               </button>
             </div>
 
-            <div className="flex items-center gap-3">
+            <div className="flex items-start gap-3">
               <div
-                className="w-12 h-12 rounded-xl flex items-center justify-center font-display font-bold text-white flex-shrink-0"
+                className="w-14 h-14 rounded-xl flex items-center justify-center font-display font-bold text-white flex-shrink-0"
                 style={{ backgroundColor: getPositionColor(slot.player.position) }}
                 aria-hidden="true"
               >
-                <span className="text-lg">{slot.player.position}</span>
+                <span className="text-base px-1 text-center leading-tight break-words">{slot.player.position}</span>
               </div>
 
               <div className="flex-1 min-w-0">
-                <h4 className="font-semibold text-white truncate">{slot.player.name}</h4>
-                <div className="flex items-center gap-2 text-xs text-broadcast-text-secondary">
-                  <span className="px-1.5 py-0.5 bg-broadcast-border rounded text-broadcast-text-muted">
+                <h4 className="font-semibold text-white text-base leading-snug break-words">{slot.player.name}</h4>
+                <div className="flex items-center gap-1.5 text-xs text-broadcast-text-secondary mt-1.5 flex-wrap">
+                  <span className="px-1.5 py-0.5 bg-broadcast-border rounded text-broadcast-text-muted whitespace-nowrap">
                     {slot.player.team.toUpperCase()}
                   </span>
-                  <span className="px-1.5 py-0.5 bg-broadcast-border rounded text-broadcast-text-muted">
+                  <span className="px-1.5 py-0.5 bg-broadcast-border rounded text-broadcast-text-muted whitespace-nowrap">
                     {slot.player.decade}
                   </span>
-                  <span className="px-1.5 py-0.5 bg-broadcast-gold/20 text-broadcast-gold rounded border border-broadcast-gold/30">
+                  <span className="px-1.5 py-0.5 bg-broadcast-gold/20 text-broadcast-gold rounded border border-broadcast-gold/30 break-words">
                     {slot.player.archetype}
                   </span>
                 </div>
 
-                <div className="flex items-center gap-3 mt-2 text-xs">
-                  <div className="flex items-center gap-1 text-broadcast-accent">
-                    <Star className="w-3 h-3" aria-hidden="true" />
-                    <span className="font-bold">{slot.player.overall}</span>
+                <div className="flex items-center gap-4 mt-2.5 text-xs">
+                  <div className="flex items-center gap-1.5 text-broadcast-accent">
+                    <Star className="w-3.5 h-3.5" aria-hidden="true" />
+                    <span className="font-bold text-sm">{slot.player.overall}</span>
                     <span className="text-broadcast-text-muted">OVR</span>
                   </div>
-                  <div className="flex items-center gap-1 text-broadcast-gold">
-                    <Trophy className="w-3 h-3" aria-hidden="true" />
-                    <span className="font-medium">{slot.player.stats.pts} PPG</span>
+                  <div className="flex items-center gap-1.5 text-broadcast-gold">
+                    <Trophy className="w-3.5 h-3.5" aria-hidden="true" />
+                    <span className="font-medium text-sm">{slot.player.stats.pts} PPG</span>
                   </div>
                 </div>
               </div>
             </div>
 
-            <div className="grid grid-cols-5 gap-1 mt-3 pt-3 border-t border-broadcast-border">
+            <div className="grid grid-cols-5 gap-2 mt-3.5 pt-3.5 border-t border-broadcast-border">
               <StatMini label="PTS" value={slot.player.stats.pts} color="text-broadcast-accent" />
               <StatMini label="REB" value={slot.player.stats.reb} color="text-broadcast-gold" />
               <StatMini label="AST" value={slot.player.stats.ast} color="#007aff" />
@@ -139,9 +139,9 @@ function Slot({ slot, index, hasAnyEmpty, onRemove }: SlotProps) {
 
 function StatMini({ label, value, color }: { label: string; value: number; color: string }) {
   return (
-    <div className="text-center">
-      <div className="font-bold font-mono text-sm" style={{ color }}>{value}</div>
-      <div className="text-[10px] text-broadcast-text-muted uppercase">{label}</div>
+    <div className="text-center py-1">
+      <div className="font-bold font-mono text-base" style={{ color }}>{value}</div>
+      <div className="text-[10px] text-broadcast-text-muted uppercase tracking-wide mt-0.5">{label}</div>
     </div>
   );
 }
@@ -173,7 +173,7 @@ export function LineupBuilder({ lineup, onRemovePlayer, teamStrength, projectedW
         </div>
       </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-1 gap-3">
+      <div className="grid grid-cols-1 gap-4">
         {lineup.map((slot, index) => (
           <Slot
             key={`${slot.position}-${index}`}
