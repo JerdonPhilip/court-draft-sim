@@ -167,6 +167,10 @@ router.post('/season', (req: Request, res: Response) => {
           playerName: player?.name ?? playerId,
           stats,
           minutes: g.userMinutes[playerId] ?? 40,
+          position: player?.position,
+          overall: player?.overall,
+          team: player?.team ?? 'Your Team',
+          baseStats: player?.stats,
         };
       }),
       opponentPerformances: Object.entries(g.opponentPlayerStats).map(([playerId, stats]) => {
@@ -175,20 +179,32 @@ router.post('/season', (req: Request, res: Response) => {
           playerId,
           playerName: player?.playerName ?? playerId,
           stats,
-          minutes: 40,
+          minutes: g.opponentMinutes?.[playerId] ?? 40,
+          position: player?.position,
+          overall: player?.overall,
+          team: player?.team ?? g.opponent,
+          baseStats: player?.baseStats,
         };
       }),
     })),
-    playerStats: Object.values(seasonResult.playerSeasonStats).map(s => ({
-      playerId: s.playerId,
-      playerName: s.playerName,
-      gamesPlayed: s.gamesPlayed,
-      minutesPerGame: s.minutesPerGame,
-      averages: s.averages,
-      totals: s.totals,
-      highGames: s.highGames,
-    })),
+    playerStats: Object.values(seasonResult.playerSeasonStats).map(s => {
+      const base = players.find(p => p.id === s.playerId);
+      return {
+        playerId: s.playerId,
+        playerName: s.playerName,
+        gamesPlayed: s.gamesPlayed,
+        minutesPerGame: s.minutesPerGame,
+        averages: s.averages,
+        totals: s.totals,
+        highGames: s.highGames,
+        position: base?.position,
+        overall: base?.overall,
+        team: base?.team ?? 'Your Team',
+        baseStats: base?.stats,
+      };
+    }),
     teamStats: seasonResult.teamStats,
+    standings: seasonResult.standings,
   };
 
   res.json({ result: formattedResult });

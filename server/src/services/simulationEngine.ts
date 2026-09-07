@@ -145,6 +145,51 @@ function assignMinutes(player: Player): number {
   return Math.min(48, Math.round(42 + (player.overall / 100) * 4 + randomFloat() * 2));
 }
 
+function shuffleInPlace<T>(arr: T[]): T[] {
+  for (let i = arr.length - 1; i > 0; i--) {
+    const j = Math.floor(randomFloat() * (i + 1));
+    const tmp = arr[i]!;
+    arr[i] = arr[j]!;
+    arr[j] = tmp;
+  }
+  return arr;
+}
+
+/**
+ * Shuffled 82-game schedule. The old code cycled opponents in fixed order
+ * (`(gameNum - 1) % pool.length`) with alternating home/away, so game #82
+ * always faced the same team. Now every season draws a fresh balanced
+ * schedule: each opponent appears 2-3x in random order (no back-to-back
+ * repeats) and home/away is a shuffled 41/41 split.
+ */
+function buildSeasonSchedule(poolSize: number, totalGames: number): Array<{ poolIndex: number; isHome: boolean }> {
+  const order: number[] = [];
+  let prevLast = -1;
+  while (order.length < totalGames) {
+    const block: number[] = [];
+    for (let i = 0; i < poolSize; i++) block.push(i);
+    shuffleInPlace(block);
+    // Avoid a repeat across the block boundary (last of prev == first of next).
+    if (prevLast >= 0 && block[0] === prevLast && block.length > 1) {
+      const swapIdx = 1 + Math.floor(randomFloat() * (block.length - 1));
+      const tmp = block[0]!;
+      block[0] = block[swapIdx]!;
+      block[swapIdx] = tmp;
+    }
+    for (const idx of block) {
+      if (order.length >= totalGames) break;
+      order.push(idx!);
+    }
+    prevLast = order[order.length - 1]!;
+  }
+
+  const venues: boolean[] = [];
+  for (let i = 0; i < totalGames; i++) venues.push(i < Math.ceil(totalGames / 2));
+  shuffleInPlace(venues);
+
+  return order.map((poolIndex, i) => ({ poolIndex, isHome: venues[i]! }));
+}
+
 function rollInjury(config: SimulationConfig): number {
   // Returns a performance multiplier. Most games return 1.
   if (config.injuryRisk > 0 && randomFloat() < config.injuryRisk) {
@@ -311,10 +356,21 @@ export function simulateSeason(
   let wins = 0;
   let losses = 0;
 
+  // League-standings accumulators: every opponent's record starts with its
+  // games vs the user, then inter-opponent games fill everyone to 82 so the
+  // table shows real W/L for every team instead of just the user's line.
+  const oppWins: number[] = new Array(opponentPool.length).fill(0);
+  const oppLosses: number[] = new Array(opponentPool.length).fill(0);
+  const oppPF: number[] = new Array(opponentPool.length).fill(0);
+  const oppPA: number[] = new Array(opponentPool.length).fill(0);
+  const gamesVsUser: number[] = new Array(opponentPool.length).fill(0);
+  let userPF = 0;
+  let userPA = 0;
+
+  const schedule = buildSeasonSchedule(opponentPool.length, totalGames);
+
   for (let gameNum = 1; gameNum <= totalGames; gameNum++) {
-    const isHome = gameNum % 2 === 1;
-    // gameNum is 1-based; use (gameNum - 1) so index 0 isn't skipped on game 1.
-    const poolIndex = (gameNum - 1) % opponentPool.length;
+    const { poolIndex, isHome } = schedule[gameNum - 1]!;
     const opponent = opponentPool[poolIndex]!;
     const opponentName = opponentNames[poolIndex] ?? `Opponent ${((poolIndex) % 30) + 1}`;
 
@@ -340,9 +396,21 @@ export function simulateSeason(
     else if (result === 'L') losses++;
     else losses++; // A tie should never happen; count conservatively as a loss.
 
+    userPF += userScore;
+    userPA += oppScore;
+    gamesVsUser[poolIndex]! += 1;
+    if (result === 'W') {
+      oppLosses[poolIndex]! += 1;
+    } else {
+      oppWins[poolIndex]! += 1;
+    }
+    oppPF[poolIndex]! += oppScore;
+    oppPA[poolIndex]! += userScore;
+
     const userPlayerStats = isHome ? gameResult.homePlayerStats : gameResult.awayPlayerStats;
     const userMinutes = isHome ? gameResult.homeMinutes : gameResult.awayMinutes;
     const oppPlayerStats = isHome ? gameResult.awayPlayerStats : gameResult.homePlayerStats;
+    const oppMinutes = isHome ? gameResult.awayMinutes : gameResult.homeMinutes;
 
     for (const [playerId, stats] of Object.entries(userPlayerStats)) {
       const seasonStat = playerSeasonStats[playerId];
@@ -375,7 +443,15 @@ export function simulateSeason(
       playerStats: userPlayerStats,
       userMinutes,
       opponentPlayerStats: oppPlayerStats,
-      opponentRoster: opponent.map(p => ({ playerId: p.id, playerName: p.name })),
+      opponentMinutes: oppMinutes,
+      opponentRoster: opponent.map(p => ({
+        playerId: p.id,
+        playerName: p.name,
+        position: p.position,
+        overall: p.overall,
+        team: p.team,
+        baseStats: { ...p.stats },
+      })),
     });
   }
 
@@ -396,6 +472,14 @@ export function simulateSeason(
   }
 
   const teamStats = calculateTeamSeasonStats(userLineup, playerSeasonStats, games);
+  const standings = simulateLeagueStandings(
+    opponentPool,
+    opponentNames,
+    { wins, losses, pointsFor: userPF, pointsAgainst: userPA },
+    { wins: oppWins, losses: oppLosses, pointsFor: oppPF, pointsAgainst: oppPA, gamesVsUser },
+    config,
+    totalGames,
+  );
 
   return {
     wins,
@@ -403,7 +487,156 @@ export function simulateSeason(
     games,
     playerSeasonStats,
     teamStats,
+    standings,
   };
+}
+
+/**
+ * Full league table: every opponent already carries its games vs the user,
+ * so fill the rest of each team's 82-game slate with simulated
+ * opponent-vs-opponent games (mid-season fatigue context, random venue).
+ * Every simulated game credits one win and one loss, keeping the league
+ * at .500 while letting contender pools naturally rise to the top.
+ */
+function simulateLeagueStandings(
+  opponentPool: Player[][],
+  opponentNames: string[],
+  userRecord: { wins: number; losses: number; pointsFor: number; pointsAgainst: number },
+  opp: { wins: number[]; losses: number[]; pointsFor: number[]; pointsAgainst: number[]; gamesVsUser: number[] },
+  config: SimulationConfig,
+  totalGames: number,
+): SeasonSimulationResult['standings'] {
+  const n = opponentPool.length;
+  const wins = [...opp.wins];
+  const losses = [...opp.losses];
+  const pf = [...opp.pointsFor];
+  const pa = [...opp.pointsAgainst];
+
+  // Exact-fill slots: team i appears (82 - gamesVsUser) times, shuffled and
+  // paired so nobody is stranded and nobody exceeds 82.
+  const slots: number[] = [];
+  for (let i = 0; i < n; i++) {
+    const remaining = Math.max(0, totalGames - (opp.gamesVsUser[i] ?? 0));
+    for (let k = 0; k < remaining; k++) slots.push(i);
+  }
+  shuffleInPlace(slots);
+  // Repair self-pairings by swapping with a neighbor; reshuffle if stuck.
+  for (let attempt = 0; attempt < 25; attempt++) {
+    let bad = -1;
+    for (let p = 0; p + 1 < slots.length; p += 2) {
+      if (slots[p] === slots[p + 1]) {
+        bad = p;
+        break;
+      }
+    }
+    if (bad === -1) break;
+    let fixed = false;
+    for (let q = 0; q + 1 < slots.length; q += 2) {
+      if (q === bad) continue;
+      if (slots[q] !== slots[bad] && slots[q + 1] !== slots[bad]) {
+        const tmp = slots[bad + 1]!;
+        slots[bad + 1] = slots[q]!;
+        slots[q] = tmp;
+        fixed = true;
+        break;
+      }
+    }
+    if (!fixed) shuffleInPlace(slots);
+  }
+  // Final sweep: swap any leftover self-pair across pairs (counts preserved).
+  // As an absolute fallback a team "plays itself" and takes both the win and
+  // the loss, so every team still lands on exactly 82 games.
+  for (let p = 0; p + 1 < slots.length; p += 2) {
+    if (slots[p] !== slots[p + 1]) continue;
+    const x = slots[p]!;
+    let swapped = false;
+    for (let r = 0; r + 1 < slots.length; r += 2) {
+      if (r === p) continue;
+      if (slots[r] !== x && slots[r + 1] !== x) {
+        const tmp = slots[p + 1]!;
+        slots[p + 1] = slots[r]!;
+        slots[r] = tmp;
+        swapped = true;
+        break;
+      }
+    }
+    void swapped;
+  }
+
+  const midSeason = Math.floor(totalGames / 2);
+  for (let p = 0; p + 1 < slots.length; p += 2) {
+    const a = slots[p]!;
+    const b = slots[p + 1]!;
+    if (a === b) {
+      // Degenerate fallback (vanishingly rare): intrasquad scrimmage —
+      // the team banks one win and one loss, staying at exactly 82 games.
+      const rating = calculateTeamRating(opponentPool[a]!, config, true, midSeason, totalGames);
+      const { home, away } = simulateGameScore(rating, rating, config);
+      wins[a]! += 1;
+      losses[a]! += 1;
+      pf[a]! += home + away;
+      pa[a]! += home + away;
+      continue;
+    }
+    const teamA = opponentPool[a]!;
+    const teamB = opponentPool[b]!;
+    const aHome = randomFloat() < 0.5;
+    const homeRating = calculateTeamRating(aHome ? teamA : teamB, config, true, midSeason, totalGames);
+    const awayRating = calculateTeamRating(aHome ? teamB : teamA, config, false, midSeason, totalGames);
+    const { home, away } = simulateGameScore(homeRating, awayRating, config);
+    const aScore = aHome ? home : away;
+    const bScore = aHome ? away : home;
+    if (aScore >= bScore) {
+      wins[a]! += 1;
+      losses[b]! += 1;
+    } else {
+      wins[b]! += 1;
+      losses[a]! += 1;
+    }
+    pf[a]! += aScore;
+    pa[a]! += bScore;
+    pf[b]! += bScore;
+    pa[b]! += aScore;
+  }
+
+  const rows: SeasonSimulationResult['standings'] = [];
+  for (let i = 0; i < n; i++) {
+    const w = wins[i] ?? 0;
+    const l = losses[i] ?? 0;
+    const played = w + l || 1;
+    rows.push({
+      team: opponentNames[i] ?? `Opponent ${((i) % 30) + 1}`,
+      wins: w,
+      losses: l,
+      winPct: Number((w / played).toFixed(3)),
+      pointsFor: pf[i] ?? 0,
+      pointsAgainst: pa[i] ?? 0,
+      pointDiff: (pf[i] ?? 0) - (pa[i] ?? 0),
+      gamesBehind: 0,
+      isUser: false,
+    });
+  }
+  const userPlayed = userRecord.wins + userRecord.losses || 1;
+  rows.push({
+    team: 'Your Team',
+    wins: userRecord.wins,
+    losses: userRecord.losses,
+    winPct: Number((userRecord.wins / userPlayed).toFixed(3)),
+    pointsFor: userRecord.pointsFor,
+    pointsAgainst: userRecord.pointsAgainst,
+    pointDiff: userRecord.pointsFor - userRecord.pointsAgainst,
+    gamesBehind: 0,
+    isUser: true,
+  });
+
+  rows.sort((x, y) => y.wins - x.wins || y.pointDiff - x.pointDiff || x.team.localeCompare(y.team));
+  const lead = rows[0];
+  if (lead) {
+    for (const r of rows) {
+      r.gamesBehind = Number((((lead.wins - r.wins) + (r.losses - lead.losses)) / 2).toFixed(1));
+    }
+  }
+  return rows;
 }
 
 function calculateTeamSeasonStats(

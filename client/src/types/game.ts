@@ -108,6 +108,20 @@ export interface SimulationResult {
   games: GameResult[];
   playerStats: SimulatedPlayerStats[];
   teamStats: TeamSeasonStats;
+  /** Full league table. Absent on seasons simulated before this shipped. */
+  standings?: TeamStanding[];
+}
+
+export interface TeamStanding {
+  team: string;
+  wins: number;
+  losses: number;
+  winPct: number;
+  pointsFor: number;
+  pointsAgainst: number;
+  pointDiff: number;
+  gamesBehind: number;
+  isUser: boolean;
 }
 
 export interface GameResult {
@@ -128,6 +142,11 @@ export interface PlayerGamePerformance {
   playerName: string;
   stats: PlayerStats;
   minutes: number;
+  /** Base card info (present on fresh sims, absent on old saves). */
+  position?: Position;
+  overall?: number;
+  team?: string;
+  baseStats?: PlayerStats;
 }
 
 export interface SimulatedPlayerStats {
@@ -138,6 +157,10 @@ export interface SimulatedPlayerStats {
   averages: PlayerStats;
   totals: PlayerStats;
   highGames?: { pts: number; reb: number; ast: number; stl: number; blk: number };
+  position?: Position;
+  overall?: number;
+  team?: string;
+  baseStats?: PlayerStats;
 }
 
 export interface TeamSeasonStats {

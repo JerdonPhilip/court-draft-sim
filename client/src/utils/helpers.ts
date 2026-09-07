@@ -2,6 +2,7 @@ import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 import type { Player, Position } from '../types/game';
 import { canPlayPosition, getPlayerPositions } from '../types/game';
+import { FRANCHISES } from '../data/constants';
 
 export { canPlayPosition, getPlayerPositions };
 
@@ -226,4 +227,26 @@ export function getFittingSlots(
   slots: Array<{ position: Position }>
 ): Position[] {
   return slots.map(s => s.position).filter(pos => canPlayPosition(player, pos));
+}
+
+const FRANCHISE_NAME_BY_ID = new Map<string, string>(
+  FRANCHISES.map(f => [f.id.toLowerCase(), f.name]),
+);
+
+/**
+ * Display name for a team value. Player cards store the franchise id
+ * ("knicks"), opponent rows store the full schedule name
+ * ("New York Knicks" / "1990s Chicago Bulls"). Map ids to their full
+ * name and capitalize anything else so the UI never shows raw lowercase.
+ */
+export function formatTeamName(team: string | undefined | null): string {
+  if (!team) return '—';
+  const trimmed = team.trim();
+  if (!trimmed) return '—';
+  const full = FRANCHISE_NAME_BY_ID.get(trimmed.toLowerCase());
+  if (full) return full;
+  return trimmed
+    .split(/[\s_-]+/)
+    .map(w => (w ? w.charAt(0).toUpperCase() + w.slice(1) : w))
+    .join(' ');
 }

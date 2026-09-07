@@ -95,6 +95,19 @@ export interface SeasonSimulationResult {
   games: SeasonGameResult[];
   playerSeasonStats: Record<string, PlayerSeasonStats>;
   teamStats: TeamSeasonStats;
+  standings: TeamStanding[];
+}
+
+export interface TeamStanding {
+  team: string;
+  wins: number;
+  losses: number;
+  winPct: number;
+  pointsFor: number;
+  pointsAgainst: number;
+  pointDiff: number;
+  gamesBehind: number;
+  isUser: boolean;
 }
 
 export interface SeasonGameResult {
@@ -108,7 +121,15 @@ export interface SeasonGameResult {
   playerStats: Record<string, PlayerStats>;
   userMinutes: Record<string, number>;
   opponentPlayerStats: Record<string, PlayerStats>;
-  opponentRoster: Array<{ playerId: string; playerName: string }>;
+  opponentMinutes: Record<string, number>;
+  opponentRoster: Array<{
+    playerId: string;
+    playerName: string;
+    position?: Position;
+    overall?: number;
+    team?: string;
+    baseStats?: PlayerStats;
+  }>;
 }
 
 export interface PlayerSeasonStats {
