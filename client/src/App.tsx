@@ -4,6 +4,7 @@ import { useGameStore } from './store/gameStore';
 import { DraftScreen } from './components/draft/DraftScreen';
 import { SimulationDashboard } from './components/simulation/SimulationDashboard';
 import { VSModeScreen } from './components/simulation/VSMode';
+import { Toasts } from './components/ui/Toasts';
 import { api } from './utils/api';
 
 function LoadingScreen({ message }: { message: string }) {
@@ -75,49 +76,49 @@ export default function App() {
   };
 
   if (phase === 'draft') {
-    return <DraftScreen />;
+    return <><DraftScreen /><Toasts /></>;
   }
 
   if (phase === 'simulation') {
     if (error) {
-      return <ErrorScreen message={error} onRetry={() => { setError(null); setPhase('draft'); }} />;
+      return <><ErrorScreen message={error} onRetry={() => { setError(null); setPhase('draft'); }} /><Toasts /></>;
     }
     // finalizeDraft already kicked off runSimulation; this is a transient state.
     // Retry once if we landed here without a pending load (e.g. persisted phase).
     if (!useGameStore.getState().isLoading && !simulationResult) {
       void runSimulation();
     }
-    return <LoadingScreen message="Simulating your 82-game season..." />;
+    return <><LoadingScreen message="Simulating your 82-game season..." /><Toasts /></>;
   }
 
   if (phase === 'results' && simulationResult) {
     return (
-      <AnimatePresence mode="wait">
+      <><AnimatePresence mode="wait">
         <SimulationDashboard
           key="simulation"
           result={simulationResult}
           onNewDraft={handleNewDraft}
           onVSMode={handleVSMode}
         />
-      </AnimatePresence>
+      </AnimatePresence><Toasts /></>
     );
   }
 
   if (phase === 'results' && error) {
-    return <ErrorScreen message={error} onRetry={handleBackToResults} />;
+    return <><ErrorScreen message={error} onRetry={handleBackToResults} /><Toasts /></>;
   }
 
   if (phase === 'vs-mode') {
     return (
-      <AnimatePresence mode="wait">
+      <><AnimatePresence mode="wait">
         <VSModeScreen
           key="vs-mode"
           onBack={handleBackToResults}
         />
-      </AnimatePresence>
+      </AnimatePresence><Toasts /></>
     );
   }
 
   void vsMatchup;
-  return <DraftScreen />;
+  return <><DraftScreen /><Toasts /></>;
 }

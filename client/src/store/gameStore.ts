@@ -11,6 +11,7 @@ import {
 } from '../types/game';
 import { POSITIONS, MAX_REROLLS_PER_AXIS, MAX_MANUAL_SPINS } from '../data/constants';
 import { api } from '../utils/api';
+import { notify } from './toastStore';
 
 function getEmptyPositions(slots: DraftState['lineup']['slots']): Position[] {
   return slots.filter(s => !s.player).map(s => s.position);
@@ -106,7 +107,9 @@ export const useGameStore = create<GameStore>()(
         const hadPool = !!draftState.pool;
         const consuming = consumeManualSpin && hadPool;
         if (consuming && draftState.spinsLeft <= 0) {
-          set({ draftState: { ...draftState, error: 'No spins left — draft from this pool or use a reroll.' } });
+          const msg = 'No spins left — draft from this pool or use a reroll.';
+          set({ draftState: { ...draftState, error: msg } });
+          notify.warning(msg);
           return;
         }
         const myRequest = ++spinRequestId;
@@ -137,9 +140,9 @@ export const useGameStore = create<GameStore>()(
           });
         } catch (error) {
           if (myRequest !== spinRequestId) return;
-          set({
-            draftState: { ...get().draftState, isSpinning: false, error: error instanceof Error ? error.message : String(error) },
-          });
+          const msg = error instanceof Error ? error.message : String(error);
+          set({ draftState: { ...get().draftState, isSpinning: false, error: msg } });
+          notify.error(msg, 'Spin failed');
         }
       },
 
@@ -202,9 +205,9 @@ export const useGameStore = create<GameStore>()(
           });
         } catch (error) {
           if (myRequest !== spinRequestId) return;
-          set({
-            draftState: { ...get().draftState, isSpinning: false, error: error instanceof Error ? error.message : String(error) },
-          });
+          const msg = error instanceof Error ? error.message : String(error);
+          set({ draftState: { ...get().draftState, isSpinning: false, error: msg } });
+          notify.error(msg, 'Reroll failed');
         }
       },
 
@@ -213,21 +216,20 @@ export const useGameStore = create<GameStore>()(
         const slot = draftState.lineup.slots[slotIndex];
         if (!slot) {
           set({ draftState: { ...draftState, error: 'Invalid slot' } });
+          notify.error('Invalid slot');
           return;
         }
 
         if (slot.player || draftState.draftedPlayers.includes(player.id)) {
           set({ draftState: { ...draftState, error: 'Player already drafted' } });
+          notify.warning(`${player.name} is already on your roster.`);
           return;
         }
         if (!canPlayPosition(player, slot.position)) {
           const plays = [player.position, ...(player.secondaryPositions ?? [])].join('/');
-          set({
-            draftState: {
-              ...draftState,
-              error: `Player not suitable for the position — ${player.name} plays ${plays}, not ${slot.position}.`,
-            },
-          });
+          const msg = `Player not suitable for the position — ${player.name} plays ${plays}, not ${slot.position}.`;
+          set({ draftState: { ...draftState, error: msg } });
+          notify.error(msg);
           return;
         }
 
@@ -248,6 +250,7 @@ export const useGameStore = create<GameStore>()(
             error: null,
           },
         });
+        notify.success(`${player.name} locks in the ${slot.position} slot.`);
 
         // Auto-spin the next pool so the user is never dead-ended.
         if (filledCount < draftState.maxRounds) {
@@ -301,6 +304,7 @@ export const useGameStore = create<GameStore>()(
         if (filledSlots < draftState.maxRounds) {
           const msg = 'Fill all 5 positions before finalizing';
           set({ error: msg, draftState: { ...draftState, error: msg } });
+          notify.warning(msg);
           return;
         }
         set({ phase: 'simulation', error: null });
@@ -329,7 +333,9 @@ export const useGameStore = create<GameStore>()(
         const { draftState } = get();
         const players = draftState.lineup.slots.map(s => s.player).filter((p): p is Player => p !== null);
         if (players.length < draftState.maxRounds) {
-          set({ error: 'Fill all 5 positions before VS Mode' });
+          const msg = 'Fill all 5 positions before VS Mode';
+          set({ error: msg });
+          notify.warning(msg);
           return;
         }
         set({ isLoading: true, error: null });
@@ -343,7 +349,9 @@ export const useGameStore = create<GameStore>()(
             isLoading: false,
           });
         } catch (error) {
-          set({ error: error instanceof Error ? error.message : String(error), isLoading: false });
+          const msg = error instanceof Error ? error.message : String(error);
+          set({ error: msg, isLoading: false });
+          notify.error(msg, 'VS Mode failed');
         }
       },
 

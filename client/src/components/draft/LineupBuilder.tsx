@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { motion } from 'framer-motion';
-import { Plus, Star, Trophy } from 'lucide-react';
+import { Plus } from 'lucide-react';
 import { cn, getPositionColor, getPositionLabel, formatHeight, splitPlayerName, fitNameSize } from '../../utils/helpers';
 import { canPlayPosition, getPlayerPositions } from '../../types/game';
 import type { LineupSlot, Player, Position } from '../../types/game';
@@ -19,9 +19,7 @@ function Slot({ slot, index, isSelected, draggedPlayer, onSelect, onDropPlayer }
   const hasPlayer = !!slot.player;
   const expectedPos = POSITIONS[index]!;
   const [isDragOver, setIsDragOver] = useState(false);
-  const flexLabel = slot.player && (slot.player.secondaryPositions?.length ?? 0) > 0
-    ? getPlayerPositions(slot.player).join('/')
-    : null;
+  const isFlex = slot.player ? (slot.player.secondaryPositions?.length ?? 0) > 0 : false;
 
   const dropEligible = !hasPlayer && draggedPlayer !== null && canPlayPosition(draggedPlayer, slot.position);
   const dropBlocked = !hasPlayer && draggedPlayer !== null && !canPlayPosition(draggedPlayer, slot.position);
@@ -38,12 +36,12 @@ function Slot({ slot, index, isSelected, draggedPlayer, onSelect, onDropPlayer }
   };
 
   const emptySlotBody = (
-    <div className="flex flex-col items-center justify-center h-32">
+    <div className="flex min-h-[190px] flex-col items-center justify-center p-6">
       <div
-        className="w-16 h-16 rounded-xl border-2 border-dashed flex items-center justify-center mb-3"
+        className="mb-4 flex h-16 w-16 items-center justify-center rounded-2xl border-2 border-dashed"
         style={{ borderColor: getPositionColor(expectedPos) }}
       >
-        <Plus className="w-8 h-8" style={{ color: getPositionColor(expectedPos) }} aria-hidden="true" />
+        <Plus className="h-8 w-8" style={{ color: getPositionColor(expectedPos) }} aria-hidden="true" />
       </div>
       <div
         className="w-8 h-8 rounded-lg flex items-center justify-center font-bold text-white text-sm"
@@ -51,25 +49,25 @@ function Slot({ slot, index, isSelected, draggedPlayer, onSelect, onDropPlayer }
       >
         {expectedPos}
       </div>
-      <span className="mt-2 font-medium text-broadcast-text-secondary text-sm">
+      <span className="mt-2.5 text-sm font-medium text-broadcast-text-secondary">
         {getPositionLabel(expectedPos)}
       </span>
       {isSelected && !draggedPlayer && (
         <motion.p
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
-          className="mt-1 text-xs text-broadcast-gold font-bold"
+          className="mt-1.5 text-xs font-bold text-broadcast-gold"
         >
           SELECTED →
         </motion.p>
       )}
       {dropEligible && (
-        <p className="mt-1 text-xs text-broadcast-accent font-bold">
+        <p className="mt-1.5 text-xs font-bold text-broadcast-accent">
           {isDragOver ? 'RELEASE TO DRAFT' : 'DROP HERE'}
         </p>
       )}
       {dropBlocked && (
-        <p className="mt-1 text-xs text-broadcast-red font-medium">NO FIT</p>
+        <p className="mt-1.5 text-xs font-medium text-broadcast-red">NO FIT</p>
       )}
     </div>
   );
@@ -102,66 +100,43 @@ function Slot({ slot, index, isSelected, draggedPlayer, onSelect, onDropPlayer }
         />
         {slot.player ? (
           <div className="flex flex-1 flex-col">
-            <div className="p-6 pb-5 pt-5">
-            <div className="mb-4 flex items-center justify-between gap-2">
-              <div className="flex min-w-0 flex-1 items-center gap-2">
-                <div
-                  className="flex h-8 shrink-0 items-center justify-center whitespace-nowrap rounded-lg px-2 text-xs font-bold text-white ring-1 ring-white/25"
-                  style={{ backgroundImage: `linear-gradient(135deg, ${slotColor}, ${slotColor}55 130%)` }}
-                >
-                  {flexLabel ?? slot.player.position}
-                </div>
-                <span className="truncate text-sm font-medium text-broadcast-text-secondary">
-                  {getPositionLabel(slot.position)} slot{flexLabel ? ` • ${flexLabel}` : ''}
-                </span>
-              </div>
-              <div className="flex shrink-0 items-center gap-2">
-                <span className="font-display text-xl font-bold leading-none text-broadcast-accent" title="Overall rating">{slot.player.overall}</span>
-                <span className="shrink-0 rounded-full border border-broadcast-accent/30 bg-broadcast-accent/15 px-2 py-0.5 text-[10px] font-bold text-broadcast-accent">
-                  LOCKED
-                </span>
-              </div>
-            </div>
-
-            <div className="flex items-start gap-4">
-              <div
-                className="flex h-16 w-16 shrink-0 items-center justify-center rounded-2xl font-display font-bold text-white ring-1 ring-white/25 [box-shadow:inset_0_2px_10px_rgb(0,0,0,0.35)]"
+            <div className="flex items-center gap-3 px-6 pt-5">
+              <span
+                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg font-display text-sm font-bold text-white ring-1 ring-white/25 [box-shadow:inset_0_2px_8px_rgb(0,0,0,0.35)]"
                 style={{ backgroundImage: `linear-gradient(135deg, ${slotColor}, ${slotColor}55 130%)` }}
                 aria-hidden="true"
+                title={`Plays ${getPlayerPositions(slot.player).join(' / ')}`}
               >
-                <span className="break-words px-1 text-center text-lg leading-tight">{slot.player.position}</span>
-              </div>
-
+                {slot.player.position}
+              </span>
               <div className="min-w-0 flex-1 leading-tight" title={slot.player.name}>
                 <div className="truncate text-[11px] font-semibold uppercase tracking-[0.16em] text-broadcast-text-secondary">{splitPlayerName(slot.player.name).first}</div>
-                <h4 className="whitespace-nowrap font-semibold leading-snug text-white" style={{ fontSize: fitNameSize(splitPlayerName(slot.player.name).last || slot.player.name, 16) }}>{splitPlayerName(slot.player.name).last || splitPlayerName(slot.player.name).first}</h4>
-                <div className="mt-1.5 flex flex-wrap items-center gap-1.5 text-xs text-broadcast-text-secondary">
-                  <span className="whitespace-nowrap rounded border border-broadcast-accent/30 bg-broadcast-accent/20 px-1.5 py-0.5 text-broadcast-accent" title="Height">
-                    {formatHeight(slot.player.heightIn, slot.player.position)}
-                  </span>
-                  <span className="whitespace-nowrap rounded bg-broadcast-border px-1.5 py-0.5 text-broadcast-text-muted">
-                    {slot.player.team.toUpperCase()}
-                  </span>
-                  <span className="whitespace-nowrap rounded bg-broadcast-border px-1.5 py-0.5 text-broadcast-text-muted">
-                    {slot.player.decade}
-                  </span>
-                  <span className="break-words rounded border border-broadcast-gold/30 bg-broadcast-gold/20 px-1.5 py-0.5 text-broadcast-gold">
-                    {slot.player.archetype}
-                  </span>
-                </div>
-
-                <div className="mt-2.5 flex items-center gap-4 text-xs">
-                  <div className="flex items-center gap-1.5 text-broadcast-accent">
-                    <Star className="h-3.5 w-3.5" aria-hidden="true" />
-                    <span className="text-sm font-bold">{slot.player.overall}</span>
-                    <span className="text-broadcast-text-muted">OVR</span>
-                  </div>
-                  <div className="flex items-center gap-1.5 text-broadcast-gold">
-                    <Trophy className="h-3.5 w-3.5" aria-hidden="true" />
-                    <span className="text-sm font-medium">{slot.player.stats.pts} PPG</span>
-                  </div>
-                </div>
+                <h4 className="whitespace-nowrap font-display text-xl font-bold leading-tight text-white" style={{ fontSize: fitNameSize(splitPlayerName(slot.player.name).last || slot.player.name) }}>{splitPlayerName(slot.player.name).last || splitPlayerName(slot.player.name).first}</h4>
               </div>
+              <span className="shrink-0 whitespace-nowrap font-display text-2xl font-bold leading-none text-broadcast-accent" title={`Overall rating ${slot.player.overall}`}>
+                {slot.player.overall}
+                <span className="ml-1 align-middle text-[11px] font-semibold uppercase tracking-[0.18em] text-broadcast-text-muted">OVR</span>
+              </span>
+            </div>
+
+            <div className="space-y-1.5 px-6 pb-2 pt-3">
+              <p className="text-sm leading-relaxed text-broadcast-text-secondary">
+                <span className="font-bold text-broadcast-accent">{getPlayerPositions(slot.player).join(' / ')}</span>
+                <span aria-hidden="true"> • </span>
+                <span className="whitespace-nowrap" title="Height — taller players rebound and block better">{formatHeight(slot.player.heightIn, slot.player.position)}</span>
+                {isFlex && (
+                  <><span aria-hidden="true"> • </span><span className="font-bold text-broadcast-gold">FLEX</span></>
+                )}
+              </p>
+              <p className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-broadcast-text-secondary">
+                <span className="whitespace-nowrap font-semibold text-broadcast-text-primary">{slot.player.team.toUpperCase()}</span>
+                <span aria-hidden="true" className="text-broadcast-text-muted">•</span>
+                <span className="whitespace-nowrap">{slot.player.decade}</span>
+                <span aria-hidden="true" className="text-broadcast-text-muted">•</span>
+                <span className="break-words text-broadcast-gold">{slot.player.archetype}</span>
+                <span aria-hidden="true" className="text-broadcast-text-muted">•</span>
+                <span className="whitespace-nowrap font-medium text-broadcast-gold">{slot.player.stats.pts} PPG</span>
+              </p>
             </div>
 
             <div className="mt-auto grid grid-cols-5 gap-2 border-t border-white/5 bg-black/20 px-6 pb-5 pt-4">
@@ -170,7 +145,6 @@ function Slot({ slot, index, isSelected, draggedPlayer, onSelect, onDropPlayer }
               <StatMini label="AST" value={slot.player.stats.ast} color="#007aff" />
               <StatMini label="STL" value={slot.player.stats.stl} color="#34c759" />
               <StatMini label="BLK" value={slot.player.stats.blk} color="#af52de" />
-            </div>
             </div>
           </div>
         ) : (

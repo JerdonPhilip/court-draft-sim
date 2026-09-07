@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { ChevronLeft, Trophy, Zap, Crown, Star } from 'lucide-react';
 import { cn, getPositionColor, calculateTeamStrength, getWinProjection } from '../../utils/helpers';
 import { useGameStore } from '../../store/gameStore';
+import { notify } from '../../store/toastStore';
 import { api } from '../../utils/api';
 import type { HistoricalTeam, VSModeMatchup, VSSeriesResult, PlayerGamePerformance, Player } from '../../types/game';
 
@@ -24,7 +25,6 @@ export function VSModeScreen({ onBack }: VSModeScreenProps) {
   const [selectedTeam, setSelectedTeam] = useState<HistoricalTeam | null>(null);
   const [seriesLength, setSeriesLength] = useState<1 | 7>(7);
   const [isLoading, setIsLoading] = useState(false);
-  const [loadError, setLoadError] = useState<string | null>(null);
 
   const lineup = draftState.lineup.slots.map(s => s.player).filter((p): p is Player => p !== null);
   const teamStrength = calculateTeamStrength(lineup);
@@ -34,7 +34,7 @@ export function VSModeScreen({ onBack }: VSModeScreenProps) {
     if (historicalTeams.length === 0) {
       api.simulation.getHistoricalTeams()
         .then(data => setHistoricalTeams(data.teams))
-        .catch((err) => setLoadError(err instanceof Error ? err.message : 'Failed to load historical teams'));
+        .catch((err) => notify.error(err instanceof Error ? err.message : 'Failed to load historical teams'));
     }
   }, [historicalTeams.length, setHistoricalTeams]);
 
@@ -44,7 +44,7 @@ export function VSModeScreen({ onBack }: VSModeScreenProps) {
     try {
       await startVSMode(selectedTeam.id, seriesLength);
     } catch (error) {
-      console.error('VS Mode failed:', error);
+      notify.error(error instanceof Error ? error.message : 'VS Mode failed');
     } finally {
       setIsLoading(false);
     }
@@ -84,12 +84,7 @@ export function VSModeScreen({ onBack }: VSModeScreenProps) {
       </div>
 
       <main className="max-w-7xl mx-auto px-4 py-6 pb-20">
-        {loadError && (
-          <div className="mb-4 p-3 rounded-xl bg-broadcast-red/10 border border-broadcast-red/30 text-broadcast-red text-sm" role="alert">
-            {loadError}
-          </div>
-        )}
-        {historicalTeams.length === 0 && !loadError && (
+        {historicalTeams.length === 0 && (
           <div className="text-center py-12 text-broadcast-text-secondary" role="status">Loading legendary opponents...</div>
         )}
         <div className="grid lg:grid-cols-3 gap-6">
