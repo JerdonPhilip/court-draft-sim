@@ -9,7 +9,7 @@ import {
   PlayerSeasonStats,
   TeamSeasonStats,
 } from '../types/game.js';
-import { DEFAULT_SIMULATION_CONFIG, SIMULATION_CONSTANTS, LEAGUE_AVG_IMPACT, IMPACT_TO_STRENGTH, WIN_CURVE_DIVISOR } from './constants.js';
+import { DEFAULT_SIMULATION_CONFIG, SIMULATION_CONSTANTS, LEAGUE_AVG_IMPACT, IMPACT_TO_STRENGTH, WIN_CURVE_DIVISOR, POSITION_HEIGHT_BASELINE, HEIGHT_REB_PER_INCH, HEIGHT_BLK_PER_INCH, HEIGHT_FACTOR_MIN, HEIGHT_FACTOR_MAX } from './constants.js';
 import { randomInt } from 'node:crypto';
 
 // --- Tunable simulation knobs (see services/constants.ts) ---
@@ -42,16 +42,35 @@ const STAT_IMPORTANCE = {
   blk: 0.13,
 };
 
+/**
+ * Height edge on the glass and at the rim, measured against the
+ * positional average. A 7-footer at center grabs boards/blocks shots
+ * better than a 6'9" one with identical stats — and vice versa.
+ * Shared by live ratings and getBaseTeamImpact so strength/projection
+ * move together with the sim.
+ */
+function heightFactors(player: Player): { reb: number; blk: number } {
+  const baseline = POSITION_HEIGHT_BASELINE[player.position] ?? 79;
+  const height = Number.isFinite(player.heightIn) ? player.heightIn : baseline;
+  const diff = height - baseline;
+  const clamp = (v: number) => Math.max(HEIGHT_FACTOR_MIN, Math.min(HEIGHT_FACTOR_MAX, v));
+  return {
+    reb: clamp(1 + HEIGHT_REB_PER_INCH * diff),
+    blk: clamp(1 + HEIGHT_BLK_PER_INCH * diff),
+  };
+}
+
 function calculatePlayerImpact(player: Player, config: SimulationConfig, gameIndex = 0, totalGames = 82): number {
   const weights = POSITION_WEIGHTS[player.position];
   const { stats, overall } = player;
+  const height = heightFactors(player);
 
   let impact = 0;
   impact += stats.pts * weights.pts * STAT_IMPORTANCE.pts;
-  impact += stats.reb * weights.reb * STAT_IMPORTANCE.reb;
+  impact += stats.reb * weights.reb * STAT_IMPORTANCE.reb * height.reb;
   impact += stats.ast * weights.ast * STAT_IMPORTANCE.ast;
   impact += stats.stl * weights.stl * STAT_IMPORTANCE.stl;
-  impact += stats.blk * weights.blk * STAT_IMPORTANCE.blk;
+  impact += stats.blk * weights.blk * STAT_IMPORTANCE.blk * height.blk;
 
   impact = impact * (overall / 100);
 
@@ -433,12 +452,13 @@ export function getBaseTeamImpact(lineup: Player[]): number {
     if (!player) continue;
     const weights = POSITION_WEIGHTS[player.position];
     const { stats, overall } = player;
+    const height = heightFactors(player);
     total += (
       stats.pts * weights.pts * STAT_IMPORTANCE.pts +
-      stats.reb * weights.reb * STAT_IMPORTANCE.reb +
+      stats.reb * weights.reb * STAT_IMPORTANCE.reb * height.reb +
       stats.ast * weights.ast * STAT_IMPORTANCE.ast +
       stats.stl * weights.stl * STAT_IMPORTANCE.stl +
-      stats.blk * weights.blk * STAT_IMPORTANCE.blk
+      stats.blk * weights.blk * STAT_IMPORTANCE.blk * height.blk
     ) * (overall / 100);
     counted++;
   }

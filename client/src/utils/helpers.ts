@@ -60,6 +60,7 @@ interface StrengthInput {
   overall: number;
   position: string;
   secondaryPositions?: Position[];
+  heightIn?: number;
   stats: { pts: number; reb: number; ast: number; stl: number; blk: number };
 }
 
@@ -70,6 +71,35 @@ interface StrengthInput {
 const LEAGUE_AVG_IMPACT = 39.4;
 const IMPACT_TO_STRENGTH = 1.2;
 const WIN_CURVE_DIVISOR = 22;
+
+// Must match server services/constants.ts.
+const POSITION_HEIGHT_BASELINE: Record<string, number> = {
+  PG: 75,
+  SG: 77,
+  SF: 79,
+  PF: 81,
+  C: 83,
+};
+const HEIGHT_REB_PER_INCH = 0.06;
+const HEIGHT_BLK_PER_INCH = 0.08;
+const HEIGHT_FACTOR_MIN = 0.85;
+const HEIGHT_FACTOR_MAX = 1.15;
+
+/** 81 -> "6'9\"". Falls back to positional average when unknown (old saves). */
+export function formatHeight(heightIn: number | undefined, position?: string): string {
+  const baseline = (position ? POSITION_HEIGHT_BASELINE[position] : undefined) ?? 79;
+  const h = typeof heightIn === 'number' && Number.isFinite(heightIn) ? heightIn : baseline;
+  return `${Math.floor(h / 12)}'${Math.round(h % 12)}"`;
+}
+
+export function heightEdgeLabel(heightIn: number | undefined, position: string): string | null {
+  const baseline = POSITION_HEIGHT_BASELINE[position];
+  if (baseline === undefined || !Number.isFinite(heightIn)) return null;
+  const diff = (heightIn as number) - baseline;
+  if (diff >= 2) return `+${diff}" size edge`;
+  if (diff <= -2) return `${diff}" undersized`;
+  return null;
+}
 
 const IMPACT_WEIGHTS: Record<string, { pts: number; reb: number; ast: number; stl: number; blk: number }> = {
   PG: { pts: 1.0, reb: 0.3, ast: 1.5, stl: 1.3, blk: 0.2 },
@@ -86,12 +116,17 @@ export function getBaseTeamImpact(players: StrengthInput[]): number {
   let counted = 0;
   for (const p of players) {
     const w = IMPACT_WEIGHTS[p.position] ?? IMPACT_WEIGHTS.C!;
+    const baseline = POSITION_HEIGHT_BASELINE[p.position] ?? 79;
+    const h = Number.isFinite(p.heightIn) ? (p.heightIn as number) : baseline;
+    const clamp = (v: number) => Math.max(HEIGHT_FACTOR_MIN, Math.min(HEIGHT_FACTOR_MAX, v));
+    const rebF = clamp(1 + HEIGHT_REB_PER_INCH * (h - baseline));
+    const blkF = clamp(1 + HEIGHT_BLK_PER_INCH * (h - baseline));
     total += (
       p.stats.pts * w.pts * STAT_SHARE.pts +
-      p.stats.reb * w.reb * STAT_SHARE.reb +
+      p.stats.reb * w.reb * STAT_SHARE.reb * rebF +
       p.stats.ast * w.ast * STAT_SHARE.ast +
       p.stats.stl * w.stl * STAT_SHARE.stl +
-      p.stats.blk * w.blk * STAT_SHARE.blk
+      p.stats.blk * w.blk * STAT_SHARE.blk * blkF
     ) * (p.overall / 100);
     counted++;
   }

@@ -1,6 +1,6 @@
 import { motion, AnimatePresence } from 'framer-motion';
 import { ChevronRight, Star, Trophy } from 'lucide-react';
-import { cn, getPositionColor, getPositionLabel } from '../../utils/helpers';
+import { cn, getPositionColor, getPositionLabel, formatHeight, heightEdgeLabel } from '../../utils/helpers';
 import { FRANCHISES, DECADES } from '../../data/constants';
 import { canPlayPosition, getPlayerPositions } from '../../types/game';
 import type { LineupSlot, Player, Position } from '../../types/game';
@@ -101,8 +101,8 @@ export function PlayerPool({ pool, draftedPlayerIds, onDraftPlayer, onDragStartP
                 aria-disabled={!isDraftable}
                 aria-label={
                   isDraftable
-                    ? `Draft ${player.name}, plays ${getPlayerPositions(player).join('/')}${selectedSlotPosition ? `, selected slot ${selectedSlotPosition}${fitsSelected ? ' fits' : ' does not fit'}` : `, fits ${fits.join(', ')}`}. Drag to a slot or click to draft.`
-                    : `${player.name}, plays ${getPlayerPositions(player).join('/')} — doesn't fit open slots ${emptyPositions.join(', ')}`
+                    ? `Draft ${player.name}, ${formatHeight(player.heightIn, player.position)}, plays ${getPlayerPositions(player).join('/')}${selectedSlotPosition ? `, selected slot ${selectedSlotPosition}${fitsSelected ? ' fits' : ' does not fit'}` : `, fits ${fits.join(', ')}`}. Drag to a slot or click to draft.`
+                    : `${player.name}, ${formatHeight(player.heightIn, player.position)}, plays ${getPlayerPositions(player).join('/')} — doesn't fit open slots ${emptyPositions.join(', ')}`
                 }
                 title={
                   !isDraftable
@@ -132,6 +132,9 @@ export function PlayerPool({ pool, draftedPlayerIds, onDraftPlayer, onDragStartP
                       <span className="px-2 py-0.5 text-xs font-medium rounded-full bg-broadcast-accent/20 text-broadcast-accent border border-broadcast-accent/30 whitespace-nowrap">
                         {getPlayerPositions(player).join(' / ')}
                       </span>
+                      <span className="px-2 py-0.5 text-xs font-medium rounded-full bg-broadcast-border text-broadcast-text-secondary whitespace-nowrap" title="Height — taller players rebound and block better">
+                        {formatHeight(player.heightIn, player.position)}
+                      </span>
                       {isFlex && (
                         <span className="px-2 py-0.5 text-xs font-medium rounded-full bg-broadcast-gold/20 text-broadcast-gold border border-broadcast-gold/30 whitespace-nowrap">
                           FLEX
@@ -155,6 +158,9 @@ export function PlayerPool({ pool, draftedPlayerIds, onDraftPlayer, onDragStartP
                             fitsSelected
                               ? ` • fits selected ${selectedSlotPosition}`
                               : ` • not ${selectedSlotPosition} — change slot`
+                          )}
+                          {heightEdgeLabel(player.heightIn, fits[0] ?? player.position) && (
+                            <> • {heightEdgeLabel(player.heightIn, fits[0] ?? player.position)}</>
                           )}
                         </span>
                       ) : (

@@ -14,6 +14,8 @@ export interface Player {
   position: Position;
   /** Extra positions the player can credibly fill (e.g. Garnett PF/C). Primary stays in `position`. */
   secondaryPositions?: Position[];
+  /** Height in inches (e.g. 81 = 6'9"). Feeds rebounding/rim-protection in the sim. */
+  heightIn: number;
   team: string;
   decade: string;
   era: string;

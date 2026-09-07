@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { motion } from 'framer-motion';
 import { Plus, Star, Trophy } from 'lucide-react';
-import { cn, getPositionColor, getPositionLabel } from '../../utils/helpers';
+import { cn, getPositionColor, getPositionLabel, formatHeight } from '../../utils/helpers';
 import { canPlayPosition, getPlayerPositions } from '../../types/game';
 import type { LineupSlot, Player, Position } from '../../types/game';
 import { POSITIONS } from '../../data/constants';
@@ -124,6 +124,9 @@ function Slot({ slot, index, isSelected, draggedPlayer, onSelect, onDropPlayer }
               <div className="flex-1 min-w-0">
                 <h4 className="font-semibold text-white text-base leading-snug break-words">{slot.player.name}</h4>
                 <div className="flex items-center gap-1.5 text-xs text-broadcast-text-secondary mt-1.5 flex-wrap">
+                  <span className="px-1.5 py-0.5 bg-broadcast-accent/20 text-broadcast-accent border border-broadcast-accent/30 rounded whitespace-nowrap" title="Height">
+                    {formatHeight(slot.player.heightIn, slot.player.position)}
+                  </span>
                   <span className="px-1.5 py-0.5 bg-broadcast-border rounded text-broadcast-text-muted whitespace-nowrap">
                     {slot.player.team.toUpperCase()}
                   </span>

@@ -21,6 +21,7 @@ const playerSchema = z.object({
   name: z.string().min(1).max(100),
   position: z.enum(['PG', 'SG', 'SF', 'PF', 'C']),
   secondaryPositions: z.array(z.enum(['PG', 'SG', 'SF', 'PF', 'C'])).max(4).optional(),
+  heightIn: z.number().int().min(60).max(95),
   team: z.string().min(1).max(50),
   decade: z.string().min(1).max(20),
   era: z.string().min(1).max(50),
@@ -299,6 +300,14 @@ function generateOpponentPools(): { pools: Player[][]; names: string[] } {
   // Expected base impact ~= LEAGUE_AVG_IMPACT (services/constants.ts):
   // (24 x ~35.9 regular + 6 x ~53.3 contender) / 30 ~= 39.4.
   // Keep them in sync if these ranges change.
+  // Heights sit near positional averages so size is neutral for the league.
+  const HEIGHT_RANGE: Record<Position, [number, number]> = {
+    PG: [71, 75],
+    SG: [74, 78],
+    SF: [77, 81],
+    PF: [79, 83],
+    C: [81, 87],
+  };
   for (let i = 0; i < 30; i++) {
     const pool: Player[] = [];
     const contender = i % 5 === 4;
@@ -312,6 +321,7 @@ function generateOpponentPools(): { pools: Player[][]; names: string[] } {
         id: `opp-${i}-${j}`,
         name: `${OPPONENT_NAMES[i]} Player ${j + 1}`,
         position: pos,
+        heightIn: Math.round(randomStat(HEIGHT_RANGE[pos][0], HEIGHT_RANGE[pos][1])),
         team: 'opponent',
         decade: '2020s',
         era: 'Current',
