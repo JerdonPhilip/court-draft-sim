@@ -471,6 +471,15 @@ export function getTeamStrength(lineup: Player[]): number {
   // Strength is just the base-impact differential vs a league-average
   // opponent, scaled to 0-100. Full 5-man coverage is enforced by
   // validation, so no separate coverage bonus is needed.
-  const base = getBaseTeamImpact(lineup);
-  return Math.max(0, Math.min(100, Math.round(50 + (base - LEAGUE_AVG_IMPACT) * IMPACT_TO_STRENGTH)));
+  return strengthVsLeague(getBaseTeamImpact(lineup), LEAGUE_AVG_IMPACT);
+}
+
+/**
+ * Strength of a base impact against an arbitrary league average (e.g. an
+ * era league instead of the synthetic reference league). Same scale as
+ * getTeamStrength, so calculateNonLinearWinCurve applies unchanged —
+ * projections stay honest no matter which league is simulated.
+ */
+export function strengthVsLeague(baseImpact: number, leagueAvgImpact: number): number {
+  return Math.max(0, Math.min(100, Math.round(50 + (baseImpact - leagueAvgImpact) * IMPACT_TO_STRENGTH)));
 }

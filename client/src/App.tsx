@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react';
 import { AnimatePresence } from 'framer-motion';
 import { useGameStore } from './store/gameStore';
 import { DraftScreen } from './components/draft/DraftScreen';
+import { SeasonSetup } from './components/simulation/SeasonSetup';
 import { SimulationDashboard } from './components/simulation/SimulationDashboard';
 import { VSModeScreen } from './components/simulation/VSMode';
 import { Toasts } from './components/ui/Toasts';
@@ -79,11 +80,15 @@ export default function App() {
     return <><DraftScreen /><Toasts /></>;
   }
 
+  if (phase === 'season-setup') {
+    return <><SeasonSetup onBack={() => setPhase('draft')} /><Toasts /></>;
+  }
+
   if (phase === 'simulation') {
     if (error) {
       return <><ErrorScreen message={error} onRetry={() => { setError(null); setPhase('draft'); }} /><Toasts /></>;
     }
-    // finalizeDraft already kicked off runSimulation; this is a transient state.
+    // The setup screen kicks off runSimulation; this is a transient state.
     // Retry once if we landed here without a pending load (e.g. persisted phase).
     if (!useGameStore.getState().isLoading && !simulationResult) {
       void runSimulation();

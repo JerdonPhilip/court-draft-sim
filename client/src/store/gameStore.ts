@@ -18,11 +18,13 @@ function getEmptyPositions(slots: DraftState['lineup']['slots']): Position[] {
 }
 
 interface GameStore {
-  phase: 'draft' | 'simulation' | 'results' | 'vs-mode';
+  phase: 'draft' | 'season-setup' | 'simulation' | 'results' | 'vs-mode';
   draftState: DraftState;
   simulationResult: SimulationResult | null;
   vsMatchup: VSModeMatchup | null;
   historicalTeams: HistoricalTeam[];
+  /** Era decade id for the season, or null for the default mixed league. */
+  selectedEra: string | null;
   isLoading: boolean;
   error: string | null;
 
@@ -31,6 +33,7 @@ interface GameStore {
   setSimulationResult: (result: SimulationResult | null) => void;
   setVSMatchup: (matchup: VSModeMatchup | null) => void;
   setHistoricalTeams: (teams: HistoricalTeam[]) => void;
+  setSelectedEra: (era: string | null) => void;
   setLoading: (loading: boolean) => void;
   setError: (error: string | null) => void;
 
@@ -76,6 +79,7 @@ export const useGameStore = create<GameStore>()(
       simulationResult: null,
       vsMatchup: null,
       historicalTeams: [],
+      selectedEra: null,
       isLoading: false,
       error: null,
 
@@ -84,6 +88,7 @@ export const useGameStore = create<GameStore>()(
       setSimulationResult: (result) => set({ simulationResult: result }),
       setVSMatchup: (matchup) => set({ vsMatchup: matchup }),
       setHistoricalTeams: (teams) => set({ historicalTeams: teams }),
+      setSelectedEra: (era) => set({ selectedEra: era }),
       setLoading: (loading) => set({ isLoading: loading }),
       setError: (error) => set({ error }),
 
@@ -94,6 +99,7 @@ export const useGameStore = create<GameStore>()(
           draftState: createInitialDraftState(),
           simulationResult: null,
           vsMatchup: null,
+          selectedEra: null,
           error: null,
         });
       },
@@ -307,8 +313,8 @@ export const useGameStore = create<GameStore>()(
           notify.warning(msg);
           return;
         }
-        set({ phase: 'simulation', error: null });
-        await get().runSimulation();
+        // Lineup locked — next stop is the season setup (era pick).
+        set({ phase: 'season-setup', error: null });
       },
 
       runSimulation: async () => {
@@ -321,7 +327,8 @@ export const useGameStore = create<GameStore>()(
         set({ isLoading: true, error: null });
 
         try {
-          const data = await api.simulation.runSeason(players);
+          const era = get().selectedEra ?? null;
+          const data = await api.simulation.runSeason(players, undefined, era);
 
           set({ simulationResult: data.result as SimulationResult, phase: 'results', isLoading: false });
         } catch (error) {
@@ -362,15 +369,16 @@ export const useGameStore = create<GameStore>()(
           draftState: createInitialDraftState(),
           simulationResult: null,
           vsMatchup: null,
+          selectedEra: null,
           error: null,
         });
       },
     }),
     {
       name: 'court-draft-sim-store',
-      version: 4,
+      version: 5,
       partialize: (state) => ({
-        phase: state.phase === 'simulation' ? 'draft' : state.phase,
+        phase: state.phase === 'simulation' || state.phase === 'season-setup' ? 'draft' : state.phase,
         draftState: {
           ...state.draftState,
           isSpinning: false,
@@ -379,6 +387,7 @@ export const useGameStore = create<GameStore>()(
         },
         simulationResult: state.simulationResult,
         vsMatchup: state.vsMatchup,
+        selectedEra: (state as { selectedEra?: string | null }).selectedEra ?? null,
       } as unknown as GameStore),
       migrate: (persisted: unknown, version: number) => {
         if (typeof persisted !== 'object' || persisted === null) {

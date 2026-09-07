@@ -1,4 +1,4 @@
-import type { DraftPool, HistoricalTeam, Player, Position, SimulationResult, VSModeMatchup } from '../types/game';
+import type { DraftPool, EraInfo, HistoricalTeam, Player, Position, SimulationResult, VSModeMatchup } from '../types/game';
 
 const API_BASE = (import.meta.env.VITE_API_URL as string | undefined)?.replace(/\/$/, '') || '/api';
 
@@ -88,10 +88,10 @@ export const api = {
   },
 
   simulation: {
-    runSeason: (lineup: Player[], config?: Record<string, number>) =>
+    runSeason: (lineup: Player[], config?: Record<string, number>, era?: string | null) =>
       fetchAPI<{ result: SimulationResult }>('/simulation/season', {
         method: 'POST',
-        body: JSON.stringify({ lineup, config }),
+        body: JSON.stringify({ lineup, config, ...(era ? { era } : {}) }),
       }, 30000),
     runGame: (homeTeam: Player[], awayTeam: Player[]) =>
       fetchAPI<{ result: unknown }>('/simulation/game', {
@@ -105,5 +105,7 @@ export const api = {
       }, 30000),
     getHistoricalTeams: () =>
       fetchAPI<{ teams: HistoricalTeam[] }>('/simulation/historical-teams'),
+    getEras: () =>
+      fetchAPI<{ eras: EraInfo[] }>('/simulation/eras'),
   },
 };

@@ -54,7 +54,7 @@ export function SimulationDashboard({ result, onNewDraft, onVSMode }: Simulation
   return (
     <div className="min-h-screen bg-broadcast-dark">
       <div className="sticky top-0 z-40 bg-broadcast-dark/95 backdrop-blur border-b border-broadcast-border/50">
-        <div className="max-w-7xl mx-auto px-4 py-4">
+        <div className="max-w-7xl mx-auto px-4 py-2.5">
           <div className="flex items-center justify-between flex-wrap gap-4">
             <div className="flex items-center gap-3">
               <motion.button
@@ -73,6 +73,9 @@ export function SimulationDashboard({ result, onNewDraft, onVSMode }: Simulation
             </div>
 
             <div className="flex items-center gap-2 flex-wrap">
+              <span className="px-3 py-1 rounded-full text-sm font-bold bg-broadcast-card border border-broadcast-border text-broadcast-text-secondary">
+                {result.era ? `${result.era.label.toUpperCase()} LEAGUE` : 'MIXED LEAGUE'}
+              </span>
               <span className={cn(
                 'px-3 py-1 rounded-full text-sm font-bold',
                 isUndefeated ? 'bg-broadcast-gold/20 text-broadcast-gold border border-broadcast-gold/30' :
@@ -85,7 +88,7 @@ export function SimulationDashboard({ result, onNewDraft, onVSMode }: Simulation
             </div>
           </div>
 
-          <div className="mt-4 flex flex-wrap gap-2" role="tablist" aria-label="Season views">
+          <div className="mt-2.5 flex flex-wrap gap-2" role="tablist" aria-label="Season views">
             {(['overview', 'games', 'players'] as const).map(tab => (
               <button
                 key={tab}
@@ -93,7 +96,7 @@ export function SimulationDashboard({ result, onNewDraft, onVSMode }: Simulation
                 aria-selected={view === tab}
                 onClick={() => setView(tab)}
                 className={cn(
-                  'px-4 py-2 rounded-lg text-sm font-medium transition-all',
+                  'px-3 py-1.5 rounded-lg text-sm font-medium transition-all',
                   view === tab
                     ? 'bg-broadcast-accent text-broadcast-dark shadow-glow-accent'
                     : 'bg-broadcast-card border border-broadcast-border text-broadcast-text-secondary hover:text-white hover:border-broadcast-accent/50'
@@ -108,7 +111,7 @@ export function SimulationDashboard({ result, onNewDraft, onVSMode }: Simulation
         </div>
       </div>
 
-      <main className="max-w-7xl mx-auto px-4 py-6 pb-20">
+      <main className="max-w-7xl mx-auto px-4 py-4 pb-8">
         <AnimatePresence mode="wait">
           {view === 'overview' && <OverviewView key="ov" result={result} streak={streak} isUndefeated={isUndefeated} isChampionship={isChampionship} totalGames={totalGames} />}
           {view === 'games' && <GamesView key="gm" result={result} onSelectGame={setSelectedGame} />}
@@ -119,12 +122,12 @@ export function SimulationDashboard({ result, onNewDraft, onVSMode }: Simulation
           <GameBoxScoreModal game={selectedGame} onClose={() => setSelectedGame(null)} />
         )}
 
-        <div className="mt-8 flex flex-wrap items-center justify-center gap-4">
+        <div className="mt-5 flex flex-wrap items-center justify-center gap-3">
           <motion.button
             onClick={onVSMode}
             whileHover={{ scale: 1.02 }}
             whileTap={{ scale: 0.98 }}
-            className="btn-gold px-8 py-3 text-lg gap-2"
+            className="btn-gold px-6 py-2.5 text-base gap-2"
           >
             <Trophy className="w-5 h-5" aria-hidden="true" />
             VS MODE: CHALLENGE A LEGEND
@@ -133,7 +136,7 @@ export function SimulationDashboard({ result, onNewDraft, onVSMode }: Simulation
             onClick={onNewDraft}
             whileHover={{ scale: 1.02 }}
             whileTap={{ scale: 0.98 }}
-            className="btn-secondary px-8 py-3 text-lg"
+            className="btn-secondary px-6 py-2.5 text-base"
           >
             NEW DRAFT
           </motion.button>
@@ -146,11 +149,11 @@ export function SimulationDashboard({ result, onNewDraft, onVSMode }: Simulation
 function OverviewView({ result, streak, isUndefeated, isChampionship, totalGames }: { result: SimulationResult; streak: { count: number; type: string }; isUndefeated: boolean; isChampionship: boolean; totalGames: number }) {
   const winPct = (result.wins / totalGames * 100).toFixed(1);
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
-        className="grid grid-cols-1 md:grid-cols-3 gap-4"
+        className="grid grid-cols-1 md:grid-cols-3 gap-3"
       >
         <StatCard
           label="FINAL RECORD"
@@ -178,40 +181,21 @@ function OverviewView({ result, streak, isUndefeated, isChampionship, totalGames
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ delay: 0.1 }}
-        className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4"
+        className="card-elevated p-4"
       >
-        {(Object.keys(STAT_LABELS) as Array<keyof PlayerStats>).map(stat => {
-          const key = stat === 'pts' ? 'avgPts' : stat === 'reb' ? 'avgReb' : stat === 'ast' ? 'avgAst' : stat === 'stl' ? 'avgStl' : 'avgBlk';
-          const value = (result.teamStats as unknown as Record<string, number>)[key] ?? 0;
-          return (
-            <TeamStatCard
-              key={stat}
-              label={STAT_LABELS[stat]}
-              value={Number(value).toFixed(1)}
-              color={STAT_COLORS[stat]}
-            />
-          );
-        })}
-      </motion.div>
-
-      <motion.div
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ delay: 0.2 }}
-        className="card-elevated p-6"
-      >
-        <h3 className="section-title font-display text-lg mb-4">TEAM SEASON STATS</h3>
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <h3 className="section-title font-display text-xl mb-3">TEAM STATS</h3>
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
           <TeamMetric label="OFF RTG" value={result.teamStats.offensiveRating.toFixed(1)} color="#00d4aa" />
           <TeamMetric label="DEF RTG" value={result.teamStats.defensiveRating.toFixed(1)} color="#ff3b30" />
           <TeamMetric label="NET RTG" value={result.teamStats.netRating.toFixed(1)} color="#ffd700" />
           <TeamMetric label="PACE" value={result.teamStats.pace.toFixed(1)} color="#007aff" />
         </div>
-        <div className="mt-4 grid grid-cols-2 md:grid-cols-4 gap-4">
-          <TeamMetric label="AVG PTS" value={result.teamStats.avgPts.toFixed(1)} color="#00d4aa" />
-          <TeamMetric label="AVG REB" value={result.teamStats.avgReb.toFixed(1)} color="#ffd700" />
-          <TeamMetric label="AVG AST" value={result.teamStats.avgAst.toFixed(1)} color="#007aff" />
-          <TeamMetric label="AVG BLK" value={result.teamStats.avgBlk.toFixed(1)} color="#af52de" />
+        <div className="mt-2.5 grid grid-cols-3 sm:grid-cols-5 gap-2.5">
+          {(Object.keys(STAT_LABELS) as Array<keyof PlayerStats>).map(stat => {
+            const key = stat === 'pts' ? 'avgPts' : stat === 'reb' ? 'avgReb' : stat === 'ast' ? 'avgAst' : stat === 'stl' ? 'avgStl' : 'avgBlk';
+            const value = (result.teamStats as unknown as Record<string, number>)[key] ?? 0;
+            return <TeamMetric key={stat} label={STAT_LABELS[stat]} value={Number(value).toFixed(1)} color={STAT_COLORS[stat]} />;
+          })}
         </div>
       </motion.div>
 
@@ -411,12 +395,12 @@ function GameBoxScoreModal({ game, onClose }: { game: GameResult; onClose: () =>
 
 function StatCard({ label, value, icon: Icon, iconColor, trend, trendLabel }: { label: string; value: string; icon: React.ElementType; iconColor: string; trend?: 'positive' | 'negative'; trendLabel?: string }) {
   return (
-    <div className="card-elevated p-5">
-      <div className="flex items-center justify-between mb-2">
+    <div className="card-elevated p-4">
+      <div className="flex items-center justify-between mb-1.5">
         <span className="text-xs text-broadcast-text-muted uppercase tracking-wider">{label}</span>
-        <Icon className={cn('w-6 h-6', iconColor)} aria-hidden="true" />
+        <Icon className={cn('w-5 h-5', iconColor)} aria-hidden="true" />
       </div>
-      <div className="font-display text-3xl font-bold text-white">{value}</div>
+      <div className="font-display text-4xl font-bold text-white">{value}</div>
       {trend && (
         <div className={cn('mt-1 text-xs font-medium', trend === 'positive' ? 'text-green-400' : 'text-red-400')}>
           {trend === 'positive' ? 'Above .500' : 'Below .500'}
@@ -429,21 +413,11 @@ function StatCard({ label, value, icon: Icon, iconColor, trend, trendLabel }: { 
   );
 }
 
-function TeamStatCard({ label, value, color }: { label: string; value: string; color: string }) {
-  return (
-    <div className="card p-4 text-center">
-      <div className="text-[10px] text-broadcast-text-muted uppercase tracking-wider mb-1">{label}</div>
-      <div className="font-display text-2xl font-bold" style={{ color }}>{value}</div>
-      <div className="text-[10px] text-broadcast-text-muted">PER GAME</div>
-    </div>
-  );
-}
-
 function TeamMetric({ label, value, color }: { label: string; value: string; color: string }) {
   return (
-    <div className="text-center p-3 bg-broadcast-darker rounded-lg">
-      <div className="text-[10px] text-broadcast-text-muted uppercase tracking-wider mb-1">{label}</div>
-      <div className="font-display text-xl font-bold" style={{ color }}>{value}</div>
+    <div className="text-center p-2.5 bg-broadcast-darker rounded-lg">
+      <div className="text-xs text-broadcast-text-muted uppercase tracking-wider mb-1">{label}</div>
+      <div className="font-display text-3xl font-bold" style={{ color }}>{value}</div>
     </div>
   );
 }

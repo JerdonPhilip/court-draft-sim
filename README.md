@@ -8,6 +8,7 @@ An NBA roster-building and 82-game simulation game inspired by 82-0.com. Build y
 - **5-Round Draft**: Fill PG, SG, SF, PF, C positions with strategic picks
 - **Franchise/Decade Rerolls**: Limited tactical rerolls — keep the decade and roll a new team, or vice versa
 - **82-Game Simulation**: Non-linear win curve that makes 82-0 progressively harder unless all stats are balanced
+- **Era Seasons**: Take your roster against a full 82-game schedule in any decade (1960s–2020s) with real historical lineups, or the default mixed league
 - **VS Mode**: Challenge historical all-time great teams (96 Bulls, 17 Warriors, 01 Lakers, etc.)
 - **Dark Mode Sports Broadcast UI**: High-contrast, animated interface modeled after modern sports dashboards
 
@@ -104,6 +105,7 @@ npm run start
 5. **Use Rerolls** strategically (3 Franchise Rerolls, 3 Decade Rerolls per game)
 
 ### Simulation Phase
+- Pick your season: mixed modern league or any era (1960s–2020s) with real historical lineups
 - Player ratings (PTS, REB, AST, STL, BLK) feed into a weighted algorithm
 - Position-specific weights ensure balanced lineups perform better
 - **Non-linear win curve**: 82-0 requires elite balance across ALL categories
@@ -132,15 +134,16 @@ GET  /api/players/decade/:decade
 GET  /api/players/franchise/:franchise
 GET  /api/players/search/:query
 
-POST /api/simulation/season         # Simulate 82-game season
+POST /api/simulation/season         # Simulate 82-game season (optional era: 1960s–2020s)
 POST /api/simulation/game           # Simulate single game
 POST /api/simulation/vs-mode        # VS Mode simulation
 GET  /api/simulation/historical-teams  # List historical teams
+GET  /api/simulation/eras          # List playable season eras with difficulty
 ```
 
 ## Player Database
 
-The game includes 820+ historical players across 7 eras:
+The game includes 910+ historical players across 7 eras:
 - **1960s**: Russell, Chamberlain, Robertson, West, Baylor, Pettit, Lucas, Reed, Hayes, Alcindor, Monroe, Cunningham + full 4–7 man pools for all 14 period franchises
 - **1970s**: Kareem, Dr. J, Maravich, Gervin, Cowens, Barry, Walton, McAdoo, Frazier, Reed, Hayes + full pools for all 22 ABA/NBA lineages
 - **1980s**: Magic, Bird, Moses, Isiah, Dominique, Jordan, Moncrief, Dantley, B. King, Sikma + full pools for all 23 lineages
@@ -148,12 +151,6 @@ The game includes 820+ historical players across 7 eras:
 - **2000s**: Shaq, Kobe, Duncan, KG, Dirk, Nash, Iverson, Wade, LeBron, Yao, Kidd, Webber, Pierce, Carter + full pools for all 29 lineages
 - **2010s**: LeBron, Curry, KD, Kawhi, Harden, Giannis, AD, Jokic, Rose, Dwight, Wall, Westbrook + full pools for all 29 lineages
 - **2020s**: Jokic, Giannis, Luka, SGA, Tatum, Wemby, Embiid, Trae, Morant, Paolo, Cade, Hali + full pools for all 30 lineages
-- **1970s**: Kareem, Dr. J, Maravich, Gervin, Cowens
-- **1980s**: Magic, Bird, Moses, Isiah, Dominique
-- **1990s**: Jordan, Hakeem, Malone, Stockton, Robinson, Shaq
-- **2000s**: Shaq, Kobe, Duncan, KG, Dirk, Nash, Iverson, Wade
-- **2010s**: LeBron, Curry, KD, Kawhi, Harden, Giannis, AD, Jokic
-- **2020s**: Jokic, Giannis, Luka, Curry, Tatum, SGA, Wemby, Embiid
 
 ## License
 

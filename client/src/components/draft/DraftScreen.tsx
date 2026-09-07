@@ -223,7 +223,7 @@ export function DraftScreen() {
                   <Zap className="w-6 h-6 text-broadcast-gold" aria-hidden="true" />
                 </div>
                 <p className="text-broadcast-text-secondary mb-4">
-                  Your 5-man dynasty is ready. Picks are locked — simulate the 82-game season to see if you can go 82-0.
+                  Your 5-man dynasty is ready. Picks are locked — choose which era to take them against.
                 </p>
                 <button
                   onClick={() => void finalizeDraft()}
@@ -231,7 +231,7 @@ export function DraftScreen() {
                   disabled={isSpinning || isLoading}
                 >
                   <Trophy className="w-5 h-5" aria-hidden="true" />
-                  {isLoading ? 'SIMULATING...' : 'SIMULATE 82-GAME SEASON'}
+                  CHOOSE SEASON ERA
                 </button>
               </motion.div>
             )}
@@ -264,7 +264,7 @@ export function DraftScreen() {
               className="btn-primary px-6 py-2.5"
             >
               <Trophy className="h-5 w-5" aria-hidden="true" />
-              {isLoading ? 'SIMULATING...' : 'SIMULATE SEASON'}
+              PICK ERA
             </button>
           </div>
         </div>

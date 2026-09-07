@@ -1,7 +1,9 @@
 import { Router, Request, Response } from 'express';
 import { z } from 'zod';
-import { simulateSeason, getTeamStrength, calculateNonLinearWinCurve, simulateSingleGame } from '../services/simulationEngine.js';
-import { DEFAULT_SIMULATION_CONFIG, SIMULATION_CONSTANTS } from '../services/constants.js';
+import { simulateSeason, getTeamStrength, getBaseTeamImpact, strengthVsLeague, calculateNonLinearWinCurve, simulateSingleGame } from '../services/simulationEngine.js';
+import { DEFAULT_SIMULATION_CONFIG, SIMULATION_CONSTANTS, LEAGUE_AVG_IMPACT } from '../services/constants.js';
+import { getEraLeague, getAllEraLeagues } from '../services/eraRosters.js';
+import { DECADES } from '../data/constants.js';
 import { Player, Position, getPlayerPositions } from '../types/game.js';
 import { getAllHistoricalTeams } from '../data/historicalTeams.js';
 import { randomInt } from 'node:crypto';
@@ -66,6 +68,8 @@ const lineupSchema = z.array(playerSchema).length(5)
 
 const simulateSeasonSchema = z.object({
   lineup: lineupSchema,
+  // Optional era (decade id). Omit for the default mixed modern league.
+  era: z.enum(DECADES.map(d => d.id) as unknown as [string, ...string[]]).optional(),
   config: z.object({
     variance: z.number().finite().min(0).max(1).optional(),
     homeCourtAdvantage: z.number().finite().min(0).max(0.2).optional(),
@@ -85,21 +89,62 @@ const vsModeSchema = z.object({
   seriesLength: z.union([z.literal(1), z.literal(7)]),
 });
 
+router.get('/eras', (req: Request, res: Response) => {
+  const leagues = getAllEraLeagues().map(l => {
+    const diff = l.avgImpact - LEAGUE_AVG_IMPACT;
+    return {
+      id: l.decade,
+      label: l.label,
+      era: l.era,
+      range: l.range,
+      teams: l.teamCount,
+      avgOverall: Number(l.avgOverall.toFixed(1)),
+      difficulty: diff < -4 ? 'Developing league' : diff < 0 ? 'Classic' : diff < 3 ? 'Golden age' : 'Superteam era',
+    };
+  });
+  res.json({ eras: leagues });
+});
+
 router.post('/season', (req: Request, res: Response) => {
   const result = simulateSeasonSchema.safeParse(req.body);
   if (!result.success) {
     return res.status(400).json({ error: 'Invalid request', details: result.error.flatten() });
   }
 
-  const { lineup, config } = result.data;
+  const { lineup, era, config } = result.data;
   const players = lineup as Player[];
 
-  const { pools, names } = generateOpponentPools();
+  // Era season: real historical lineups from that decade. Default: the
+  // synthetic mixed modern league.
+  let opponentPool: Player[][];
+  let opponentNames: string[];
+  let eraMeta: { id: string; label: string } | null = null;
+  let eraAvgImpact: number | undefined;
+  if (era) {
+    const league = getEraLeague(era);
+    if (!league) {
+      return res.status(404).json({ error: 'Era not found' });
+    }
+    opponentPool = league.opponents.map(o => o.lineup);
+    opponentNames = league.opponents.map(o => o.name);
+    eraMeta = { id: league.decade, label: league.label };
+    eraAvgImpact = league.avgImpact;
+  } else {
+    const generated = generateOpponentPools();
+    opponentPool = generated.pools;
+    opponentNames = generated.names;
+  }
   const simulationConfig = { ...DEFAULT_SIMULATION_CONFIG, ...config };
 
-  const seasonResult = simulateSeason(players, pools, simulationConfig, names);
+  const seasonResult = simulateSeason(players, opponentPool, simulationConfig, opponentNames);
   const teamStrength = getTeamStrength(players);
-  const projectedWins = calculateNonLinearWinCurve(teamStrength);
+  // Project against the league actually played: era leagues differ in
+  // strength (a 60s season is easier than a modern one), so the same
+  // roster projects differently per era.
+  const effectiveStrength = eraAvgImpact === undefined
+    ? teamStrength
+    : strengthVsLeague(getBaseTeamImpact(players), eraAvgImpact);
+  const projectedWins = calculateNonLinearWinCurve(effectiveStrength);
 
   const formattedResult = {
     wins: seasonResult.wins,
@@ -107,6 +152,7 @@ router.post('/season', (req: Request, res: Response) => {
     winPct: Number((seasonResult.wins / SIMULATION_CONSTANTS.MAX_GAMES).toFixed(3)),
     projectedWins,
     teamStrength,
+    era: eraMeta,
     games: seasonResult.games.map(g => ({
       gameNumber: g.gameNumber,
       opponent: g.opponent,

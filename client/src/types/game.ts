@@ -87,12 +87,24 @@ export interface DraftState {
   error: string | null;
 }
 
+export interface EraInfo {
+  id: string;
+  label: string;
+  era: string;
+  range: string;
+  teams: number;
+  avgOverall: number;
+  difficulty: string;
+}
+
 export interface SimulationResult {
   wins: number;
   losses: number;
   winPct: number;
   projectedWins?: number;
   teamStrength?: number;
+  /** Null = default mixed modern league. */
+  era: { id: string; label: string } | null;
   games: GameResult[];
   playerStats: SimulatedPlayerStats[];
   teamStats: TeamSeasonStats;
@@ -161,7 +173,7 @@ export interface VSBoxScore {
 }
 
 export interface AppState {
-  phase: 'draft' | 'simulation' | 'results' | 'vs-mode';
+  phase: 'draft' | 'season-setup' | 'simulation' | 'results' | 'vs-mode';
   draftState: DraftState;
   simulationResult: SimulationResult | null;
   vsMatchup: VSModeMatchup | null;
