@@ -13,9 +13,12 @@ interface PlayerPoolProps {
   } | null;
   draftedPlayerIds: string[];
   onDraftPlayer: (player: Player) => void;
+  onDragStartPlayer: (player: Player) => void;
+  onDragEndPlayer: () => void;
   /** Currently unfilled slots — a card is draftable if it fits ANY of these. */
   emptyPositions: Position[];
   lineupSlots: LineupSlot[];
+  selectedSlotPosition: Position | null;
 }
 
 function fittingEmptySlots(player: Player, slots: LineupSlot[]): Position[] {
@@ -25,7 +28,7 @@ function fittingEmptySlots(player: Player, slots: LineupSlot[]): Position[] {
     .filter(pos => canPlayPosition(player, pos));
 }
 
-export function PlayerPool({ pool, draftedPlayerIds, onDraftPlayer, emptyPositions, lineupSlots }: PlayerPoolProps) {
+export function PlayerPool({ pool, draftedPlayerIds, onDraftPlayer, onDragStartPlayer, onDragEndPlayer, emptyPositions, lineupSlots, selectedSlotPosition }: PlayerPoolProps) {
   if (!pool) return null;
 
   const availablePlayers = pool.players.filter((p: Player) => !draftedPlayerIds.includes(p.id));
@@ -55,8 +58,12 @@ export function PlayerPool({ pool, draftedPlayerIds, onDraftPlayer, emptyPositio
 
         {emptyPositions.length > 0 && (
           <p className="text-sm text-broadcast-text-secondary" aria-live="polite">
-            Open slots: <span className="font-bold text-broadcast-accent">{emptyPositions.join(', ')}</span>
-            {' '}— anyone who fits a highlighted slot can be picked, any order. Flex players show all their spots.
+            {selectedSlotPosition ? (
+              <><span className="font-bold text-broadcast-gold">{selectedSlotPosition} slot selected</span> — click a fitting player or drag one onto a glowing slot.</>
+            ) : (
+              <><span className="font-bold text-broadcast-accent">Open: {emptyPositions.join(', ')}</span> — pick a slot first, then a player.</>
+            )}
+            {' '}Flex players show all their spots and can be dragged to any of them.
           </p>
         )}
 
@@ -65,27 +72,45 @@ export function PlayerPool({ pool, draftedPlayerIds, onDraftPlayer, emptyPositio
             const fits = fittingEmptySlots(player, lineupSlots);
             const isDraftable = fits.length > 0;
             const isFlex = (player.secondaryPositions?.length ?? 0) > 0;
+            const fitsSelected = selectedSlotPosition !== null && canPlayPosition(player, selectedSlotPosition);
             return (
-              <motion.button
+              <motion.div
                 key={player.id}
-                type="button"
                 role="listitem"
                 initial={{ opacity: 0, scale: 0.95, y: 10 }}
                 animate={{ opacity: 1, scale: 1, y: 0 }}
                 transition={{ duration: 0.3, delay: Math.min(index * 0.05, 0.3) }}
+              >
+              <button
+                type="button"
+                draggable={isDraftable}
+                onDragStart={(e: React.DragEvent<HTMLButtonElement>) => {
+                  e.dataTransfer.setData('application/json', JSON.stringify(player));
+                  e.dataTransfer.effectAllowed = 'move';
+                  onDragStartPlayer(player);
+                }}
+                onDragEnd={onDragEndPlayer}
                 className={cn(
-                  'player-card relative overflow-hidden group text-left w-full',
-                  !isDraftable && 'opacity-40'
+                  'player-card relative overflow-hidden group text-left w-full cursor-grab active:cursor-grabbing',
+                  !isDraftable && 'opacity-40',
+                  selectedSlotPosition && isDraftable && !fitsSelected && 'ring-1 ring-broadcast-red/40',
+                  selectedSlotPosition && fitsSelected && 'ring-1 ring-broadcast-gold/60'
                 )}
                 onClick={() => onDraftPlayer(player)}
                 disabled={!isDraftable}
                 aria-disabled={!isDraftable}
                 aria-label={
                   isDraftable
-                    ? `Draft ${player.name}, plays ${getPlayerPositions(player).join('/')}, fits ${fits.join(', ')}`
+                    ? `Draft ${player.name}, plays ${getPlayerPositions(player).join('/')}${selectedSlotPosition ? `, selected slot ${selectedSlotPosition}${fitsSelected ? ' fits' : ' does not fit'}` : `, fits ${fits.join(', ')}`}. Drag to a slot or click to draft.`
                     : `${player.name}, plays ${getPlayerPositions(player).join('/')} — doesn't fit open slots ${emptyPositions.join(', ')}`
                 }
-                title={isDraftable ? `Draft ${player.name} → ${fits.join(' or ')}` : `No open slot for ${getPlayerPositions(player).join('/')}`}
+                title={
+                  !isDraftable
+                    ? `No open slot for ${getPlayerPositions(player).join('/')}`
+                    : selectedSlotPosition && !fitsSelected
+                      ? `${player.name} doesn't fit the selected ${selectedSlotPosition} slot — pick another slot or player`
+                      : `Draft ${player.name} → ${selectedSlotPosition ?? fits.join(' or ')} (or drag)`
+                }
               >
                 <div
                   className="absolute top-0 left-0 w-1 h-full"
@@ -124,7 +149,14 @@ export function PlayerPool({ pool, draftedPlayerIds, onDraftPlayer, emptyPositio
 
                     <div className="text-xs mb-2.5">
                       {isDraftable ? (
-                        <span className="text-broadcast-accent font-medium">Fits: {fits.join(', ')}</span>
+                        <span className="text-broadcast-accent font-medium">
+                          Fits: {fits.join(', ')}
+                          {selectedSlotPosition && (
+                            fitsSelected
+                              ? ` • fits selected ${selectedSlotPosition}`
+                              : ` • not ${selectedSlotPosition} — change slot`
+                          )}
+                        </span>
                       ) : (
                         <span className="text-broadcast-text-muted">Needs: {getPositionLabel(player.position)} — no open slot</span>
                       )}
@@ -153,7 +185,8 @@ export function PlayerPool({ pool, draftedPlayerIds, onDraftPlayer, emptyPositio
                   <StatMini label="STL" value={player.stats.stl} color="text-broadcast-green" />
                   <StatMini label="BLK" value={player.stats.blk} color="text-broadcast-purple" />
                 </div>
-              </motion.button>
+              </button>
+              </motion.div>
             );
           })}
         </div>

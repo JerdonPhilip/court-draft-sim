@@ -1,12 +1,12 @@
-import { useCallback, useMemo } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { motion } from 'framer-motion';
-import { ArrowLeft, RotateCcw, Trophy, Zap } from 'lucide-react';
+import { RotateCcw, Trophy, Zap } from 'lucide-react';
 import { useGameStore } from '../../store/gameStore';
 import { SlotMachine } from './SlotMachine';
 import { PlayerPool } from './PlayerPool';
 import { LineupBuilder } from './LineupBuilder';
 import { calculateTeamStrength, getWinProjection } from '../../utils/helpers';
-import { canPlayPosition } from '../../types/game';
+import { canPlayPosition, getPlayerPositions } from '../../types/game';
 import type { Player } from '../../types/game';
 
 export function DraftScreen() {
@@ -16,7 +16,6 @@ export function DraftScreen() {
     useTeamSkip,
     useDecadeSkip,
     draftPlayer,
-    removePlayerFromSlot,
     finalizeDraft,
     initializeDraft,
     isLoading,
@@ -38,9 +37,51 @@ export function DraftScreen() {
     [lineup]
   );
 
-  const handleDraftPlayer = (player: Player) => {
-    // Free-order drafting: fill any empty slot this player can cover.
-    // Prefer their primary position, fall back to a secondary fit (e.g. KG to C).
+  // Slot-first drafting: click an open slot, then click (or drag) a player into it.
+  const [selectedSlot, setSelectedSlot] = useState<number | null>(null);
+  const [draggedPlayer, setDraggedPlayer] = useState<Player | null>(null);
+
+  // Default the selection to the first open slot; advance it as picks land.
+  useEffect(() => {
+    const firstEmpty = lineup.slots.findIndex(s => !s.player);
+    if (firstEmpty === -1) {
+      setSelectedSlot(null);
+      return;
+    }
+    setSelectedSlot(prev => {
+      if (prev === null) return firstEmpty;
+      const prevSlot = lineup.slots[prev];
+      if (!prevSlot || prevSlot.player) return firstEmpty;
+      return prev;
+    });
+  }, [lineup]);
+
+  const handleSelectSlot = useCallback((index: number) => {
+    const slot = lineup.slots[index];
+    if (!slot || slot.player) return; // picks are final — filled slots can't be re-selected
+    setSelectedSlot(index);
+  }, [lineup]);
+
+  const handleDraftPlayer = useCallback((player: Player, targetSlot?: number) => {
+    const explicit = targetSlot ?? selectedSlot;
+    if (explicit !== null && explicit !== undefined) {
+      const slot = lineup.slots[explicit];
+      if (slot && !slot.player) {
+        if (!canPlayPosition(player, slot.position)) {
+          const plays = getPlayerPositions(player).join('/');
+          useGameStore.setState(prev => ({
+            draftState: {
+              ...prev.draftState,
+              error: `Player not suitable for the position — ${player.name} plays ${plays}, not ${slot.position}.`,
+            },
+          }));
+          return;
+        }
+        draftPlayer(player, explicit);
+        return;
+      }
+    }
+    // No usable selection — fall back to best-fit routing (primary first, then flex).
     const primaryIdx = lineup.slots.findIndex(s => !s.player && s.position === player.position);
     if (primaryIdx !== -1) {
       draftPlayer(player, primaryIdx);
@@ -51,28 +92,22 @@ export function DraftScreen() {
       draftPlayer(player, flexIdx);
       return;
     }
-    // No fitting empty slot — store surfaces the explanation.
     const fallback = lineup.slots.findIndex(s => !s.player);
     draftPlayer(player, fallback === -1 ? 0 : fallback);
-  };
+  }, [draftPlayer, lineup, selectedSlot]);
+
+  const handleDropToSlot = useCallback((player: Player, slotIndex: number) => {
+    setDraggedPlayer(null);
+    handleDraftPlayer(player, slotIndex);
+  }, [handleDraftPlayer]);
 
   const handleSpinComplete = useCallback((_pool: unknown) => {
     // No-op: store already holds the pool. Stable ref avoids retriggering SlotMachine effects.
   }, []);
 
-  const handleUndo = () => {
-    // Remove the most recently filled slot, not currentRound-1 (which is empty).
-    for (let i = lineup.slots.length - 1; i >= 0; i--) {
-      if (lineup.slots[i]?.player) {
-        removePlayerFromSlot(i);
-        return;
-      }
-    }
-  };
-
   const isLineupComplete = lineup.slots.every(s => s.player !== null);
-  const canUndo = lineup.slots.some(s => s.player !== null);
   const draftError = draftState.error ?? globalError;
+  const selectedPosition = selectedSlot !== null ? lineup.slots[selectedSlot]?.position ?? null : null;
 
   return (
     <div className="min-h-screen bg-broadcast-dark">
@@ -98,7 +133,7 @@ export function DraftScreen() {
                   {isLineupComplete
                     ? `LINEUP COMPLETE • ${maxRounds} OF ${maxRounds}`
                     : emptyPositions.length === maxRounds
-                      ? `ROUND 1 OF ${maxRounds} • DRAFT ANY POSITION`
+                      ? `ROUND 1 OF ${maxRounds} • PICK A SLOT, THEN A PLAYER`
                       : `PICK ${filledPlayers.length + 1} OF ${maxRounds} • NEED: ${emptyPositions.join(', ')}`}
                 </p>
               </div>
@@ -144,9 +179,12 @@ export function DraftScreen() {
               <PlayerPool
                 pool={pool}
                 draftedPlayerIds={draftedPlayers}
-                onDraftPlayer={handleDraftPlayer}
+                onDraftPlayer={(player) => handleDraftPlayer(player)}
+                onDragStartPlayer={setDraggedPlayer}
+                onDragEndPlayer={() => setDraggedPlayer(null)}
                 emptyPositions={emptyPositions}
                 lineupSlots={lineup.slots}
+                selectedSlotPosition={selectedPosition}
               />
             ) : (
               !isSpinning && !isLineupComplete && (
@@ -172,7 +210,7 @@ export function DraftScreen() {
                   <Zap className="w-6 h-6 text-broadcast-gold" aria-hidden="true" />
                 </div>
                 <p className="text-broadcast-text-secondary mb-4">
-                  Your 5-man dynasty is ready. Simulate the 82-game season to see if you can go 82-0.
+                  Your 5-man dynasty is ready. Picks are locked — simulate the 82-game season to see if you can go 82-0.
                 </p>
                 <button
                   onClick={() => void finalizeDraft()}
@@ -189,8 +227,10 @@ export function DraftScreen() {
           <div className="lg:col-span-1">
             <LineupBuilder
               lineup={lineup.slots}
-              currentRound={currentRound}
-              onRemovePlayer={removePlayerFromSlot}
+              selectedSlot={selectedSlot}
+              draggedPlayer={draggedPlayer}
+              onSelectSlot={handleSelectSlot}
+              onDropPlayer={handleDropToSlot}
               teamStrength={teamStrength}
               projectedWins={projectedWins}
             />
@@ -198,16 +238,6 @@ export function DraftScreen() {
         </div>
 
         <div className="mt-8 flex items-center justify-center gap-4">
-          {canUndo && (
-            <button
-              onClick={handleUndo}
-              disabled={isSpinning}
-              className="btn-secondary"
-            >
-              <ArrowLeft className="w-4 h-4" aria-hidden="true" />
-              UNDO LAST PICK
-            </button>
-          )}
           {!isLineupComplete && pool && (
             <button
               onClick={() => void spinDraftPool()}

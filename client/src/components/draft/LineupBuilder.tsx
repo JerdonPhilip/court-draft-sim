@@ -1,37 +1,95 @@
+import { useState } from 'react';
 import { motion } from 'framer-motion';
-import { Plus, X, Star, Trophy } from 'lucide-react';
+import { Plus, Star, Trophy } from 'lucide-react';
 import { cn, getPositionColor, getPositionLabel } from '../../utils/helpers';
-import { getPlayerPositions } from '../../types/game';
-import type { LineupSlot } from '../../types/game';
+import { canPlayPosition, getPlayerPositions } from '../../types/game';
+import type { LineupSlot, Player, Position } from '../../types/game';
 import { POSITIONS } from '../../data/constants';
 
 interface SlotProps {
   slot: LineupSlot;
   index: number;
-  hasAnyEmpty: boolean;
-  onRemove: (index: number) => void;
+  isSelected: boolean;
+  draggedPlayer: Player | null;
+  onSelect: (index: number) => void;
+  onDropPlayer: (player: Player, slotIndex: number) => void;
 }
 
-function Slot({ slot, index, hasAnyEmpty, onRemove }: SlotProps) {
+function Slot({ slot, index, isSelected, draggedPlayer, onSelect, onDropPlayer }: SlotProps) {
   const hasPlayer = !!slot.player;
   const expectedPos = POSITIONS[index]!;
-  const isNextUp = !hasPlayer && hasAnyEmpty;
+  const [isDragOver, setIsDragOver] = useState(false);
   const flexLabel = slot.player && (slot.player.secondaryPositions?.length ?? 0) > 0
     ? getPlayerPositions(slot.player).join('/')
     : null;
 
+  const dropEligible = !hasPlayer && draggedPlayer !== null && canPlayPosition(draggedPlayer, slot.position);
+  const dropBlocked = !hasPlayer && draggedPlayer !== null && !canPlayPosition(draggedPlayer, slot.position);
+
+  const readDraggedPlayer = (e: React.DragEvent): Player | null => {
+    if (draggedPlayer) return draggedPlayer;
+    try {
+      const raw = e.dataTransfer.getData('application/json');
+      if (raw) return JSON.parse(raw) as Player;
+    } catch {
+      return null;
+    }
+    return null;
+  };
+
+  const emptySlotBody = (
+    <div className="flex flex-col items-center justify-center h-32">
+      <div
+        className="w-16 h-16 rounded-xl border-2 border-dashed flex items-center justify-center mb-3"
+        style={{ borderColor: getPositionColor(expectedPos) }}
+      >
+        <Plus className="w-8 h-8" style={{ color: getPositionColor(expectedPos) }} aria-hidden="true" />
+      </div>
+      <div
+        className="w-8 h-8 rounded-lg flex items-center justify-center font-bold text-white text-sm"
+        style={{ backgroundColor: getPositionColor(expectedPos) }}
+      >
+        {expectedPos}
+      </div>
+      <span className="mt-2 font-medium text-broadcast-text-secondary text-sm">
+        {getPositionLabel(expectedPos)}
+      </span>
+      {isSelected && !draggedPlayer && (
+        <motion.p
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          className="mt-1 text-xs text-broadcast-gold font-bold"
+        >
+          SELECTED →
+        </motion.p>
+      )}
+      {dropEligible && (
+        <p className="mt-1 text-xs text-broadcast-accent font-bold">
+          {isDragOver ? 'RELEASE TO DRAFT' : 'DROP HERE'}
+        </p>
+      )}
+      {dropBlocked && (
+        <p className="mt-1 text-xs text-broadcast-red font-medium">NO FIT</p>
+      )}
+    </div>
+  );
+
   return (
     <motion.div
       className={cn('relative group')}
-      animate={{ opacity: hasPlayer ? 1 : isNextUp ? 0.9 : 0.55 }}
+      animate={{ opacity: hasPlayer ? 1 : 0.9 }}
     >
       <div
         className={cn(
           'relative p-4 rounded-xl transition-all duration-300',
           hasPlayer
             ? 'bg-broadcast-card border-2 border-broadcast-accent/50 shadow-glow-accent player-card-selected'
-            : isNextUp
-            ? 'bg-broadcast-accent/10 border-2 border-dashed border-broadcast-accent animate-pulse'
+            : isSelected
+            ? 'bg-broadcast-gold/10 border-2 border-broadcast-gold shadow-glow-gold'
+            : dropEligible
+            ? 'bg-broadcast-accent/10 border-2 border-dashed border-broadcast-accent shadow-glow-accent'
+            : dropBlocked
+            ? 'bg-broadcast-darker border border-broadcast-red/40 opacity-60'
             : 'bg-broadcast-darker border border-broadcast-border'
         )}
       >
@@ -49,13 +107,9 @@ function Slot({ slot, index, hasAnyEmpty, onRemove }: SlotProps) {
                   {getPositionLabel(slot.position)} slot{flexLabel ? ` • ${flexLabel}` : ''}
                 </span>
               </div>
-              <button
-                onClick={(e) => { e.stopPropagation(); onRemove(index); }}
-                className="p-1.5 rounded-lg hover:bg-broadcast-red/20 text-broadcast-red transition-colors flex-shrink-0 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 sm:focus-within:opacity-100 focus:opacity-100 focus-visible:ring-2 focus-visible:ring-broadcast-red"
-                aria-label={`Remove ${slot.player.name}`}
-              >
-                <X className="w-4 h-4" aria-hidden="true" />
-              </button>
+              <span className="px-2 py-0.5 text-[10px] font-bold rounded-full bg-broadcast-accent/15 text-broadcast-accent border border-broadcast-accent/30 flex-shrink-0">
+                LOCKED
+              </span>
             </div>
 
             <div className="flex items-start gap-3">
@@ -104,33 +158,27 @@ function Slot({ slot, index, hasAnyEmpty, onRemove }: SlotProps) {
             </div>
           </>
         ) : (
-          <div className="flex flex-col items-center justify-center h-32">
-            <div
-              className="w-16 h-16 rounded-xl border-2 border-dashed flex items-center justify-center mb-3"
-              style={{ borderColor: getPositionColor(expectedPos) }}
-            >
-              <Plus className="w-8 h-8" style={{ color: getPositionColor(expectedPos) }} aria-hidden="true" />
-            </div>
-            <div
-              className="w-8 h-8 rounded-lg flex items-center justify-center font-bold text-white text-sm"
-              style={{ backgroundColor: getPositionColor(expectedPos) }}
-            >
-              {expectedPos}
-            </div>
-            <span className="mt-2 font-medium text-broadcast-text-secondary text-sm">
-              {getPositionLabel(expectedPos)}
-            </span>
-            {isNextUp && (
-              <motion.p
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                transition={{ repeat: Infinity, duration: 1 }}
-                className="mt-1 text-xs text-broadcast-accent font-medium"
-              >
-                OPEN →
-              </motion.p>
-            )}
-          </div>
+          <button
+            type="button"
+            onClick={() => onSelect(index)}
+            onDragOver={(e) => {
+              e.preventDefault();
+              e.dataTransfer.dropEffect = 'move';
+              setIsDragOver(true);
+            }}
+            onDragLeave={() => setIsDragOver(false)}
+            onDrop={(e) => {
+              e.preventDefault();
+              setIsDragOver(false);
+              const player = readDraggedPlayer(e);
+              if (player) onDropPlayer(player, index);
+            }}
+            className="w-full rounded-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-broadcast-gold"
+            aria-label={`Select ${slot.position} slot (${getPositionLabel(slot.position)})${isSelected ? ', selected' : ''}`}
+            aria-pressed={isSelected}
+          >
+            {emptySlotBody}
+          </button>
         )}
       </div>
     </motion.div>
@@ -148,15 +196,23 @@ function StatMini({ label, value, color }: { label: string; value: number; color
 
 interface LineupBuilderProps {
   lineup: LineupSlot[];
-  currentRound?: number;
-  onRemovePlayer: (index: number) => void;
+  selectedSlot: number | null;
+  draggedPlayer: Player | null;
+  onSelectSlot: (index: number) => void;
+  onDropPlayer: (player: Player, slotIndex: number) => void;
   teamStrength: number;
   projectedWins: number;
 }
 
-export function LineupBuilder({ lineup, onRemovePlayer, teamStrength, projectedWins }: LineupBuilderProps) {
+function eligibleLabel(player: Player | null): string {
+  if (!player) return '';
+  return getPlayerPositions(player).join('/');
+}
+
+export function LineupBuilder({ lineup, selectedSlot, draggedPlayer, onSelectSlot, onDropPlayer, teamStrength, projectedWins }: LineupBuilderProps) {
   const filled = lineup.filter(s => s.player).length;
-  const hasAnyEmpty = filled < lineup.length;
+  const selectedPos: Position | null = selectedSlot !== null ? lineup[selectedSlot]?.position ?? null : null;
+  void eligibleLabel;
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
@@ -173,14 +229,24 @@ export function LineupBuilder({ lineup, onRemovePlayer, teamStrength, projectedW
         </div>
       </div>
 
+      <p className="text-xs text-broadcast-text-secondary" aria-live="polite">
+        {draggedPlayer
+          ? `Placing ${draggedPlayer.name} (${eligibleLabel(draggedPlayer)}) — glowing slots accept him.`
+          : selectedPos
+            ? `${selectedPos} slot selected — click a fitting player, or drag one in. Picks lock once made.`
+            : 'Click an open slot to target it, then pick a player. Picks lock once made.'}
+      </p>
+
       <div className="grid grid-cols-1 gap-4">
         {lineup.map((slot, index) => (
           <Slot
             key={`${slot.position}-${index}`}
             slot={slot}
             index={index}
-            hasAnyEmpty={hasAnyEmpty}
-            onRemove={onRemovePlayer}
+            isSelected={selectedSlot === index}
+            draggedPlayer={draggedPlayer}
+            onSelect={onSelectSlot}
+            onDropPlayer={onDropPlayer}
           />
         ))}
       </div>
@@ -189,7 +255,7 @@ export function LineupBuilder({ lineup, onRemovePlayer, teamStrength, projectedW
         <h4 className="font-medium text-broadcast-text-secondary mb-3">TEAM CHEMISTRY — {filled}/5 SLOTS FILLED</h4>
         <div className="grid grid-cols-5 gap-4" aria-hidden="true">
           {POSITIONS.map(pos => {
-            const hasPos = lineup.some(s => s.player?.position === pos);
+            const hasPos = lineup.some(s => s.player && canPlayPosition(s.player, pos));
             return (
               <div key={pos} className="text-center" style={{ opacity: hasPos ? 1 : 0.4 }}>
                 <div

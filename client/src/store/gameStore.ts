@@ -175,13 +175,11 @@ export const useGameStore = create<GameStore>()(
           return;
         }
         if (!canPlayPosition(player, slot.position)) {
-          const flex = player.secondaryPositions?.length
-            ? ` (${player.position}/${player.secondaryPositions.join('/')})`
-            : ` (${player.position})`;
+          const plays = [player.position, ...(player.secondaryPositions ?? [])].join('/');
           set({
             draftState: {
               ...draftState,
-              error: `${player.name}${flex} can't fill the ${slot.position} slot — try an empty ${player.position} slot`,
+              error: `Player not suitable for the position — ${player.name} plays ${plays}, not ${slot.position}.`,
             },
           });
           return;
