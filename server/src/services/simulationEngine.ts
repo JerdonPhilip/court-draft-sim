@@ -8,16 +8,15 @@ import {
   GameEvent,
   PlayerSeasonStats,
   TeamSeasonStats,
-  getPlayerPositions,
 } from '../types/game.js';
-import { DEFAULT_SIMULATION_CONFIG, SIMULATION_CONSTANTS } from './constants.js';
+import { DEFAULT_SIMULATION_CONFIG, SIMULATION_CONSTANTS, LEAGUE_AVG_IMPACT, IMPACT_TO_STRENGTH, WIN_CURVE_DIVISOR } from './constants.js';
 import { randomInt } from 'node:crypto';
 
-// --- Tunable simulation knobs (documented; previously magic numbers) ---
-const BASE_SCORE = 105;
-const MIN_SCORE = 70;
-const SCORE_SPREAD_FACTOR = 0.8;
-const SCORE_NOISE = 15;
+// --- Tunable simulation knobs (see services/constants.ts) ---
+const BASE_SCORE = SIMULATION_CONSTANTS.BASE_SCORE;
+const MIN_SCORE = SIMULATION_CONSTANTS.MIN_SCORE;
+const SCORE_SPREAD_FACTOR = SIMULATION_CONSTANTS.SCORE_SPREAD_FACTOR;
+const SCORE_NOISE = SIMULATION_CONSTANTS.SCORE_NOISE;
 const THREE_POINT_RATE = 0.38;
 const AVG_POSSESSIONS = SIMULATION_CONSTANTS.BASE_PACE;
 const POSSESSION_SPREAD = 15;
@@ -411,89 +410,47 @@ function calculateTeamSeasonStats(
 }
 
 export function calculateNonLinearWinCurve(teamStrength: number): number {
-  // Maps 0-100 team strength to 0-82 wins.
-  // Elite teams can reach 82 (unlike the old curve capped at ~53):
-  // 50 -> 41, 75 -> ~63, 90 -> ~75, 100 -> ~82.
+  // Logistic win curve centered so a league-average team (strength 50)
+  // projects to 41 wins. Same model family as the sim itself, so the
+  // projection tracks actual results instead of compressing everyone
+  // into the 70s: ~28 -> 6W, ~40 -> 21W, 50 -> 41W, 60 -> 61W, ~72 -> 76W.
   const clamped = Math.max(0, Math.min(100, teamStrength));
-  const x = (clamped - 50) / 50; // [-1, 1]
-
-  let winPct: number;
-  if (x <= 0) {
-    winPct = 0.5 + x * 0.48;
-  } else {
-    winPct = 0.5 + x * 0.55 - x * x * 0.05;
-  }
-
-  winPct = Math.max(0.02, Math.min(0.995, winPct));
+  const winPct = 1 / (1 + Math.pow(10, -(clamped - 50) / WIN_CURVE_DIVISOR));
 
   return Math.round(winPct * SIMULATION_CONSTANTS.MAX_GAMES);
 }
 
+/**
+ * Deterministic base impact of a lineup: same weights as live ratings but
+ * neutral venue, no variance, no fatigue. Used for strength/projection so
+ * the estimate and the sim can never disagree structurally.
+ * Partial lineups are prorated (n/5) so draft previews read low until filled.
+ */
+export function getBaseTeamImpact(lineup: Player[]): number {
+  let total = 0;
+  let counted = 0;
+  for (const player of lineup) {
+    if (!player) continue;
+    const weights = POSITION_WEIGHTS[player.position];
+    const { stats, overall } = player;
+    total += (
+      stats.pts * weights.pts * STAT_IMPORTANCE.pts +
+      stats.reb * weights.reb * STAT_IMPORTANCE.reb +
+      stats.ast * weights.ast * STAT_IMPORTANCE.ast +
+      stats.stl * weights.stl * STAT_IMPORTANCE.stl +
+      stats.blk * weights.blk * STAT_IMPORTANCE.blk
+    ) * (overall / 100);
+    counted++;
+  }
+  if (counted === 0) return 0;
+  return total * (counted / 5);
+}
+
 export function getTeamStrength(lineup: Player[]): number {
   if (lineup.length === 0) return 0;
-  // Coverage counts versatility: Garnett (PF/C) can cover either big slot,
-  // so max bipartite matching — not just distinct primaries.
-  const positionCoverage = maxPositionCoverage(lineup);
-  // Monotonic: a full 5-position lineup always beats 4.
-  const coverageBonus = positionCoverage === 5 ? 5 : positionCoverage * 0.75;
-
-  const avgOverall = lineup.reduce((sum, p) => sum + p.overall, 0) / lineup.length;
-
-  const statBalance = calculateStatBalance(lineup);
-
-  return Math.min(100, avgOverall + coverageBonus + statBalance);
-}
-
-function maxPositionCoverage(lineup: Player[]): number {
-  const matchToPlayer = new Map<string, number>();
-  const tryAssign = (playerIdx: number, seen: Set<string>): boolean => {
-    for (const slot of getPlayerPositions(lineup[playerIdx]!)) {
-      if (seen.has(slot)) continue;
-      seen.add(slot);
-      const occupant = matchToPlayer.get(slot);
-      if (occupant === undefined || tryAssign(occupant, seen)) {
-        matchToPlayer.set(slot, playerIdx);
-        return true;
-      }
-    }
-    return false;
-  };
-  let covered = 0;
-  for (let i = 0; i < lineup.length; i++) {
-    if (tryAssign(i, new Set())) covered++;
-  }
-  return covered;
-}
-
-function calculateStatBalance(lineup: Player[]): number {
-  // Weakest-link balance bonus (0..10): elite 82-0 requires ALL categories
-  // covered, not just stacked scoring. Each category scores 0..1 against a
-  // starter-caliber threshold; the minimum dominates so one hole tanks it.
-  const n = lineup.length || 1;
-  const totals = { pts: 0, reb: 0, ast: 0, stl: 0, blk: 0 };
-
-  for (const player of lineup) {
-    totals.pts += player.stats.pts;
-    totals.reb += player.stats.reb;
-    totals.ast += player.stats.ast;
-    totals.stl += player.stats.stl;
-    totals.blk += player.stats.blk;
-  }
-
-  const avgPts = totals.pts / n;
-  const avgReb = totals.reb / n;
-  const avgAst = totals.ast / n;
-  const avgStl = totals.stl / n;
-  const avgBlk = totals.blk / n;
-
-  const ptsScore = Math.min(1, avgPts / 18);
-  const rebScore = Math.min(1, avgReb / 8);
-  const astScore = Math.min(1, avgAst / 5.5);
-  const stlScore = Math.min(1, avgStl / 1.2);
-  const blkScore = Math.min(1, avgBlk / 1.1);
-
-  const weakest = Math.min(ptsScore, rebScore, astScore, stlScore, blkScore);
-  const average = (ptsScore + rebScore + astScore + stlScore + blkScore) / 5;
-
-  return weakest * 7 + average * 3;
+  // Strength is just the base-impact differential vs a league-average
+  // opponent, scaled to 0-100. Full 5-man coverage is enforced by
+  // validation, so no separate coverage bonus is needed.
+  const base = getBaseTeamImpact(lineup);
+  return Math.max(0, Math.min(100, Math.round(50 + (base - LEAGUE_AVG_IMPACT) * IMPACT_TO_STRENGTH)));
 }

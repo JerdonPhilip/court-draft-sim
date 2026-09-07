@@ -63,57 +63,53 @@ interface StrengthInput {
   stats: { pts: number; reb: number; ast: number; stl: number; blk: number };
 }
 
-// Mirrors server getTeamStrength: versatility-aware coverage + weakest-link balance (0..10).
+// --- Strength / projection model (must match server simulationEngine.ts
+// + services/constants.ts). Strength is the deterministic base-impact
+// differential vs a league-average opponent (LEAGUE_AVG_IMPACT), so the
+// draft-screen projection and the sim can never disagree structurally.
+const LEAGUE_AVG_IMPACT = 39.4;
+const IMPACT_TO_STRENGTH = 1.2;
+const WIN_CURVE_DIVISOR = 22;
+
+const IMPACT_WEIGHTS: Record<string, { pts: number; reb: number; ast: number; stl: number; blk: number }> = {
+  PG: { pts: 1.0, reb: 0.3, ast: 1.5, stl: 1.3, blk: 0.2 },
+  SG: { pts: 1.3, reb: 0.4, ast: 0.8, stl: 1.2, blk: 0.3 },
+  SF: { pts: 1.2, reb: 0.8, ast: 0.9, stl: 1.1, blk: 0.6 },
+  PF: { pts: 1.1, reb: 1.2, ast: 0.6, stl: 0.8, blk: 1.0 },
+  C: { pts: 1.0, reb: 1.5, ast: 0.4, stl: 0.5, blk: 1.5 },
+};
+
+const STAT_SHARE = { pts: 0.35, reb: 0.20, ast: 0.20, stl: 0.12, blk: 0.13 };
+
+export function getBaseTeamImpact(players: StrengthInput[]): number {
+  let total = 0;
+  let counted = 0;
+  for (const p of players) {
+    const w = IMPACT_WEIGHTS[p.position] ?? IMPACT_WEIGHTS.C!;
+    total += (
+      p.stats.pts * w.pts * STAT_SHARE.pts +
+      p.stats.reb * w.reb * STAT_SHARE.reb +
+      p.stats.ast * w.ast * STAT_SHARE.ast +
+      p.stats.stl * w.stl * STAT_SHARE.stl +
+      p.stats.blk * w.blk * STAT_SHARE.blk
+    ) * (p.overall / 100);
+    counted++;
+  }
+  if (counted === 0) return 0;
+  return total * (counted / 5);
+}
+
 export function calculateTeamStrength(players: StrengthInput[]): number {
   if (players.length === 0) return 0;
-
-  const n = players.length;
-  const avgOverall = players.reduce((sum, p) => sum + p.overall, 0) / n;
-
-  const positionCoverage = maxPositionCoverage(players);
-  const coverageBonus = positionCoverage === 5 ? 5 : positionCoverage * 0.75;
-
-  const totals = { pts: 0, reb: 0, ast: 0, stl: 0, blk: 0 };
-  for (const player of players) {
-    totals.pts += player.stats.pts;
-    totals.reb += player.stats.reb;
-    totals.ast += player.stats.ast;
-    totals.stl += player.stats.stl;
-    totals.blk += player.stats.blk;
-  }
-
-  const avgPts = totals.pts / n;
-  const avgReb = totals.reb / n;
-  const avgAst = totals.ast / n;
-  const avgStl = totals.stl / n;
-  const avgBlk = totals.blk / n;
-
-  const ptsScore = Math.min(1, avgPts / 18);
-  const rebScore = Math.min(1, avgReb / 8);
-  const astScore = Math.min(1, avgAst / 5.5);
-  const stlScore = Math.min(1, avgStl / 1.2);
-  const blkScore = Math.min(1, avgBlk / 1.1);
-
-  const weakest = Math.min(ptsScore, rebScore, astScore, stlScore, blkScore);
-  const average = (ptsScore + rebScore + astScore + stlScore + blkScore) / 5;
-  const statBalance = weakest * 7 + average * 3;
-
-  return Math.min(100, Math.round(avgOverall + coverageBonus + statBalance));
+  const base = getBaseTeamImpact(players);
+  return Math.max(0, Math.min(100, Math.round(50 + (base - LEAGUE_AVG_IMPACT) * IMPACT_TO_STRENGTH)));
 }
 
 export function getWinProjection(teamStrength: number): number {
-  // Mirrors server calculateNonLinearWinCurve: 50 -> 41, 100 -> ~82.
+  // Logistic win curve mirroring server calculateNonLinearWinCurve:
+  // 50 -> 41W, ~60 -> 61W, ~40 -> 21W.
   const clamped = Math.max(0, Math.min(100, teamStrength));
-  const x = (clamped - 50) / 50;
-
-  let winPct: number;
-  if (x <= 0) {
-    winPct = 0.5 + x * 0.48;
-  } else {
-    winPct = 0.5 + x * 0.55 - x * x * 0.05;
-  }
-
-  winPct = Math.max(0.02, Math.min(0.995, winPct));
+  const winPct = 1 / (1 + Math.pow(10, -(clamped - 50) / WIN_CURVE_DIVISOR));
 
   return Math.round(winPct * 82);
 }
@@ -149,32 +145,6 @@ export function generateId(): string {
 
 export function isFullLineup(slots: Array<{ player: Player | null }>): boolean {
   return slots.length === 5 && slots.every(s => s.player !== null);
-}
-
-function maxPositionCoverage(players: Array<{ position: string; secondaryPositions?: Position[] }>): number {
-  const matchToPlayer = new Map<string, number>();
-  const positionsOf = (p: { position: string; secondaryPositions?: Position[] }): string[] => {
-    const seen = new Set<string>([p.position]);
-    for (const s of p.secondaryPositions ?? []) seen.add(s);
-    return [...seen];
-  };
-  const tryAssign = (idx: number, seen: Set<string>): boolean => {
-    for (const slot of positionsOf(players[idx]!)) {
-      if (seen.has(slot)) continue;
-      seen.add(slot);
-      const occupant = matchToPlayer.get(slot);
-      if (occupant === undefined || tryAssign(occupant, seen)) {
-        matchToPlayer.set(slot, idx);
-        return true;
-      }
-    }
-    return false;
-  };
-  let covered = 0;
-  for (let i = 0; i < players.length; i++) {
-    if (tryAssign(i, new Set())) covered++;
-  }
-  return covered;
 }
 
 /** Empty slots a player could fill right now. */

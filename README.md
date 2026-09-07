@@ -140,8 +140,14 @@ GET  /api/simulation/historical-teams  # List historical teams
 
 ## Player Database
 
-The game includes 180+ historical players across 7 eras:
+The game includes 820+ historical players across 7 eras:
 - **1960s**: Russell, Chamberlain, Robertson, West, Baylor, Pettit, Lucas, Reed, Hayes, Alcindor, Monroe, Cunningham + full 4–7 man pools for all 14 period franchises
+- **1970s**: Kareem, Dr. J, Maravich, Gervin, Cowens, Barry, Walton, McAdoo, Frazier, Reed, Hayes + full pools for all 22 ABA/NBA lineages
+- **1980s**: Magic, Bird, Moses, Isiah, Dominique, Jordan, Moncrief, Dantley, B. King, Sikma + full pools for all 23 lineages
+- **1990s**: Jordan, Hakeem, Malone, Stockton, Robinson, Shaq, Mourning, Payton, Kemp, Hardaway + full pools for all 28 lineages
+- **2000s**: Shaq, Kobe, Duncan, KG, Dirk, Nash, Iverson, Wade, LeBron, Yao, Kidd, Webber, Pierce, Carter + full pools for all 29 lineages
+- **2010s**: LeBron, Curry, KD, Kawhi, Harden, Giannis, AD, Jokic, Rose, Dwight, Wall, Westbrook + full pools for all 29 lineages
+- **2020s**: Jokic, Giannis, Luka, SGA, Tatum, Wemby, Embiid, Trae, Morant, Paolo, Cade, Hali + full pools for all 30 lineages
 - **1970s**: Kareem, Dr. J, Maravich, Gervin, Cowens
 - **1980s**: Magic, Bird, Moses, Isiah, Dominique
 - **1990s**: Jordan, Hakeem, Malone, Stockton, Robinson, Shaq

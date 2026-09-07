@@ -293,14 +293,21 @@ function generateOpponentPools(): { pools: Player[][]; names: string[] } {
   const pools: Player[][] = [];
 
   // 30 distinct 5-man opponents (150 unique players).
-  // Stats scale with overall so a 70-overall opponent plays like one:
-  // roughly league-average starters, not 5 All-Stars every night.
+  // A top-heavy league like the real NBA: 24 regular starter-quality
+  // pools plus 6 contender pools that can actually beat elite user teams,
+  // so 82-0 stays possible but never automatic.
+  // Expected base impact ~= LEAGUE_AVG_IMPACT (services/constants.ts):
+  // (24 x ~35.9 regular + 6 x ~53.3 contender) / 30 ~= 39.4.
+  // Keep them in sync if these ranges change.
   for (let i = 0; i < 30; i++) {
     const pool: Player[] = [];
+    const contender = i % 5 === 4;
     for (let j = 0; j < 5; j++) {
       const pos = (['PG', 'SG', 'SF', 'PF', 'C'] as Position[])[j]!;
-      const overall = Math.round(randomStat(68, 82));
-      const star = (overall - 68) / 14; // 0..1
+      const overall = Math.round(contender ? randomStat(88, 96) : randomStat(74, 88));
+      const span = contender ? 8 : 14;
+      const floor = contender ? 88 : 74;
+      const star = (overall - floor) / span; // 0..1
       pool.push({
         id: `opp-${i}-${j}`,
         name: `${OPPONENT_NAMES[i]} Player ${j + 1}`,
@@ -308,15 +315,23 @@ function generateOpponentPools(): { pools: Player[][]; names: string[] } {
         team: 'opponent',
         decade: '2020s',
         era: 'Current',
-        stats: {
-          pts: randomStat(8 + star * 6, 12 + star * 6),
-          reb: randomStat(3 + star * 2, 6 + star * 3),
-          ast: randomStat(2 + star * 2, 4 + star * 3),
-          stl: randomStat(0.5, 0.8 + star * 0.8),
-          blk: randomStat(0.2, 0.5 + star * 0.8),
-        },
+        stats: contender
+          ? {
+              pts: randomStat(18 + star * 6, 22 + star * 6),
+              reb: randomStat(5 + star * 2, 8 + star * 3),
+              ast: randomStat(4 + star * 2, 6 + star * 3),
+              stl: randomStat(0.8, 1.2 + star * 0.8),
+              blk: randomStat(0.4, 0.8 + star * 0.8),
+            }
+          : {
+              pts: randomStat(12 + star * 6, 16 + star * 6),
+              reb: randomStat(4 + star * 2, 7 + star * 3),
+              ast: randomStat(3 + star * 2, 5 + star * 3),
+              stl: randomStat(0.6, 1.0 + star * 0.8),
+              blk: randomStat(0.3, 0.6 + star * 0.8),
+            },
         overall,
-        archetype: 'Role Player',
+        archetype: contender ? 'Star' : 'Role Player',
       });
     }
     pools.push(pool);
