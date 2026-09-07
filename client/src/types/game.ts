@@ -116,7 +116,11 @@ export interface GameResult {
   result: 'W' | 'L';
   score: { us: number; them: number };
   isHome: boolean;
+  /** Overtime periods played (0 = regulation). Absent on old saves. */
+  otPeriods?: number;
   playerPerformances: PlayerGamePerformance[];
+  /** Opponent box score. Absent on seasons simulated before this shipped. */
+  opponentPerformances?: PlayerGamePerformance[];
 }
 
 export interface PlayerGamePerformance {
@@ -164,6 +168,8 @@ export interface VSSeriesResult {
   gameNumber: number;
   winner: 'user' | 'historical';
   score: { user: number; historical: number };
+  /** Overtime periods played (0 = regulation). Absent on old saves. */
+  otPeriods?: number;
   boxScore: VSBoxScore;
 }
 

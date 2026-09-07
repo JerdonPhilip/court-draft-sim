@@ -2,6 +2,8 @@ import { useState, useMemo, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ChevronRight, X, Trophy, TrendingUp, TrendingDown, Target, Calendar, BarChart2 } from 'lucide-react';
 import { cn } from '../../utils/helpers';
+import { otLabel } from '../../utils/helpers';
+import { useLockBodyScroll } from '../../utils/useLockBodyScroll';
 import type { SimulationResult, PlayerStats, GameResult, PlayerGamePerformance } from '../../types/game';
 
 interface SimulationDashboardProps {
@@ -219,43 +221,52 @@ function OverviewView({ result, streak, isUndefeated, isChampionship, totalGames
 }
 
 function GamesView({ result, onSelectGame }: { result: SimulationResult; onSelectGame: (game: GameResult) => void }) {
-  const games = useMemo(() => [...result.games].reverse(), [result.games]);
   return (
-    <div className="space-y-3">
-      {games.map((game: GameResult) => (
+    <div className="space-y-2">
+      {result.games.slice().reverse().map((game: GameResult) => (
         <motion.button
           key={game.gameNumber}
           type="button"
           initial={{ opacity: 0, x: -20 }}
           animate={{ opacity: 1, x: 0 }}
-          className="card p-4 hover:shadow-broadcast transition-shadow cursor-pointer w-full text-left"
+          className="card px-4 py-2.5 hover:shadow-broadcast transition-shadow cursor-pointer w-full text-left"
           onClick={() => onSelectGame(game)}
-          aria-label={`Game ${game.gameNumber} vs ${game.opponent}: ${game.result}, ${game.score.us} to ${game.score.them}`}
+          aria-label={`Game ${game.gameNumber} vs ${game.opponent}: ${game.result}, ${game.score.us} to ${game.score.them}${otLabel(game.otPeriods) ? ` in ${otLabel(game.otPeriods)}` : ''}`}
         >
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-4">
-              <span className="w-12 text-right text-broadcast-text-muted font-mono">
-                GM #{game.gameNumber}
+          <div className="flex items-center gap-3">
+            <span className="w-10 shrink-0 text-right text-broadcast-text-muted font-mono text-sm">
+              #{game.gameNumber}
+            </span>
+            <span
+              className="shrink-0 px-2 py-0.5 rounded-md text-sm font-bold"
+              style={{
+                backgroundColor: game.result === 'W' ? 'rgba(0, 212, 170, 0.2)' : 'rgba(255, 59, 48, 0.2)',
+                color: game.result === 'W' ? '#00d4aa' : '#ff3b30',
+                border: game.result === 'W' ? '1px solid rgba(0, 212, 170, 0.3)' : '1px solid rgba(255, 59, 48, 0.3)'
+              }}
+            >
+              {game.result}
+            </span>
+            <span className="shrink-0 font-mono font-bold text-lg">{game.score.us}-{game.score.them}</span>
+            {otLabel(game.otPeriods) && (
+              <span className="shrink-0 rounded bg-broadcast-gold/20 px-1.5 py-px text-xs font-bold text-broadcast-gold">
+                {otLabel(game.otPeriods)}
               </span>
-              <div className="px-3 py-1 rounded-lg text-sm font-bold"
-                style={{
-                  backgroundColor: game.result === 'W' ? 'rgba(0, 212, 170, 0.2)' : 'rgba(255, 59, 48, 0.2)',
-                  color: game.result === 'W' ? '#00d4aa' : '#ff3b30',
-                  border: game.result === 'W' ? '1px solid rgba(0, 212, 170, 0.3)' : '1px solid rgba(255, 59, 48, 0.3)'
-                }}
-              >
-                {game.result}
-              </div>
-              <div className="text-center">
-                <div className="font-mono font-bold text-lg">{game.score.us} - {game.score.them}</div>
-                <div className="text-xs text-broadcast-text-muted">{game.isHome ? 'HOME' : 'AWAY'}</div>
-              </div>
-              <div className="text-right w-24">
-                <div className="text-broadcast-text-secondary text-xs">OPPONENT</div>
-                <div className="font-medium">{game.opponent}</div>
-              </div>
-            </div>
-            <ChevronRight className="w-5 h-5 text-broadcast-text-muted" aria-hidden="true" />
+            )}
+            <span className="min-w-0 flex-1 truncate text-base text-broadcast-text-secondary">
+              <span className="text-broadcast-text-muted">vs </span>
+              <span className="font-medium text-white">{game.opponent}</span>
+            </span>
+            <span
+              className={`shrink-0 rounded-md px-2 py-0.5 text-[11px] font-bold uppercase tracking-wider ${
+                game.isHome
+                  ? 'bg-broadcast-accent/20 text-broadcast-accent border border-broadcast-accent/30'
+                  : 'bg-broadcast-blue/15 text-broadcast-blue border border-broadcast-blue/30'
+              }`}
+            >
+              {game.isHome ? 'HOME' : 'AWAY'}
+            </span>
+            <ChevronRight className="h-4 w-4 shrink-0 text-broadcast-text-muted" aria-hidden="true" />
           </div>
         </motion.button>
       ))}
@@ -305,6 +316,7 @@ function PlayersView({ result }: { result: SimulationResult }) {
 
 function GameBoxScoreModal({ game, onClose }: { game: GameResult; onClose: () => void }) {
   const closeRef = useRef<HTMLButtonElement>(null);
+  useLockBodyScroll(true);
   useEffect(() => {
     closeRef.current?.focus();
     const onKey = (e: KeyboardEvent) => {
@@ -327,7 +339,7 @@ function GameBoxScoreModal({ game, onClose }: { game: GameResult; onClose: () =>
       <motion.div
         initial={{ opacity: 0, scale: 0.95, y: 20 }}
         animate={{ opacity: 1, scale: 1, y: 0 }}
-        className="w-full max-w-4xl max-h-[90vh] overflow-y-auto bg-broadcast-card border border-broadcast-border rounded-2xl"
+        className="w-full max-w-7xl max-h-[90vh] overflow-y-auto bg-broadcast-card border border-broadcast-border rounded-2xl"
         onClick={e => e.stopPropagation()}
         role="dialog"
         aria-modal="true"
@@ -347,7 +359,7 @@ function GameBoxScoreModal({ game, onClose }: { game: GameResult; onClose: () =>
               <div className="text-broadcast-text-secondary">YOUR TEAM</div>
             </div>
             <div className="px-4">
-              <div className="text-broadcast-text-muted">FINAL</div>
+              <div className="text-broadcast-text-muted">{otLabel(game.otPeriods) || 'FINAL'}</div>
             </div>
             <div className="text-center">
               <div className="font-display text-3xl font-bold text-broadcast-red">{game.score.them}</div>
@@ -355,42 +367,65 @@ function GameBoxScoreModal({ game, onClose }: { game: GameResult; onClose: () =>
             </div>
           </div>
 
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <caption className="sr-only">Player performances for game {game.gameNumber}</caption>
-              <thead>
-                <tr className="border-b border-broadcast-border text-broadcast-text-secondary">
-                  <th scope="col" className="text-left py-2 px-3">PLAYER</th>
-                  <th scope="col" className="text-center py-2 px-3">MIN</th>
-                  <th scope="col" className="text-center py-2 px-3" style={{ color: STAT_COLORS.pts }}>PTS</th>
-                  <th scope="col" className="text-center py-2 px-3" style={{ color: STAT_COLORS.reb }}>REB</th>
-                  <th scope="col" className="text-center py-2 px-3" style={{ color: STAT_COLORS.ast }}>AST</th>
-                  <th scope="col" className="text-center py-2 px-3" style={{ color: STAT_COLORS.stl }}>STL</th>
-                  <th scope="col" className="text-center py-2 px-3" style={{ color: STAT_COLORS.blk }}>BLK</th>
-                </tr>
-              </thead>
-              <tbody>
-                {perfs.map((perf) => (
-                  <tr key={perf.playerId} className="border-b border-broadcast-border/50 hover:bg-broadcast-border/50">
-                    <td className="py-2 px-3 font-medium">{perf.playerName}</td>
-                    <td className="text-center py-2 px-3 text-broadcast-text-secondary">{perf.minutes}</td>
-                    <td className="text-center py-2 px-3 font-bold" style={{ color: STAT_COLORS.pts }}>{perf.stats.pts}</td>
-                    <td className="text-center py-2 px-3 font-bold" style={{ color: STAT_COLORS.reb }}>{perf.stats.reb}</td>
-                    <td className="text-center py-2 px-3 font-bold" style={{ color: STAT_COLORS.ast }}>{perf.stats.ast}</td>
-                    <td className="text-center py-2 px-3 font-bold" style={{ color: STAT_COLORS.stl }}>{perf.stats.stl}</td>
-                    <td className="text-center py-2 px-3 font-bold" style={{ color: STAT_COLORS.blk }}>{perf.stats.blk}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-            {perfs.length === 0 && (
-              <p className="text-center text-broadcast-text-muted py-6">No per-player box score recorded for this game.</p>
-            )}
+          <div className="grid gap-6 md:grid-cols-2">
+            <BoxScoreTable title="YOUR TEAM" performances={perfs} />
+            <BoxScoreTable
+              title={game.opponent.toUpperCase()}
+              performances={game.opponentPerformances ?? []}
+              emptyText="No opponent box score recorded for this game."
+            />
           </div>
         </div>
       </motion.div>
     </motion.div>
   );
+}
+
+function BoxScoreTable({ title, performances, emptyText }: { title: string; performances: PlayerGamePerformance[]; emptyText?: string }) {
+  return (
+    <div className="min-w-0">
+      <h5 className="text-sm font-semibold text-broadcast-text-secondary mb-2">{title}</h5>
+      <div className="overflow-x-auto">
+        <table className="w-full text-xl">
+          <caption className="sr-only">{title} player performances</caption>
+          <thead>
+            <tr className="border-b border-broadcast-border text-broadcast-text-secondary">
+              <th scope="col" className="text-left py-2 pl-1 pr-2">PLAYER</th>
+              <th scope="col" className="text-center py-2 px-2">MIN</th>
+              <th scope="col" className="text-center py-2 px-2" style={{ color: STAT_COLORS.pts }}>PTS</th>
+              <th scope="col" className="text-center py-2 px-2" style={{ color: STAT_COLORS.reb }}>REB</th>
+              <th scope="col" className="text-center py-2 px-2" style={{ color: STAT_COLORS.ast }}>AST</th>
+              <th scope="col" className="text-center py-2 px-2" style={{ color: STAT_COLORS.stl }}>STL</th>
+              <th scope="col" className="text-center py-2 px-2" style={{ color: STAT_COLORS.blk }}>BLK</th>
+            </tr>
+          </thead>
+          <tbody>
+            {performances.map((perf) => (
+              <tr key={perf.playerId} className="border-b border-broadcast-border/50 hover:bg-broadcast-border/50">
+                <td className="whitespace-nowrap py-2 pl-1 pr-2 font-medium" title={perf.playerName}>{toCompactName(perf.playerName)}</td>
+                <td className="text-center py-2 px-2 text-broadcast-text-secondary">{perf.minutes}</td>
+                <td className="text-center py-2 px-2 font-bold" style={{ color: STAT_COLORS.pts }}>{perf.stats.pts}</td>
+                <td className="text-center py-2 px-2 font-bold" style={{ color: STAT_COLORS.reb }}>{perf.stats.reb}</td>
+                <td className="text-center py-2 px-2 font-bold" style={{ color: STAT_COLORS.ast }}>{perf.stats.ast}</td>
+                <td className="text-center py-2 px-2 font-bold" style={{ color: STAT_COLORS.stl }}>{perf.stats.stl}</td>
+                <td className="text-center py-2 px-2 font-bold" style={{ color: STAT_COLORS.blk }}>{perf.stats.blk}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+        {performances.length === 0 && (
+          <p className="text-center text-broadcast-text-muted py-6">{emptyText ?? 'No per-player box score recorded for this game.'}</p>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/** "Shai Gilgeous-Alexander" -> "S. Gilgeous-Alexander": full identity on one line, no ellipsis. */
+function toCompactName(fullName: string): string {
+  const parts = fullName.trim().split(/\s+/);
+  if (parts.length < 2) return fullName;
+  return `${(parts[0] ?? '').charAt(0)}. ${parts.slice(1).join(' ')}`;
 }
 
 function StatCard({ label, value, icon: Icon, iconColor, trend, trendLabel }: { label: string; value: string; icon: React.ElementType; iconColor: string; trend?: 'positive' | 'negative'; trendLabel?: string }) {

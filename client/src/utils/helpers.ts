@@ -106,6 +106,12 @@ export function fitNameSize(lastName: string, basePx = 20): number {
   if (len > 10) return Math.max(14, basePx - 2);
   return basePx;
 }
+/** 0/undefined -> '', 1 -> 'OT', 3 -> '3OT'. */
+export function otLabel(otPeriods: number | undefined): string {
+  if (!otPeriods || otPeriods <= 0) return '';
+  return otPeriods === 1 ? 'OT' : `${otPeriods}OT`;
+}
+
 export function formatHeight(heightIn: number | undefined, position?: string): string {
   const baseline = (position ? POSITION_HEIGHT_BASELINE[position] : undefined) ?? 79;
   const h = typeof heightIn === 'number' && Number.isFinite(heightIn) ? heightIn : baseline;

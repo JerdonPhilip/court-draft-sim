@@ -67,8 +67,12 @@ export interface GameSimulationInput {
 export interface GameSimulationOutput {
   homeScore: number;
   awayScore: number;
+  /** Overtime periods played (0 = regulation decision). */
+  otPeriods: number;
   homePlayerStats: Record<string, PlayerStats>;
   awayPlayerStats: Record<string, PlayerStats>;
+  homeMinutes: Record<string, number>;
+  awayMinutes: Record<string, number>;
   events: GameEvent[];
 }
 
@@ -99,7 +103,12 @@ export interface SeasonGameResult {
   isHome: boolean;
   result: 'W' | 'L' | 'T';
   score: { us: number; them: number };
+  /** Overtime periods played (0 = regulation decision). */
+  otPeriods: number;
   playerStats: Record<string, PlayerStats>;
+  userMinutes: Record<string, number>;
+  opponentPlayerStats: Record<string, PlayerStats>;
+  opponentRoster: Array<{ playerId: string; playerName: string }>;
 }
 
 export interface PlayerSeasonStats {

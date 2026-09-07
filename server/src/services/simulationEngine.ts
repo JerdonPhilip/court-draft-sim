@@ -108,7 +108,7 @@ function calculateTeamRating(players: Player[], config: SimulationConfig, isHome
   return totalImpact;
 }
 
-function simulateGameScore(homeRating: number, awayRating: number, config: SimulationConfig): { home: number; away: number } {
+function simulateGameScore(homeRating: number, awayRating: number, config: SimulationConfig): { home: number; away: number; otPeriods: number } {
   const ratingDiff = homeRating - awayRating;
   const pointSpread = ratingDiff * SCORE_SPREAD_FACTOR;
 
@@ -119,6 +119,8 @@ function simulateGameScore(homeRating: number, awayRating: number, config: Simul
   awayScore = Math.max(MIN_SCORE, Math.round(awayScore));
 
   // NBA has no ties: overtime decides drawn games instead of auto-loss for the user.
+  // Close matchups (small spread) tie far more often, so OT naturally
+  // clusters where it should — even contests, up to 5 extra periods.
   let otPeriods = 0;
   while (homeScore === awayScore && otPeriods < 5) {
     otPeriods++;
@@ -130,7 +132,17 @@ function simulateGameScore(homeRating: number, awayRating: number, config: Simul
     homeScore += 1;
   }
 
-  return { home: homeScore, away: awayScore };
+  return { home: homeScore, away: awayScore, otPeriods };
+}
+
+/**
+ * Ironman rotation minutes: a 5-man roster with no bench plays its men
+ * heavy minutes in a 48-minute game. Stars play more (up to the full 48),
+ * role players catch short breathers. Team total lands ~225-235 of the
+ * real 240 player-minutes.
+ */
+function assignMinutes(player: Player): number {
+  return Math.min(48, Math.round(42 + (player.overall / 100) * 4 + randomFloat() * 2));
 }
 
 function rollInjury(config: SimulationConfig): number {
@@ -231,21 +243,24 @@ export function simulateSingleGame(input: GameSimulationInput): GameSimulationOu
   const homeRating = calculateTeamRating(homeTeam, config, true);
   const awayRating = calculateTeamRating(awayTeam, config, false);
 
-  const { home: homeScore, away: awayScore } = simulateGameScore(homeRating, awayRating, config);
+  const { home: homeScore, away: awayScore, otPeriods } = simulateGameScore(homeRating, awayRating, config);
 
   const homePlayerStats: Record<string, PlayerStats> = {};
   const awayPlayerStats: Record<string, PlayerStats> = {};
+  const homeMinutes: Record<string, number> = {};
+  const awayMinutes: Record<string, number> = {};
 
   for (const player of homeTeam) {
     if (!player) continue;
-    // 5-man roster with no bench: starters play heavy minutes (~36-44).
-    const minutes = 36 + randomFloat() * 8;
+    const minutes = assignMinutes(player);
+    homeMinutes[player.id] = minutes;
     homePlayerStats[player.id] = generatePlayerGameStats(player, homeRating, awayRating, minutes, config);
   }
 
   for (const player of awayTeam) {
     if (!player) continue;
-    const minutes = 36 + randomFloat() * 8;
+    const minutes = assignMinutes(player);
+    awayMinutes[player.id] = minutes;
     awayPlayerStats[player.id] = generatePlayerGameStats(player, awayRating, homeRating, minutes, config);
   }
 
@@ -254,8 +269,11 @@ export function simulateSingleGame(input: GameSimulationInput): GameSimulationOu
   return {
     homeScore,
     awayScore,
+    otPeriods,
     homePlayerStats,
     awayPlayerStats,
+    homeMinutes,
+    awayMinutes,
     events,
   };
 }
@@ -323,6 +341,8 @@ export function simulateSeason(
     else losses++; // A tie should never happen; count conservatively as a loss.
 
     const userPlayerStats = isHome ? gameResult.homePlayerStats : gameResult.awayPlayerStats;
+    const userMinutes = isHome ? gameResult.homeMinutes : gameResult.awayMinutes;
+    const oppPlayerStats = isHome ? gameResult.awayPlayerStats : gameResult.homePlayerStats;
 
     for (const [playerId, stats] of Object.entries(userPlayerStats)) {
       const seasonStat = playerSeasonStats[playerId];
@@ -340,8 +360,8 @@ export function simulateSeason(
         seasonStat.highGames.stl = Math.max(seasonStat.highGames.stl, stats.stl);
         seasonStat.highGames.blk = Math.max(seasonStat.highGames.blk, stats.blk);
 
-        // Track minutes actually assigned (36-44 range in simulateSingleGame).
-        playerMinutes[playerId]?.push(36 + randomFloat() * 8);
+        // Track the actual minutes assigned this game.
+        playerMinutes[playerId]?.push(userMinutes[playerId] ?? 40);
       }
     }
 
@@ -351,7 +371,11 @@ export function simulateSeason(
       isHome,
       result: result === 'T' ? 'L' : result,
       score: { us: userScore, them: oppScore },
+      otPeriods: gameResult.otPeriods,
       playerStats: userPlayerStats,
+      userMinutes,
+      opponentPlayerStats: oppPlayerStats,
+      opponentRoster: opponent.map(p => ({ playerId: p.id, playerName: p.name })),
     });
   }
 

@@ -159,11 +159,21 @@ router.post('/season', (req: Request, res: Response) => {
       isHome: g.isHome,
       result: g.result,
       score: g.score,
+      otPeriods: g.otPeriods,
       playerPerformances: Object.entries(g.playerStats).map(([playerId, stats]) => {
         const player = players.find(p => p.id === playerId);
         return {
           playerId,
           playerName: player?.name ?? playerId,
+          stats,
+          minutes: g.userMinutes[playerId] ?? 40,
+        };
+      }),
+      opponentPerformances: Object.entries(g.opponentPlayerStats).map(([playerId, stats]) => {
+        const player = g.opponentRoster.find(p => p.playerId === playerId);
+        return {
+          playerId,
+          playerName: player?.playerName ?? playerId,
           stats,
           minutes: 40,
         };
@@ -202,8 +212,11 @@ router.post('/game', (req: Request, res: Response) => {
       result: {
         homeScore: gameResult.homeScore,
         awayScore: gameResult.awayScore,
+        otPeriods: gameResult.otPeriods,
         homePlayerStats: gameResult.homePlayerStats,
         awayPlayerStats: gameResult.awayPlayerStats,
+        homeMinutes: gameResult.homeMinutes,
+        awayMinutes: gameResult.awayMinutes,
         events: gameResult.events,
       },
     });
@@ -255,19 +268,22 @@ router.post('/vs-mode', (req: Request, res: Response) => {
 
     const userStats = isHome ? gameResult.homePlayerStats : gameResult.awayPlayerStats;
     const historicalStats = isHome ? gameResult.awayPlayerStats : gameResult.homePlayerStats;
+    const userMinutes = isHome ? gameResult.homeMinutes : gameResult.awayMinutes;
+    const historicalMinutes = isHome ? gameResult.awayMinutes : gameResult.homeMinutes;
 
     seriesResults.push({
       gameNumber: gameNum,
       winner,
       score: { user: userScore, historical: historicalScore },
+      otPeriods: gameResult.otPeriods,
       boxScore: {
         user: Object.entries(userStats).map(([playerId, stats]) => {
           const player = (userLineup as Player[]).find(p => p.id === playerId);
-          return { playerId, playerName: player?.name || playerId, stats, minutes: 40 };
+          return { playerId, playerName: player?.name || playerId, stats, minutes: userMinutes[playerId] ?? 40 };
         }),
         historical: Object.entries(historicalStats).map(([playerId, stats]) => {
           const player = historicalLineup.find(p => p.id === playerId);
-          return { playerId, playerName: player?.name || playerId, stats, minutes: 40 };
+          return { playerId, playerName: player?.name || playerId, stats, minutes: historicalMinutes[playerId] ?? 40 };
         }),
       },
     });

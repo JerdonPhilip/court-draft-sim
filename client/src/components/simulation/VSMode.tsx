@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ChevronLeft, Trophy, Zap, Crown, Star } from 'lucide-react';
-import { cn, getPositionColor, calculateTeamStrength, getWinProjection } from '../../utils/helpers';
+import { cn, getPositionColor, calculateTeamStrength, getWinProjection, otLabel } from '../../utils/helpers';
 import { useGameStore } from '../../store/gameStore';
 import { notify } from '../../store/toastStore';
 import { api } from '../../utils/api';
@@ -367,7 +367,14 @@ function GameCards({ games }: { games: VSSeriesResult[] }) {
           className="card p-4"
         >
           <div className="flex items-center justify-between mb-2">
-            <span className="text-sm text-broadcast-text-muted">GAME {game.gameNumber}</span>
+            <span className="text-sm text-broadcast-text-muted">
+              GAME {game.gameNumber}
+              {otLabel(game.otPeriods) && (
+                <span className="ml-1.5 rounded bg-broadcast-gold/20 px-1.5 py-px text-xs font-bold text-broadcast-gold">
+                  {otLabel(game.otPeriods)}
+                </span>
+              )}
+            </span>
             <span className={cn(
               'px-3 py-1 rounded-full text-sm font-bold',
               game.winner === 'user' ? 'bg-broadcast-accent/20 text-broadcast-accent' : 'bg-broadcast-red/20 text-broadcast-red'
@@ -393,7 +400,10 @@ function BoxScoreTable({ game, index, historicalTeam }: { game: VSSeriesResult; 
   return (
     <div className="mb-6 last:mb-0">
       <div className="flex items-center justify-between mb-3 pb-2 border-b border-broadcast-border">
-        <h4 className="font-medium">GAME {game.gameNumber} • {isUserWinner ? 'VICTORY' : 'DEFEAT'}</h4>
+        <h4 className="font-medium">
+          GAME {game.gameNumber} • {isUserWinner ? 'VICTORY' : 'DEFEAT'}
+          {otLabel(game.otPeriods) ? ` • ${otLabel(game.otPeriods)}` : ''}
+        </h4>
         <span className="font-display text-xl font-bold" style={{ color: isUserWinner ? '#00d4aa' : '#ff3b30' }}>
           {game.score.user} - {game.score.historical}
         </span>
