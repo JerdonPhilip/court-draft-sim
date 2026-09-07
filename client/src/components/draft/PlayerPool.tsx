@@ -1,5 +1,4 @@
 import { motion, AnimatePresence } from 'framer-motion';
-import { ChevronRight, Star, Trophy } from 'lucide-react';
 import { cn, getPositionColor, getPositionLabel, formatHeight, heightEdgeLabel } from '../../utils/helpers';
 import { FRANCHISES, DECADES } from '../../data/constants';
 import { canPlayPosition, getPlayerPositions } from '../../types/game';
@@ -67,19 +66,21 @@ export function PlayerPool({ pool, draftedPlayerIds, onDraftPlayer, onDragStartP
           </p>
         )}
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4" role="list">
+        <div className="grid grid-cols-1 items-stretch gap-5 sm:grid-cols-2 [grid-auto-rows:1fr] 2xl:grid-cols-3" role="list">
           {availablePlayers.map((player: Player, index: number) => {
             const fits = fittingEmptySlots(player, lineupSlots);
             const isDraftable = fits.length > 0;
             const isFlex = (player.secondaryPositions?.length ?? 0) > 0;
             const fitsSelected = selectedSlotPosition !== null && canPlayPosition(player, selectedSlotPosition);
+            const posColor = getPositionColor(player.position);
             return (
               <motion.div
                 key={player.id}
                 role="listitem"
-                initial={{ opacity: 0, scale: 0.95, y: 10 }}
-                animate={{ opacity: 1, scale: 1, y: 0 }}
+                initial={{ opacity: 0, y: 12 }}
+                animate={{ opacity: 1, y: 0 }}
                 transition={{ duration: 0.3, delay: Math.min(index * 0.05, 0.3) }}
+                className="h-full min-w-0"
               >
               <button
                 type="button"
@@ -91,10 +92,16 @@ export function PlayerPool({ pool, draftedPlayerIds, onDraftPlayer, onDragStartP
                 }}
                 onDragEnd={onDragEndPlayer}
                 className={cn(
-                  'player-card relative overflow-hidden group text-left w-full cursor-grab active:cursor-grabbing',
-                  !isDraftable && 'opacity-40',
-                  selectedSlotPosition && isDraftable && !fitsSelected && 'ring-1 ring-broadcast-red/40',
-                  selectedSlotPosition && fitsSelected && 'ring-1 ring-broadcast-gold/60'
+                  'group relative flex h-full w-full flex-col overflow-hidden rounded-2xl border text-left',
+                  'bg-broadcast-card/90 shadow-[0_10px_36px_rgb(0,0,0,0.38)] backdrop-blur-sm',
+                  'transition-[transform,border-color,box-shadow,opacity] duration-200 hover:-translate-y-1',
+                  'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-broadcast-accent focus-visible:ring-offset-2 focus-visible:ring-offset-broadcast-dark',
+                  'cursor-grab active:cursor-grabbing disabled:cursor-not-allowed',
+                  isDraftable
+                    ? 'border-white/10 hover:border-broadcast-accent/50 hover:shadow-glow-accent'
+                    : 'border-white/5 opacity-40',
+                  selectedSlotPosition && isDraftable && !fitsSelected && 'border-broadcast-red/40',
+                  selectedSlotPosition && fitsSelected && 'border-broadcast-gold/60 shadow-glow-gold'
                 )}
                 onClick={() => onDraftPlayer(player)}
                 disabled={!isDraftable}
@@ -112,47 +119,56 @@ export function PlayerPool({ pool, draftedPlayerIds, onDraftPlayer, onDragStartP
                       : `Draft ${player.name} → ${selectedSlotPosition ?? fits.join(' or ')} (or drag)`
                 }
               >
+                {/* gradient hairline tinted by position — in normal flow, can't overlap */}
                 <div
-                  className="absolute top-0 left-0 w-1 h-full"
-                  style={{ backgroundColor: getPositionColor(player.position) }}
+                  className="h-1 w-full shrink-0"
+                  style={{ backgroundImage: `linear-gradient(90deg, transparent, ${posColor}, transparent)` }}
                   aria-hidden="true"
                 />
                 <div className="flex items-start gap-4 p-5">
                   <div
-                    className="w-16 h-16 rounded-xl flex items-center justify-center font-display font-bold text-white flex-shrink-0"
-                    style={{ backgroundColor: getPositionColor(player.position) }}
+                    className="flex h-16 w-16 shrink-0 items-center justify-center rounded-2xl font-display text-sm font-bold text-white ring-1 ring-white/25 [box-shadow:inset_0_2px_10px_rgb(0,0,0,0.35)]"
+                    style={{ backgroundImage: `linear-gradient(135deg, ${posColor}, ${posColor}55 130%)` }}
                     aria-hidden="true"
                   >
-                    <span className="text-sm text-center leading-tight px-1 break-words">{getPlayerPositions(player).join('/')}</span>
+                    <span className="px-1 text-center leading-tight [overflow-wrap:anywhere]">{getPlayerPositions(player).join('/')}</span>
                   </div>
 
-                  <div className="flex-1 min-w-0">
-                    <h4 className="font-semibold text-white text-lg leading-snug break-words">{player.name}</h4>
-                    <div className="flex items-center gap-1.5 mt-1.5 mb-2 flex-wrap">
-                      <span className="px-2 py-0.5 text-xs font-medium rounded-full bg-broadcast-accent/20 text-broadcast-accent border border-broadcast-accent/30 whitespace-nowrap">
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-start justify-between gap-3">
+                      <h4 className="min-w-0 flex-1 break-words font-display text-xl font-bold leading-snug text-white">{player.name}</h4>
+                      <div className="shrink-0 text-right">
+                        <div className="font-display text-2xl font-bold leading-none text-broadcast-accent">{player.overall}</div>
+                        <div className="mt-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-broadcast-text-muted">OVR</div>
+                      </div>
+                    </div>
+                    <div className="mb-2 mt-2 flex flex-wrap items-center gap-1.5">
+                      <span className="whitespace-nowrap rounded-full border border-broadcast-accent/30 bg-broadcast-accent/10 px-2.5 py-0.5 text-xs font-semibold text-broadcast-accent">
                         {getPlayerPositions(player).join(' / ')}
                       </span>
-                      <span className="px-2 py-0.5 text-xs font-medium rounded-full bg-broadcast-border text-broadcast-text-secondary whitespace-nowrap" title="Height — taller players rebound and block better">
+                      <span className="whitespace-nowrap rounded-full border border-white/10 bg-white/5 px-2.5 py-0.5 text-xs font-medium text-broadcast-text-secondary" title="Height — taller players rebound and block better">
                         {formatHeight(player.heightIn, player.position)}
                       </span>
                       {isFlex && (
-                        <span className="px-2 py-0.5 text-xs font-medium rounded-full bg-broadcast-gold/20 text-broadcast-gold border border-broadcast-gold/30 whitespace-nowrap">
+                        <span className="whitespace-nowrap rounded-full border border-broadcast-gold/30 bg-broadcast-gold/10 px-2.5 py-0.5 text-xs font-semibold text-broadcast-gold">
                           FLEX
                         </span>
                       )}
                     </div>
 
-                    <div className="flex items-center gap-x-2 gap-y-1 text-sm text-broadcast-text-secondary mb-1.5 flex-wrap">
-                      <span className="font-medium whitespace-nowrap">{FRANCHISES.find(f => f.id === player.team)?.abbreviation ?? player.team}</span>
-                      <span aria-hidden="true">•</span>
+                    <div className="mb-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-broadcast-text-secondary">
+                      <span className="whitespace-nowrap font-semibold text-broadcast-text-primary">{FRANCHISES.find(f => f.id === player.team)?.abbreviation ?? player.team}</span>
+                      <span aria-hidden="true" className="text-broadcast-text-muted">•</span>
                       <span className="whitespace-nowrap">{DECADES.find(d => d.id === player.decade)?.label ?? player.decade}</span>
-                      <span aria-hidden="true">•</span>
-                      <span className="text-broadcast-gold break-words">{player.archetype}</span>
+                      <span aria-hidden="true" className="text-broadcast-text-muted">•</span>
+                      <span className="break-words text-broadcast-gold">{player.archetype}</span>
+                      <span aria-hidden="true" className="text-broadcast-text-muted">•</span>
+                      <span className="whitespace-nowrap font-medium text-broadcast-gold">{player.stats.pts} PPG</span>
                     </div>
 
-                    <div className="text-xs mb-2.5">
+                    <div className="mt-2 text-xs">
                       {isDraftable ? (
-                        <span className="text-broadcast-accent font-medium">
+                        <span className="font-medium text-broadcast-accent">
                           Fits: {fits.join(', ')}
                           {selectedSlotPosition && (
                             fitsSelected
@@ -167,24 +183,10 @@ export function PlayerPool({ pool, draftedPlayerIds, onDraftPlayer, onDragStartP
                         <span className="text-broadcast-text-muted">Needs: {getPositionLabel(player.position)} — no open slot</span>
                       )}
                     </div>
-
-                    <div className="flex items-center gap-5 text-xs">
-                      <div className="flex items-center gap-1.5 text-broadcast-accent">
-                        <Star className="w-3.5 h-3.5" aria-hidden="true" />
-                        <span className="font-bold text-sm">{player.overall}</span>
-                        <span className="text-broadcast-text-muted">OVR</span>
-                      </div>
-                      <div className="flex items-center gap-1.5 text-broadcast-gold">
-                        <Trophy className="w-3.5 h-3.5" aria-hidden="true" />
-                        <span className="font-medium text-sm">{player.stats.pts} PPG</span>
-                      </div>
-                    </div>
                   </div>
-
-                  <ChevronRight className="w-5 h-5 flex-shrink-0 mt-1 text-broadcast-text-muted group-hover:text-broadcast-accent transition-colors" aria-hidden="true" />
                 </div>
 
-                <div className="grid grid-cols-5 gap-2 px-5 pb-4 pt-3 border-t border-broadcast-border">
+                <div className="mt-auto grid grid-cols-5 gap-2 border-t border-white/5 bg-black/20 px-5 pb-4 pt-3">
                   <StatMini label="PTS" value={player.stats.pts} color="text-broadcast-accent" />
                   <StatMini label="REB" value={player.stats.reb} color="text-broadcast-gold" />
                   <StatMini label="AST" value={player.stats.ast} color="text-broadcast-blue" />

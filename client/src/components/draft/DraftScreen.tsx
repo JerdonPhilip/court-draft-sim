@@ -114,8 +114,8 @@ export function DraftScreen() {
       <a href="#draft-pools" className="sr-only focus:not-sr-only focus:absolute focus:top-2 focus:left-2 focus:z-50 focus:px-3 focus:py-2 focus:bg-broadcast-accent focus:text-broadcast-dark focus:rounded-lg">
         Skip to draft pools
       </a>
-      <div className="sticky top-0 z-40 bg-broadcast-dark/95 backdrop-blur border-b border-broadcast-border/50">
-        <div className="max-w-7xl mx-auto px-4 py-4">
+      <div className="sticky top-0 z-40 border-b border-broadcast-border/50 bg-broadcast-dark/95 backdrop-blur">
+        <div className="mx-auto max-w-7xl px-4 py-3 2xl:max-w-[1500px]">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
               <motion.button
@@ -154,14 +154,14 @@ export function DraftScreen() {
         </div>
       </div>
 
-      <main id="draft-pools" className="max-w-7xl mx-auto px-4 py-6 pb-20">
+      <main id="draft-pools" className={`mx-auto max-w-7xl px-4 py-5 2xl:max-w-[1500px] ${isLineupComplete ? 'pb-32' : 'pb-10'}`}>
         {draftError && (
           <div className="mb-4 p-3 rounded-xl bg-broadcast-red/10 border border-broadcast-red/30 text-broadcast-red text-sm" role="alert" aria-live="assertive">
             {draftError}
           </div>
         )}
-        <div className="grid lg:grid-cols-3 gap-6">
-          <div className="lg:col-span-2 space-y-6">
+        <div className="grid gap-6 lg:grid-cols-5 lg:gap-8">
+          <div className="space-y-6 lg:col-span-3">
             <SlotMachine
               pool={pool}
               isSpinning={isSpinning}
@@ -224,7 +224,8 @@ export function DraftScreen() {
             )}
           </div>
 
-          <div className="lg:col-span-1">
+          <div className="lg:col-span-2">
+            <div className="lg:sticky lg:top-[104px] lg:max-h-[calc(100vh-120px)] lg:overflow-y-auto lg:rounded-2xl lg:pb-2 lg:pl-1 lg:pr-2">
             <LineupBuilder
               lineup={lineup.slots}
               selectedSlot={selectedSlot}
@@ -234,22 +235,29 @@ export function DraftScreen() {
               teamStrength={teamStrength}
               projectedWins={projectedWins}
             />
+            </div>
           </div>
         </div>
-
-        <div className="mt-8 flex items-center justify-center gap-4">
-          {!isLineupComplete && pool && (
-            <button
-              onClick={() => void spinDraftPool()}
-              disabled={isSpinning}
-              className="btn-primary"
-            >
-              <RotateCcw className="w-4 h-4" aria-hidden="true" />
-              RE-SPIN POOL
-            </button>
-          )}
-        </div>
       </main>
+
+      {isLineupComplete && (
+        <div className="pointer-events-none fixed inset-x-0 bottom-4 z-40 flex justify-center px-4">
+          <div className="pointer-events-auto flex items-center gap-4 rounded-2xl border border-broadcast-accent/40 bg-broadcast-dark/90 py-2.5 pl-5 pr-2.5 shadow-glow-accent backdrop-blur-md">
+            <div>
+              <div className="font-display text-sm font-bold gradient-text">LINEUP COMPLETE</div>
+              <div className="text-xs text-broadcast-text-secondary">{projectedWins}-{82 - projectedWins} PROJ • {teamStrength} STR</div>
+            </div>
+            <button
+              onClick={() => void finalizeDraft()}
+              disabled={isSpinning || isLoading}
+              className="btn-primary px-6 py-2.5"
+            >
+              <Trophy className="h-5 w-5" aria-hidden="true" />
+              {isLoading ? 'SIMULATING...' : 'SIMULATE SEASON'}
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
