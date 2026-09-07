@@ -1,10 +1,8 @@
-'use client';
-
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ChevronLeft, ChevronRight, Trophy, TrendingUp, TrendingDown, Target, Award, Calendar, BarChart2 } from 'lucide-react';
+import { ChevronRight, X, Trophy, TrendingUp, TrendingDown, Target, Calendar, BarChart2 } from 'lucide-react';
 import { cn } from '../../utils/helpers';
-import { SimulationResult, PlayerStats, GameResult as GameResultType } from '../../types/game';
+import type { SimulationResult, PlayerStats, GameResult, PlayerGamePerformance } from '../../types/game';
 
 interface SimulationDashboardProps {
   result: SimulationResult;
@@ -28,54 +26,34 @@ const STAT_COLORS: Record<keyof PlayerStats, string> = {
   blk: '#af52de',
 };
 
-interface LocalGameResult extends GameResultType {
-  isHome: boolean;
-}
-
 export function SimulationDashboard({ result, onNewDraft, onVSMode }: SimulationDashboardProps) {
-  const [view, setView] = useState<'overview' | 'games' | 'players' | 'boxscore'>('overview');
-  const [selectedGame, setSelectedGame] = useState<LocalGameResult | null>(null);
+  const [view, setView] = useState<'overview' | 'games' | 'players'>('overview');
+  const [selectedGame, setSelectedGame] = useState<GameResult | null>(null);
 
-  const handleSelectGame = (game: GameResultType) => {
-    setSelectedGame({ ...game, isHome: game.isHome ?? false } as LocalGameResult);
-  };
-
+  const totalGames = result.games.length || 1;
   const record = `${result.wins}-${result.losses}`;
-  const winPct = (result.wins / 82 * 100).toFixed(1);
-  const isUndefeated = result.losses === 0;
-  const isChampionship = result.wins >= 65;
+  const winPct = (result.wins / totalGames * 100).toFixed(1);
+  const isUndefeated = result.losses === 0 && result.wins > 0;
+  const isChampionship = result.wins / totalGames >= 0.79;
 
   const streak = useMemo(() => {
+    if (result.games.length === 0) return { count: 0, type: 'W' as const };
     let currentStreak = 0;
-    let streakType: 'W' | 'L' = 'W';
+    let streakType = result.games[result.games.length - 1]!.result;
     for (let i = result.games.length - 1; i >= 0; i--) {
-      if (i === result.games.length - 1) {
-        streakType = result.games[i].result;
-        currentStreak = 1;
-      } else if (result.games[i].result === streakType) {
-        currentStreak++;
-      } else {
-        break;
-      }
+      if (result.games[i]!.result === streakType) currentStreak++;
+      else break;
     }
     return { count: currentStreak, type: streakType };
   }, [result.games]);
 
-  const avgStats = useMemo(() => {
-    const totals = { pts: 0, reb: 0, ast: 0, stl: 0, blk: 0 };
-    for (const player of result.playerStats) {
-      totals.pts += player.averages.pts;
-      totals.reb += player.averages.reb;
-      totals.ast += player.averages.ast;
-      totals.stl += player.averages.stl;
-      totals.blk += player.averages.blk;
-    }
-    return totals;
-  }, [result.playerStats]);
+  // Team per-game averages derived from final scores (authoritative), not by
+  // summing per-player averages with mismatched minutes.
+  const teamAvgPts = result.teamStats.avgPts;
 
   return (
     <div className="min-h-screen bg-broadcast-dark">
-      <div className="fixed top-0 left-0 right-0 z-40 bg-gradient-to-b from-broadcast-dark/95 to-transparent pb-4">
+      <div className="sticky top-0 z-40 bg-broadcast-dark/95 backdrop-blur border-b border-broadcast-border/50">
         <div className="max-w-7xl mx-auto px-4 py-4">
           <div className="flex items-center justify-between flex-wrap gap-4">
             <div className="flex items-center gap-3">
@@ -84,12 +62,13 @@ export function SimulationDashboard({ result, onNewDraft, onVSMode }: Simulation
                 whileHover={{ scale: 1.05 }}
                 whileTap={{ scale: 0.95 }}
                 className="p-2 rounded-lg bg-broadcast-card border border-broadcast-border hover:border-broadcast-accent/50 transition-colors"
+                aria-label="Back to draft"
               >
-                <ChevronLeft className="w-5 h-5 text-broadcast-text-secondary" />
+                <ChevronRight className="w-5 h-5 text-broadcast-text-secondary rotate-180" aria-hidden="true" />
               </motion.button>
               <div>
                 <h1 className="font-display text-2xl font-bold gradient-text">SEASON COMPLETE</h1>
-                <p className="text-xs text-broadcast-text-secondary">{record} • {winPct}% WIN PCT</p>
+                <p className="text-xs text-broadcast-text-secondary">{record} • {winPct}% WIN PCT • {teamAvgPts.toFixed(1)} PPG</p>
               </div>
             </div>
 
@@ -98,18 +77,20 @@ export function SimulationDashboard({ result, onNewDraft, onVSMode }: Simulation
                 'px-3 py-1 rounded-full text-sm font-bold',
                 isUndefeated ? 'bg-broadcast-gold/20 text-broadcast-gold border border-broadcast-gold/30' :
                 isChampionship ? 'bg-broadcast-accent/20 text-broadcast-accent border border-broadcast-accent/30' :
-                result.wins >= 50 ? 'bg-blue-500/20 text-blue-400 border border-blue-500/30' :
+                result.wins / totalGames >= 0.61 ? 'bg-blue-500/20 text-blue-400 border border-blue-500/30' :
                 'bg-broadcast-border text-broadcast-text-secondary'
               )}>
-                {isUndefeated && '🏆 '}{isUndefeated ? '82-0 PERFECT' : isChampionship ? 'CHAMPIONSHIP CALIBER' : result.wins >= 50 ? 'PLAYOFF TEAM' : 'LOTTERY BOUND'}
+                {isUndefeated ? 'PERFECT SEASON' : isChampionship ? 'CHAMPIONSHIP CALIBER' : result.wins / totalGames >= 0.61 ? 'PLAYOFF TEAM' : 'LOTTERY BOUND'}
               </span>
             </div>
           </div>
 
-          <div className="mt-4 flex flex-wrap gap-2">
-            {(['overview', 'games', 'players', 'boxscore'] as const).map(tab => (
+          <div className="mt-4 flex flex-wrap gap-2" role="tablist" aria-label="Season views">
+            {(['overview', 'games', 'players'] as const).map(tab => (
               <button
                 key={tab}
+                role="tab"
+                aria-selected={view === tab}
                 onClick={() => setView(tab)}
                 className={cn(
                   'px-4 py-2 rounded-lg text-sm font-medium transition-all',
@@ -118,22 +99,20 @@ export function SimulationDashboard({ result, onNewDraft, onVSMode }: Simulation
                     : 'bg-broadcast-card border border-broadcast-border text-broadcast-text-secondary hover:text-white hover:border-broadcast-accent/50'
                 )}
               >
-                {tab === 'overview' && <><BarChart2 className="w-4 h-4 inline mr-1" /> OVERVIEW</>}
-                {tab === 'games' && <><Calendar className="w-4 h-4 inline mr-1" /> GAMES</>}
-                {tab === 'players' && <><Target className="w-4 h-4 inline mr-1" /> PLAYERS</>}
-                {tab === 'boxscore' && <><Award className="w-4 h-4 inline mr-1" /> BOX SCORES</>}
+                {tab === 'overview' && <><BarChart2 className="w-4 h-4 inline mr-1" aria-hidden="true" /> OVERVIEW</>}
+                {tab === 'games' && <><Calendar className="w-4 h-4 inline mr-1" aria-hidden="true" /> GAMES</>}
+                {tab === 'players' && <><Target className="w-4 h-4 inline mr-1" aria-hidden="true" /> PLAYERS</>}
               </button>
             ))}
           </div>
         </div>
       </div>
 
-      <main className="max-w-7xl mx-auto px-4 py-6 pb-20 pt-20">
+      <main className="max-w-7xl mx-auto px-4 py-6 pb-20">
         <AnimatePresence mode="wait">
-          {view === 'overview' && <OverviewView result={result} avgStats={avgStats} streak={streak} isUndefeated={isUndefeated} isChampionship={isChampionship} />}
-          {view === 'games' && <GamesView result={result} onSelectGame={handleSelectGame} />}
-          {view === 'players' && <PlayersView result={result} />}
-          {view === 'boxscore' && <BoxScoreView result={result} />}
+          {view === 'overview' && <OverviewView key="ov" result={result} streak={streak} isUndefeated={isUndefeated} isChampionship={isChampionship} totalGames={totalGames} />}
+          {view === 'games' && <GamesView key="gm" result={result} onSelectGame={setSelectedGame} />}
+          {view === 'players' && <PlayersView key="pl" result={result} />}
         </AnimatePresence>
 
         {selectedGame && (
@@ -147,7 +126,7 @@ export function SimulationDashboard({ result, onNewDraft, onVSMode }: Simulation
             whileTap={{ scale: 0.98 }}
             className="btn-gold px-8 py-3 text-lg gap-2"
           >
-            <Trophy className="w-5 h-5" />
+            <Trophy className="w-5 h-5" aria-hidden="true" />
             VS MODE: CHALLENGE A LEGEND
           </motion.button>
           <motion.button
@@ -164,7 +143,8 @@ export function SimulationDashboard({ result, onNewDraft, onVSMode }: Simulation
   );
 }
 
-function OverviewView({ result, avgStats, streak, isUndefeated, isChampionship }: any) {
+function OverviewView({ result, streak, isUndefeated, isChampionship, totalGames }: { result: SimulationResult; streak: { count: number; type: string }; isUndefeated: boolean; isChampionship: boolean; totalGames: number }) {
+  const winPct = (result.wins / totalGames * 100).toFixed(1);
   return (
     <div className="space-y-6">
       <motion.div
@@ -177,17 +157,18 @@ function OverviewView({ result, avgStats, streak, isUndefeated, isChampionship }
           value={`${result.wins}-${result.losses}`}
           icon={Trophy}
           iconColor={isUndefeated ? 'text-broadcast-gold' : isChampionship ? 'text-broadcast-accent' : 'text-blue-400'}
-          trend={result.wins >= 50 ? 'positive' : 'negative'}
+          trend={result.wins > result.losses ? 'positive' : result.wins < result.losses ? 'negative' : undefined}
+          trendLabel={result.wins === result.losses ? 'AT .500' : undefined}
         />
         <StatCard
           label="WIN %"
-          value={`${(result.wins / 82 * 100).toFixed(1)}%`}
+          value={`${winPct}%`}
           icon={TrendingUp}
           iconColor="text-broadcast-accent"
         />
         <StatCard
-          label="CURRENT STREAK"
-          value={`${streak.count} ${streak.type === 'W' ? 'W' : 'L'}`}
+          label="ENDING STREAK"
+          value={streak.count > 0 ? `${streak.count} ${streak.type}` : '—'}
           icon={streak.type === 'W' ? TrendingUp : TrendingDown}
           iconColor={streak.type === 'W' ? 'text-green-400' : 'text-red-400'}
         />
@@ -197,17 +178,20 @@ function OverviewView({ result, avgStats, streak, isUndefeated, isChampionship }
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ delay: 0.1 }}
-        className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4"
+        className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4"
       >
-        {(Object.keys(STAT_LABELS) as Array<keyof PlayerStats>).map(stat => (
-          <TeamStatCard
-            key={stat}
-            label={STAT_LABELS[stat]}
-            value={avgStats[stat].toFixed(1)}
-            color={STAT_COLORS[stat]}
-            icon={<span>{stat.toUpperCase()[0]}</span>}
-          />
-        ))}
+        {(Object.keys(STAT_LABELS) as Array<keyof PlayerStats>).map(stat => {
+          const key = stat === 'pts' ? 'avgPts' : stat === 'reb' ? 'avgReb' : stat === 'ast' ? 'avgAst' : stat === 'stl' ? 'avgStl' : 'avgBlk';
+          const value = (result.teamStats as unknown as Record<string, number>)[key] ?? 0;
+          return (
+            <TeamStatCard
+              key={stat}
+              label={STAT_LABELS[stat]}
+              value={Number(value).toFixed(1)}
+              color={STAT_COLORS[stat]}
+            />
+          );
+        })}
       </motion.div>
 
       <motion.div
@@ -240,9 +224,9 @@ function OverviewView({ result, avgStats, streak, isUndefeated, isChampionship }
         >
           <div className="absolute inset-0 bg-gradient-to-r from-transparent via-broadcast-gold/5 to-transparent animate-shimmer" />
           <div className="relative z-10">
-            <div className="text-6xl font-display font-bold gradient-text mb-4">82 - 0</div>
+            <div className="text-6xl font-display font-bold gradient-text mb-4">{result.wins} - 0</div>
             <p className="text-broadcast-text-secondary text-lg mb-4">PERFECT SEASON ACHIEVED</p>
-            <p className="text-broadcast-text-muted">You've joined the immortals. The only team to ever go undefeated.</p>
+            <p className="text-broadcast-text-muted">You&apos;ve joined the immortals. The only team to ever go undefeated.</p>
           </div>
         </motion.div>
       )}
@@ -250,17 +234,19 @@ function OverviewView({ result, avgStats, streak, isUndefeated, isChampionship }
   );
 }
 
-function GamesView({ result, onSelectGame }: { result: SimulationResult; onSelectGame: (game: GameResultType) => void }) {
+function GamesView({ result, onSelectGame }: { result: SimulationResult; onSelectGame: (game: GameResult) => void }) {
+  const games = useMemo(() => [...result.games].reverse(), [result.games]);
   return (
     <div className="space-y-3">
-      {result.games.slice().reverse().map((game: GameResultType, index: number) => (
-        <motion.div
+      {games.map((game: GameResult) => (
+        <motion.button
           key={game.gameNumber}
+          type="button"
           initial={{ opacity: 0, x: -20 }}
           animate={{ opacity: 1, x: 0 }}
-          transition={{ delay: index * 0.01 }}
-          className="card p-4 hover:shadow-broadcast transition-shadow cursor-pointer"
+          className="card p-4 hover:shadow-broadcast transition-shadow cursor-pointer w-full text-left"
           onClick={() => onSelectGame(game)}
+          aria-label={`Game ${game.gameNumber} vs ${game.opponent}: ${game.result}, ${game.score.us} to ${game.score.them}`}
         >
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-4">
@@ -274,7 +260,7 @@ function GamesView({ result, onSelectGame }: { result: SimulationResult; onSelec
                   border: game.result === 'W' ? '1px solid rgba(0, 212, 170, 0.3)' : '1px solid rgba(255, 59, 48, 0.3)'
                 }}
               >
-                {game.result === 'W' ? 'W' : 'L'}
+                {game.result}
               </div>
               <div className="text-center">
                 <div className="font-mono font-bold text-lg">{game.score.us} - {game.score.them}</div>
@@ -285,31 +271,23 @@ function GamesView({ result, onSelectGame }: { result: SimulationResult; onSelec
                 <div className="font-medium">{game.opponent}</div>
               </div>
             </div>
-            <ChevronRight className="w-5 h-5 text-broadcast-text-muted" />
+            <ChevronRight className="w-5 h-5 text-broadcast-text-muted" aria-hidden="true" />
           </div>
-        </motion.div>
+        </motion.button>
       ))}
     </div>
   );
 }
 
-interface SimulatedPlayerStats {
-  playerId: string;
-  playerName: string;
-  gamesPlayed: number;
-  averages: PlayerStats;
-  totals: PlayerStats;
-}
-
 function PlayersView({ result }: { result: SimulationResult }) {
   return (
     <div className="space-y-4">
-      {result.playerStats.map((player: SimulatedPlayerStats, index: number) => (
+      {result.playerStats.map((player, index: number) => (
         <motion.div
           key={player.playerId}
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: index * 0.05 }}
+          transition={{ delay: Math.min(index * 0.05, 0.3) }}
           className="card p-4"
         >
           <div className="flex items-center gap-4">
@@ -341,17 +319,19 @@ function PlayersView({ result }: { result: SimulationResult }) {
   );
 }
 
-function BoxScoreView({ result }: any) {
-  return (
-    <div className="space-y-4">
-      <p className="text-broadcast-text-secondary text-center py-8">
-        Click on any game in the GAMES tab to view detailed box scores
-      </p>
-    </div>
-  );
-}
+function GameBoxScoreModal({ game, onClose }: { game: GameResult; onClose: () => void }) {
+  const closeRef = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    closeRef.current?.focus();
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [onClose]);
 
-function GameBoxScoreModal({ game, onClose }: any) {
+  const perfs: PlayerGamePerformance[] = game.playerPerformances ?? [];
+
   return (
     <motion.div
       initial={{ opacity: 0 }}
@@ -365,11 +345,14 @@ function GameBoxScoreModal({ game, onClose }: any) {
         animate={{ opacity: 1, scale: 1, y: 0 }}
         className="w-full max-w-4xl max-h-[90vh] overflow-y-auto bg-broadcast-card border border-broadcast-border rounded-2xl"
         onClick={e => e.stopPropagation()}
+        role="dialog"
+        aria-modal="true"
+        aria-label={`Box score for game ${game.gameNumber}`}
       >
         <div className="p-4 border-b border-broadcast-border flex items-center justify-between sticky top-0 bg-broadcast-card/95 backdrop-blur z-10">
           <h3 className="font-display text-xl font-bold">BOX SCORE - GAME #{game.gameNumber}</h3>
-          <button onClick={onClose} className="p-2 rounded-lg hover:bg-broadcast-border transition-colors">
-            <ChevronRight className="w-5 h-5 text-broadcast-text-secondary rotate-90" />
+          <button ref={closeRef} onClick={onClose} className="p-2 rounded-lg hover:bg-broadcast-border transition-colors" aria-label="Close box score">
+            <X className="w-5 h-5 text-broadcast-text-secondary" aria-hidden="true" />
           </button>
         </div>
 
@@ -390,19 +373,20 @@ function GameBoxScoreModal({ game, onClose }: any) {
 
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
+              <caption className="sr-only">Player performances for game {game.gameNumber}</caption>
               <thead>
                 <tr className="border-b border-broadcast-border text-broadcast-text-secondary">
-                  <th className="text-left py-2 px-3">PLAYER</th>
-                  <th className="text-center py-2 px-3">MIN</th>
-                  <th className="text-center py-2 px-3" style={{ color: STAT_COLORS.pts }}>PTS</th>
-                  <th className="text-center py-2 px-3" style={{ color: STAT_COLORS.reb }}>REB</th>
-                  <th className="text-center py-2 px-3" style={{ color: STAT_COLORS.ast }}>AST</th>
-                  <th className="text-center py-2 px-3" style={{ color: STAT_COLORS.stl }}>STL</th>
-                  <th className="text-center py-2 px-3" style={{ color: STAT_COLORS.blk }}>BLK</th>
+                  <th scope="col" className="text-left py-2 px-3">PLAYER</th>
+                  <th scope="col" className="text-center py-2 px-3">MIN</th>
+                  <th scope="col" className="text-center py-2 px-3" style={{ color: STAT_COLORS.pts }}>PTS</th>
+                  <th scope="col" className="text-center py-2 px-3" style={{ color: STAT_COLORS.reb }}>REB</th>
+                  <th scope="col" className="text-center py-2 px-3" style={{ color: STAT_COLORS.ast }}>AST</th>
+                  <th scope="col" className="text-center py-2 px-3" style={{ color: STAT_COLORS.stl }}>STL</th>
+                  <th scope="col" className="text-center py-2 px-3" style={{ color: STAT_COLORS.blk }}>BLK</th>
                 </tr>
               </thead>
               <tbody>
-                {game.playerPerformances.map((perf: any, i: number) => (
+                {perfs.map((perf) => (
                   <tr key={perf.playerId} className="border-b border-broadcast-border/50 hover:bg-broadcast-border/50">
                     <td className="py-2 px-3 font-medium">{perf.playerName}</td>
                     <td className="text-center py-2 px-3 text-broadcast-text-secondary">{perf.minutes}</td>
@@ -415,6 +399,9 @@ function GameBoxScoreModal({ game, onClose }: any) {
                 ))}
               </tbody>
             </table>
+            {perfs.length === 0 && (
+              <p className="text-center text-broadcast-text-muted py-6">No per-player box score recorded for this game.</p>
+            )}
           </div>
         </div>
       </motion.div>
@@ -422,24 +409,27 @@ function GameBoxScoreModal({ game, onClose }: any) {
   );
 }
 
-function StatCard({ label, value, icon: Icon, iconColor, trend }: any) {
+function StatCard({ label, value, icon: Icon, iconColor, trend, trendLabel }: { label: string; value: string; icon: React.ElementType; iconColor: string; trend?: 'positive' | 'negative'; trendLabel?: string }) {
   return (
     <div className="card-elevated p-5">
       <div className="flex items-center justify-between mb-2">
         <span className="text-xs text-broadcast-text-muted uppercase tracking-wider">{label}</span>
-        <Icon className={cn('w-6 h-6', iconColor)} />
+        <Icon className={cn('w-6 h-6', iconColor)} aria-hidden="true" />
       </div>
       <div className="font-display text-3xl font-bold text-white">{value}</div>
       {trend && (
         <div className={cn('mt-1 text-xs font-medium', trend === 'positive' ? 'text-green-400' : 'text-red-400')}>
-          {trend === 'positive' ? '↑' : '↓'} ABOVE .500
+          {trend === 'positive' ? 'Above .500' : 'Below .500'}
         </div>
+      )}
+      {trendLabel && !trend && (
+        <div className="mt-1 text-xs font-medium text-broadcast-text-muted">{trendLabel}</div>
       )}
     </div>
   );
 }
 
-function TeamStatCard({ label, value, color, icon }: any) {
+function TeamStatCard({ label, value, color }: { label: string; value: string; color: string }) {
   return (
     <div className="card p-4 text-center">
       <div className="text-[10px] text-broadcast-text-muted uppercase tracking-wider mb-1">{label}</div>
@@ -449,7 +439,7 @@ function TeamStatCard({ label, value, color, icon }: any) {
   );
 }
 
-function TeamMetric({ label, value, color }: any) {
+function TeamMetric({ label, value, color }: { label: string; value: string; color: string }) {
   return (
     <div className="text-center p-3 bg-broadcast-darker rounded-lg">
       <div className="text-[10px] text-broadcast-text-muted uppercase tracking-wider mb-1">{label}</div>

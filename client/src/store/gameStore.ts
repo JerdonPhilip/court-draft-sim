@@ -2,17 +2,19 @@ import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import {
   DraftState,
-  Lineup,
-  LineupSlot,
   Player,
-  DraftPool,
+  Position,
   SimulationResult,
   VSModeMatchup,
   HistoricalTeam,
-  TeamSkip,
-  DecadeSkip,
+  canPlayPosition,
 } from '../types/game';
 import { POSITIONS } from '../data/constants';
+import { api } from '../utils/api';
+
+function getEmptyPositions(slots: DraftState['lineup']['slots']): Position[] {
+  return slots.filter(s => !s.player).map(s => s.position);
+}
 
 interface GameStore {
   phase: 'draft' | 'simulation' | 'results' | 'vs-mode';
@@ -32,7 +34,7 @@ interface GameStore {
   setError: (error: string | null) => void;
 
   initializeDraft: () => void;
-  spinDraftPool: (excludeFranchise?: string, excludeDecade?: string) => Promise<void>;
+  spinDraftPool: (excludeFranchise?: string, excludeDecade?: string, neededPositions?: Position[]) => Promise<void>;
   useTeamSkip: () => void;
   useDecadeSkip: () => void;
   draftPlayer: (player: Player, slotIndex: number) => void;
@@ -60,6 +62,8 @@ const createInitialDraftState = (): DraftState => ({
   spinResult: null,
 });
 
+let spinRequestId = 0;
+
 export const useGameStore = create<GameStore>()(
   persist(
     (set, get) => ({
@@ -80,6 +84,7 @@ export const useGameStore = create<GameStore>()(
       setError: (error) => set({ error }),
 
       initializeDraft: () => {
+        spinRequestId++;
         set({
           phase: 'draft',
           draftState: createInitialDraftState(),
@@ -89,22 +94,24 @@ export const useGameStore = create<GameStore>()(
         });
       },
 
-      spinDraftPool: async (excludeFranchise, excludeDecade) => {
+      spinDraftPool: async (excludeFranchise, excludeDecade, neededPositions) => {
         const { draftState } = get();
-        set({ draftState: { ...draftState, isSpinning: true, error: null } });
+        if (draftState.isSpinning) return;
+        const myRequest = ++spinRequestId;
+        set({ draftState: { ...get().draftState, isSpinning: true, error: null } });
 
         try {
-          const response = await fetch('/api/draft/spin', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ excludeFranchise, excludeDecade }),
-          });
+          // Default to the currently empty slots so the server can guarantee
+          // at least one draftable player per spin.
+          const need = neededPositions ?? getEmptyPositions(get().draftState.lineup.slots);
+          const data = await api.draft.spin(excludeFranchise, excludeDecade, need.length > 0 ? need : undefined);
 
-          const data = await response.json();
-          if (!response.ok) throw new Error(data.error || 'Failed to spin');
+          // Stale response guard: ignore if a newer spin/reset started.
+          if (myRequest !== spinRequestId) return;
 
           const { draftState: currentState } = get();
-          const newPools = [...currentState.availablePools, data.pool];
+          // Cap persisted pool history to avoid unbounded localStorage growth.
+          const newPools = [...currentState.availablePools, data.pool].slice(-10);
 
           set({
             draftState: {
@@ -116,89 +123,118 @@ export const useGameStore = create<GameStore>()(
             },
           });
         } catch (error) {
+          if (myRequest !== spinRequestId) return;
           set({
-            draftState: { ...get().draftState, isSpinning: false, error: String(error) },
+            draftState: { ...get().draftState, isSpinning: false, error: error instanceof Error ? error.message : String(error) },
           });
         }
       },
 
       useTeamSkip: () => {
         const { draftState } = get();
-        if (draftState.teamSkip.used || !draftState.pool) return;
+        if (draftState.teamSkip.used || !draftState.pool || draftState.isSpinning) return;
 
+        const evictedFranchise = draftState.pool.franchise;
         set({
           draftState: {
             ...draftState,
-            teamSkip: { used: true, franchise: draftState.pool.franchise },
+            teamSkip: { used: true, franchise: evictedFranchise },
             pool: null,
             spinResult: null,
           },
         });
-        get().spinDraftPool(draftState.teamSkip.franchise, undefined);
+        void get().spinDraftPool(evictedFranchise, undefined);
       },
 
       useDecadeSkip: () => {
         const { draftState } = get();
-        if (draftState.decadeSkip.used || !draftState.pool) return;
+        if (draftState.decadeSkip.used || !draftState.pool || draftState.isSpinning) return;
 
+        const evictedDecade = draftState.pool.decade;
         set({
           draftState: {
             ...draftState,
-            decadeSkip: { used: true, decade: draftState.pool.decade },
+            decadeSkip: { used: true, decade: evictedDecade },
             pool: null,
             spinResult: null,
           },
         });
-        get().spinDraftPool(undefined, draftState.decadeSkip.decade);
+        void get().spinDraftPool(undefined, evictedDecade);
       },
 
       draftPlayer: (player, slotIndex) => {
         const { draftState } = get();
         const slot = draftState.lineup.slots[slotIndex];
+        if (!slot) {
+          set({ draftState: { ...draftState, error: 'Invalid slot' } });
+          return;
+        }
 
-        if (slot.player || draftState.draftedPlayers.includes(player.id)) return;
-        if (slot.position !== player.position) return;
+        if (slot.player || draftState.draftedPlayers.includes(player.id)) {
+          set({ draftState: { ...draftState, error: 'Player already drafted' } });
+          return;
+        }
+        if (!canPlayPosition(player, slot.position)) {
+          const flex = player.secondaryPositions?.length
+            ? ` (${player.position}/${player.secondaryPositions.join('/')})`
+            : ` (${player.position})`;
+          set({
+            draftState: {
+              ...draftState,
+              error: `${player.name}${flex} can't fill the ${slot.position} slot — try an empty ${player.position} slot`,
+            },
+          });
+          return;
+        }
 
-        const newLineup = { ...draftState.lineup };
-        newLineup.slots = [...draftState.lineup.slots];
-        newLineup.slots[slotIndex] = { ...slot, player };
+        const newSlots = [...draftState.lineup.slots];
+        newSlots[slotIndex] = { ...slot, player };
 
-        const nextRound = draftState.currentRound < draftState.maxRounds
-          ? draftState.currentRound + 1
-          : draftState.currentRound;
+        const filledCount = newSlots.filter(s => s.player).length;
+        const nextRound = Math.min(draftState.maxRounds, filledCount + 1);
 
         set({
           draftState: {
             ...draftState,
-            lineup: newLineup,
+            lineup: { slots: newSlots },
             draftedPlayers: [...draftState.draftedPlayers, player.id],
             currentRound: nextRound,
             pool: null,
             spinResult: null,
+            error: null,
           },
         });
+
+        // Auto-spin the next pool so the user is never dead-ended.
+        if (filledCount < draftState.maxRounds) {
+          void get().spinDraftPool();
+        }
       },
 
       removePlayerFromSlot: (slotIndex) => {
         const { draftState } = get();
         const slot = draftState.lineup.slots[slotIndex];
-        if (!slot.player) return;
+        if (!slot?.player) return;
 
-        const newLineup = { ...draftState.lineup };
-        newLineup.slots = [...draftState.lineup.slots];
-        newLineup.slots[slotIndex] = { ...slot, player: null };
+        const removedId = slot.player.id;
+        const newSlots = [...draftState.lineup.slots];
+        newSlots[slotIndex] = { ...slot, player: null };
+
+        const filledCount = newSlots.filter(s => s.player).length;
 
         set({
           draftState: {
             ...draftState,
-            lineup: newLineup,
-            draftedPlayers: draftState.draftedPlayers.filter(id => id !== slot.player!.id),
-            currentRound: Math.max(1, draftState.currentRound - 1),
+            lineup: { slots: newSlots },
+            draftedPlayers: draftState.draftedPlayers.filter(id => id !== removedId),
+            currentRound: Math.min(draftState.maxRounds, filledCount + 1),
+            error: null,
           },
         });
       },
 
       clearLineup: () => {
+        spinRequestId++;
         const { draftState } = get();
         set({
           draftState: {
@@ -206,6 +242,11 @@ export const useGameStore = create<GameStore>()(
             lineup: { slots: POSITIONS.map(pos => ({ position: pos, player: null })) },
             draftedPlayers: [],
             currentRound: 1,
+            pool: null,
+            spinResult: null,
+            availablePools: [],
+            isSpinning: false,
+            error: null,
           },
         });
       },
@@ -213,62 +254,57 @@ export const useGameStore = create<GameStore>()(
       finalizeDraft: async () => {
         const { draftState } = get();
         const filledSlots = draftState.lineup.slots.filter(s => s.player).length;
-        if (filledSlots < 5) {
-          set({ error: 'Fill all 5 positions before finalizing' });
+        if (filledSlots < draftState.maxRounds) {
+          const msg = 'Fill all 5 positions before finalizing';
+          set({ error: msg, draftState: { ...draftState, error: msg } });
           return;
         }
-        set({ phase: 'simulation' });
+        set({ phase: 'simulation', error: null });
+        await get().runSimulation();
       },
 
       runSimulation: async () => {
         const { draftState } = get();
+        const players = draftState.lineup.slots.map(s => s.player).filter((p): p is Player => p !== null);
+        if (players.length < draftState.maxRounds) {
+          set({ error: 'Fill all 5 positions before simulating', phase: 'draft' });
+          return;
+        }
         set({ isLoading: true, error: null });
 
         try {
-          const lineup = draftState.lineup.slots.map(s => s.player!).filter(Boolean);
+          const data = await api.simulation.runSeason(players);
 
-          const response = await fetch('/api/simulation/season', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ lineup }),
-          });
-
-          const data = await response.json();
-          if (!response.ok) throw new Error(data.error || 'Simulation failed');
-
-          set({ simulationResult: data.result, phase: 'results', isLoading: false });
+          set({ simulationResult: data.result as SimulationResult, phase: 'results', isLoading: false });
         } catch (error) {
-          set({ error: String(error), isLoading: false });
+          set({ error: error instanceof Error ? error.message : String(error), isLoading: false, phase: 'results' });
         }
       },
 
       startVSMode: async (historicalTeamId, seriesLength) => {
         const { draftState } = get();
+        const players = draftState.lineup.slots.map(s => s.player).filter((p): p is Player => p !== null);
+        if (players.length < draftState.maxRounds) {
+          set({ error: 'Fill all 5 positions before VS Mode' });
+          return;
+        }
         set({ isLoading: true, error: null });
 
         try {
-          const lineup = draftState.lineup.slots.map(s => s.player!).filter(Boolean);
-
-          const response = await fetch('/api/simulation/vs-mode', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ userLineup: lineup, historicalTeamId, seriesLength }),
-          });
-
-          const data = await response.json();
-          if (!response.ok) throw new Error(data.error || 'VS Mode failed');
+          const data = await api.simulation.runVSMode(players, historicalTeamId, seriesLength);
 
           set({
-            vsMatchup: data.result,
+            vsMatchup: data.result as VSModeMatchup,
             phase: 'vs-mode',
             isLoading: false,
           });
         } catch (error) {
-          set({ error: String(error), isLoading: false });
+          set({ error: error instanceof Error ? error.message : String(error), isLoading: false });
         }
       },
 
       resetGame: () => {
+        spinRequestId++;
         set({
           phase: 'draft',
           draftState: createInitialDraftState(),
@@ -280,12 +316,29 @@ export const useGameStore = create<GameStore>()(
     }),
     {
       name: 'court-draft-sim-store',
+      version: 2,
       partialize: (state) => ({
-        phase: state.phase,
-        draftState: state.draftState,
+        phase: state.phase === 'simulation' ? 'draft' : state.phase,
+        draftState: {
+          ...state.draftState,
+          isSpinning: false,
+          error: null,
+          availablePools: state.draftState.availablePools.slice(-10),
+        },
         simulationResult: state.simulationResult,
         vsMatchup: state.vsMatchup,
-      }),
+      } as unknown as GameStore),
+      migrate: (persisted: unknown, version: number) => {
+        if (version < 2 || typeof persisted !== 'object' || persisted === null) {
+          return persisted as GameStore;
+        }
+        const p = persisted as { draftState?: Partial<DraftState> };
+        if (p.draftState) {
+          p.draftState.isSpinning = false;
+          p.draftState.error = null;
+        }
+        return persisted as GameStore;
+      },
     }
   )
 );

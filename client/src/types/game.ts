@@ -12,6 +12,8 @@ export interface Player {
   id: string;
   name: string;
   position: Position;
+  /** Extra positions the player can credibly fill (e.g. Garnett PF/C). Primary stays in `position`. */
+  secondaryPositions?: Position[];
   team: string;
   decade: string;
   era: string;
@@ -19,6 +21,16 @@ export interface Player {
   overall: number;
   archetype: string;
   imageUrl?: string;
+}
+
+export function getPlayerPositions(player: Pick<Player, 'position' | 'secondaryPositions'>): Position[] {
+  const seen = new Set<Position>([player.position]);
+  for (const p of player.secondaryPositions ?? []) seen.add(p);
+  return [...seen];
+}
+
+export function canPlayPosition(player: Pick<Player, 'position' | 'secondaryPositions'>, slot: Position): boolean {
+  return getPlayerPositions(player).includes(slot);
 }
 
 export interface HistoricalTeam {
@@ -74,6 +86,8 @@ export interface SimulationResult {
   wins: number;
   losses: number;
   winPct: number;
+  projectedWins?: number;
+  teamStrength?: number;
   games: GameResult[];
   playerStats: SimulatedPlayerStats[];
   teamStats: TeamSeasonStats;
@@ -99,8 +113,10 @@ export interface SimulatedPlayerStats {
   playerId: string;
   playerName: string;
   gamesPlayed: number;
+  minutesPerGame?: number;
   averages: PlayerStats;
   totals: PlayerStats;
+  highGames?: { pts: number; reb: number; ast: number; stl: number; blk: number };
 }
 
 export interface TeamSeasonStats {
@@ -115,11 +131,16 @@ export interface TeamSeasonStats {
   avgBlk: number;
 }
 
+// Matches GET /api/simulation/historical-teams + POST /vs-mode response.
 export interface VSModeMatchup {
   userLineup: Lineup;
   historicalTeam: HistoricalTeam;
   seriesLength: 1 | 7;
   results: VSSeriesResult[];
+  games: VSSeriesResult[];
+  userWins: number;
+  historicalWins: number;
+  seriesWinner: 'user' | 'historical';
 }
 
 export interface VSSeriesResult {

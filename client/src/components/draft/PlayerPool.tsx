@@ -1,10 +1,9 @@
-'use client';
-
 import { motion, AnimatePresence } from 'framer-motion';
 import { ChevronRight, Star, Trophy } from 'lucide-react';
-import { cn } from '../../utils/helpers';
-import { Player, Position } from '../../types/game';
-import { getPositionColor } from '../../utils/helpers';
+import { cn, getPositionColor, getPositionLabel } from '../../utils/helpers';
+import { FRANCHISES, DECADES } from '../../data/constants';
+import { canPlayPosition, getPlayerPositions } from '../../types/game';
+import type { LineupSlot, Player, Position } from '../../types/game';
 
 interface PlayerPoolProps {
   pool: {
@@ -14,29 +13,26 @@ interface PlayerPoolProps {
   } | null;
   draftedPlayerIds: string[];
   onDraftPlayer: (player: Player) => void;
-  currentPosition: Position | null;
+  /** Currently unfilled slots — a card is draftable if it fits ANY of these. */
+  emptyPositions: Position[];
+  lineupSlots: LineupSlot[];
 }
 
-const positionLabels: Record<Position, string> = {
-  PG: 'Point Guard',
-  SG: 'Shooting Guard',
-  SF: 'Small Forward',
-  PF: 'Power Forward',
-  C: 'Center',
-};
+function fittingEmptySlots(player: Player, slots: LineupSlot[]): Position[] {
+  return slots
+    .filter(s => !s.player)
+    .map(s => s.position)
+    .filter(pos => canPlayPosition(player, pos));
+}
 
-const positionIcons: Record<Position, string> = {
-  PG: '🎯',
-  SG: '🏀',
-  SF: '⚡',
-  PF: '💪',
-  C: '🛡️',
-};
-
-export function PlayerPool({ pool, draftedPlayerIds, onDraftPlayer, currentPosition }: PlayerPoolProps) {
+export function PlayerPool({ pool, draftedPlayerIds, onDraftPlayer, emptyPositions, lineupSlots }: PlayerPoolProps) {
   if (!pool) return null;
 
   const availablePlayers = pool.players.filter((p: Player) => !draftedPlayerIds.includes(p.id));
+  const franchiseName = FRANCHISES.find(f => f.id === pool.franchise)?.name ?? pool.franchise;
+  const decadeLabel = DECADES.find(d => d.id === pool.decade)?.label ?? pool.decade;
+
+  const draftableCount = availablePlayers.filter(p => fittingEmptySlots(p, lineupSlots).length > 0).length;
 
   return (
     <AnimatePresence mode="wait">
@@ -49,95 +45,129 @@ export function PlayerPool({ pool, draftedPlayerIds, onDraftPlayer, currentPosit
         className="space-y-4"
       >
         <div className="flex items-center justify-between mb-4">
-          <h3 className="section-title font-display text-lg">AVAILABLE PLAYERS</h3>
-          <div className="flex items-center gap-2 text-sm text-broadcast-text-secondary">
+          <h3 className="section-title font-display text-lg">AVAILABLE PLAYERS — {franchiseName} • {decadeLabel}</h3>
+          <div className="flex items-center gap-2 text-sm text-broadcast-text-secondary" aria-live="polite">
             <span className="px-2 py-1 bg-broadcast-accent/20 text-broadcast-accent rounded border border-broadcast-accent/30">
-              {pool.players.length} TOTAL
-            </span>
-            <span className="px-2 py-1 bg-broadcast-gold/20 text-broadcast-gold rounded border border-broadcast-gold/30">
-              {availablePlayers.length} AVAILABLE
+              {draftableCount}/{availablePlayers.length} DRAFTABLE
             </span>
           </div>
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-          {availablePlayers.map((player: Player, index: number) => (
-            <motion.div
-              key={player.id}
-              initial={{ opacity: 0, scale: 0.95, y: 10 }}
-              animate={{ opacity: 1, scale: 1, y: 0 }}
-              transition={{ duration: 0.3, delay: index * 0.05 }}
-              className={cn(
-                'player-card relative overflow-hidden group',
-                currentPosition && player.position !== currentPosition && 'opacity-40 pointer-events-none'
-              )}
-              onClick={() => onDraftPlayer(player)}
-            >
-              <div
-                className="absolute top-0 left-0 w-1 h-full"
-                style={{ backgroundColor: getPositionColor(player.position) }}
-              />
-              <div className="flex items-start gap-3 p-3">
+        {emptyPositions.length > 0 && (
+          <p className="text-sm text-broadcast-text-secondary" aria-live="polite">
+            Open slots: <span className="font-bold text-broadcast-accent">{emptyPositions.join(', ')}</span>
+            {' '}— anyone who fits a highlighted slot can be picked, any order. Flex players show all their spots.
+          </p>
+        )}
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3" role="list">
+          {availablePlayers.map((player: Player, index: number) => {
+            const fits = fittingEmptySlots(player, lineupSlots);
+            const isDraftable = fits.length > 0;
+            const isFlex = (player.secondaryPositions?.length ?? 0) > 0;
+            return (
+              <motion.button
+                key={player.id}
+                type="button"
+                role="listitem"
+                initial={{ opacity: 0, scale: 0.95, y: 10 }}
+                animate={{ opacity: 1, scale: 1, y: 0 }}
+                transition={{ duration: 0.3, delay: Math.min(index * 0.05, 0.3) }}
+                className={cn(
+                  'player-card relative overflow-hidden group text-left w-full',
+                  !isDraftable && 'opacity-40'
+                )}
+                onClick={() => onDraftPlayer(player)}
+                disabled={!isDraftable}
+                aria-disabled={!isDraftable}
+                aria-label={
+                  isDraftable
+                    ? `Draft ${player.name}, plays ${getPlayerPositions(player).join('/')}, fits ${fits.join(', ')}`
+                    : `${player.name}, plays ${getPlayerPositions(player).join('/')} — doesn't fit open slots ${emptyPositions.join(', ')}`
+                }
+                title={isDraftable ? `Draft ${player.name} → ${fits.join(' or ')}` : `No open slot for ${getPlayerPositions(player).join('/')}`}
+              >
                 <div
-                  className="w-14 h-14 rounded-xl flex items-center justify-center font-display font-bold text-white flex-shrink-0"
+                  className="absolute top-0 left-0 w-1 h-full"
                   style={{ backgroundColor: getPositionColor(player.position) }}
-                >
-                  <span className="text-2xl">{positionIcons[player.position]}</span>
-                </div>
+                  aria-hidden="true"
+                />
+                <div className="flex items-start gap-3 p-3">
+                  <div
+                    className="w-14 h-14 rounded-xl flex items-center justify-center font-display font-bold text-white flex-shrink-0"
+                    style={{ backgroundColor: getPositionColor(player.position) }}
+                    aria-hidden="true"
+                  >
+                    <span className="text-sm text-center leading-tight">{getPlayerPositions(player).join('/')}</span>
+                  </div>
 
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2 mb-1">
-                    <h4 className="font-semibold text-white truncate">{player.name}</h4>
-                    <span
-                      className={cn(
-                        'px-2 py-0.5 text-xs font-medium rounded-full',
-                        player.position === currentPosition
-                          ? 'bg-broadcast-accent/20 text-broadcast-accent border border-broadcast-accent/30'
-                          : 'bg-broadcast-border text-broadcast-text-muted'
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 mb-1 flex-wrap">
+                      <h4 className="font-semibold text-white truncate">{player.name}</h4>
+                      <span className="px-2 py-0.5 text-xs font-medium rounded-full bg-broadcast-accent/20 text-broadcast-accent border border-broadcast-accent/30">
+                        {getPlayerPositions(player).join('/')}
+                      </span>
+                      {isFlex && (
+                        <span className="px-2 py-0.5 text-xs font-medium rounded-full bg-broadcast-gold/20 text-broadcast-gold border border-broadcast-gold/30">
+                          FLEX
+                        </span>
                       )}
-                    >
-                      {positionLabels[player.position]}
-                    </span>
+                    </div>
+
+                    <div className="flex items-center gap-2 text-sm text-broadcast-text-secondary mb-1">
+                      <span className="font-medium">{FRANCHISES.find(f => f.id === player.team)?.abbreviation ?? player.team}</span>
+                      <span aria-hidden="true">•</span>
+                      <span>{DECADES.find(d => d.id === player.decade)?.label ?? player.decade}</span>
+                      <span aria-hidden="true">•</span>
+                      <span className="text-broadcast-gold">{player.archetype}</span>
+                    </div>
+
+                    <div className="text-xs mb-2">
+                      {isDraftable ? (
+                        <span className="text-broadcast-accent font-medium">Fits: {fits.join(', ')}</span>
+                      ) : (
+                        <span className="text-broadcast-text-muted">Needs: {getPositionLabel(player.position)} — no open slot</span>
+                      )}
+                    </div>
+
+                    <div className="flex items-center gap-4 text-xs">
+                      <div className="flex items-center gap-1 text-broadcast-accent">
+                        <Star className="w-3 h-3" aria-hidden="true" />
+                        <span className="font-bold">{player.overall}</span>
+                        <span className="text-broadcast-text-muted">OVR</span>
+                      </div>
+                      <div className="flex items-center gap-1 text-broadcast-gold">
+                        <Trophy className="w-3 h-3" aria-hidden="true" />
+                        <span className="font-medium">{player.stats.pts} PPG</span>
+                      </div>
+                    </div>
                   </div>
 
-                  <div className="flex items-center gap-2 text-sm text-broadcast-text-secondary mb-2">
-                    <span className="font-medium">{FRANCHISE_LABELS[player.team] || player.team}</span>
-                    <span>•</span>
-                    <span>{DECADE_LABELS[player.decade] || player.decade}</span>
-                    <span>•</span>
-                    <span className="text-broadcast-gold">{player.archetype}</span>
-                  </div>
-
-                  <div className="flex items-center gap-4 text-xs">
-                    <div className="flex items-center gap-1 text-broadcast-accent">
-                      <Star className="w-3 h-3" />
-                      <span className="font-bold">{player.overall}</span>
-                      <span className="text-broadcast-text-muted">OVR</span>
-                    </div>
-                    <div className="flex items-center gap-1 text-broadcast-gold">
-                      <Trophy className="w-3 h-3" />
-                      <span className="font-medium">{player.stats.pts} PPG</span>
-                    </div>
-                  </div>
+                  <ChevronRight className="w-5 h-5 text-broadcast-text-muted group-hover:text-broadcast-accent transition-colors" aria-hidden="true" />
                 </div>
 
-                <ChevronRight className="w-5 h-5 text-broadcast-text-muted group-hover:text-broadcast-accent transition-colors" />
-              </div>
-
-              <div className="grid grid-cols-5 gap-1 px-3 pb-3 border-t border-broadcast-border">
-                <StatMini label="PTS" value={player.stats.pts} color="text-broadcast-accent" />
-                <StatMini label="REB" value={player.stats.reb} color="text-broadcast-gold" />
-                <StatMini label="AST" value={player.stats.ast} color="text-broadcast-blue" />
-                <StatMini label="STL" value={player.stats.stl} color="text-broadcast-green" />
-                <StatMini label="BLK" value={player.stats.blk} color="text-broadcast-purple" />
-              </div>
-            </motion.div>
-          ))}
+                <div className="grid grid-cols-5 gap-1 px-3 pb-3 border-t border-broadcast-border">
+                  <StatMini label="PTS" value={player.stats.pts} color="text-broadcast-accent" />
+                  <StatMini label="REB" value={player.stats.reb} color="text-broadcast-gold" />
+                  <StatMini label="AST" value={player.stats.ast} color="text-broadcast-blue" />
+                  <StatMini label="STL" value={player.stats.stl} color="text-broadcast-green" />
+                  <StatMini label="BLK" value={player.stats.blk} color="text-broadcast-purple" />
+                </div>
+              </motion.button>
+            );
+          })}
         </div>
 
         {availablePlayers.length === 0 && (
           <div className="text-center py-8 text-broadcast-text-muted">
             <p>All players from this pool have been drafted</p>
+          </div>
+        )}
+        {availablePlayers.length > 0 && draftableCount === 0 && (
+          <div className="text-center p-6 card border-broadcast-gold/30" role="alert">
+            <p className="text-broadcast-text-secondary mb-3">
+              Nobody in this pool fits your open slots ({emptyPositions.join(', ')}). Re-spin for free — this pool was supposed to be filtered, so this is unexpected.
+            </p>
           </div>
         )}
       </motion.div>
@@ -153,19 +183,3 @@ function StatMini({ label, value, color }: { label: string; value: number; color
     </div>
   );
 }
-
-const FRANCHISE_LABELS: Record<string, string> = {
-  lakers: 'LAL', celtics: 'BOS', bulls: 'CHI', warriors: 'GSW',
-  heat: 'MIA', spurs: 'SAS', nets: 'BKN', knicks: 'NYK',
-  mavericks: 'DAL', suns: 'PHX', bucks: 'MIL', nuggets: 'DEN',
-  clippers: 'LAC', sixers: 'PHI', raptors: 'TOR', pistons: 'DET',
-  cavaliers: 'CLE', rockets: 'HOU', thunder: 'OKC', jazz: 'UTA',
-  kings: 'SAC', hawks: 'ATL', wizards: 'WAS', pacers: 'IND',
-  magic: 'ORL', hornets: 'CHA', grizzlies: 'MEM', pelicans: 'NOP',
-  trailblazers: 'POR', timberwolves: 'MIN',
-};
-
-const DECADE_LABELS: Record<string, string> = {
-  '1960s': '60s', '1970s': '70s', '1980s': '80s',
-  '1990s': '90s', '2000s': '00s', '2010s': '10s', '2020s': '20s',
-};

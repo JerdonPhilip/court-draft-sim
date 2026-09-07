@@ -66,6 +66,7 @@ export default {
         'shimmer': 'shimmer 2s infinite',
         'slot-roll': 'slotRoll 0.1s linear',
         'slot-settle': 'slotSettle 0.5s cubic-bezier(0.34, 1.56, 0.64, 1)',
+        'slot-spin': 'slotSpin 1.8s cubic-bezier(0.25, 0.46, 0.45, 0.94)',
         'card-flip': 'cardFlip 0.6s ease-out',
         'confetti': 'confetti 1s ease-out forwards',
       },
@@ -101,6 +102,10 @@ export default {
         slotSettle: {
           '0%': { transform: 'translateY(-20px)', opacity: '0' },
           '100%': { transform: 'translateY(0)', opacity: '1' },
+        },
+        slotSpin: {
+          '0%': { transform: 'translateY(0)' },
+          '100%': { transform: 'translateY(-50%)' },
         },
         cardFlip: {
           '0%': { transform: 'rotateY(90deg)', opacity: '0' },

@@ -16,7 +16,7 @@
   }
 
   * {
-    @apply border-broadcast-border;
+    border-color: var(--color-border);
   }
 
   html {
@@ -25,7 +25,6 @@
 
   body {
     @apply bg-broadcast-dark text-white font-body min-h-screen;
-    background-image: var(--tw-gradient-stops);
     background: linear-gradient(180deg, #0a0f14 0%, #0d151c 50%, #0a0f14 100%);
   }
 

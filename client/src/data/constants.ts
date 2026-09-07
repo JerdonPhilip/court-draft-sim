@@ -31,6 +31,7 @@ export const FRANCHISES = [
   { id: 'pelicans', name: 'New Orleans Pelicans', abbreviation: 'NOP', color: '#0C2340', secondary: '#85714D' },
   { id: 'trailblazers', name: 'Portland Trail Blazers', abbreviation: 'POR', color: '#E03A3E', secondary: '#000000' },
   { id: 'timberwolves', name: 'Minnesota Timberwolves', abbreviation: 'MIN', color: '#0C2340', secondary: '#236192' },
+  { id: 'supersonics', name: 'Seattle SuperSonics', abbreviation: 'SEA', color: '#00653A', secondary: '#FFC72C' },
 ] as const;
 
 export const DECADES = [

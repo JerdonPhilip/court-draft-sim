@@ -1,4 +1,4 @@
-import { SimulationConfig } from '../types/game';
+import { SimulationConfig } from '../types/game.js';
 
 export const DEFAULT_SIMULATION_CONFIG: SimulationConfig = {
   variance: 0.15,
@@ -12,4 +12,6 @@ export const SIMULATION_CONSTANTS = {
   BASE_EFFICIENCY: 1.08,
   MAX_GAMES: 82,
   PLAYOFF_SERIES_LENGTH: 7,
+  BASE_SCORE: 105,
+  MIN_SCORE: 70,
 } as const;

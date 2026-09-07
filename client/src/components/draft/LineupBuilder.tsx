@@ -1,74 +1,36 @@
-'use client';
-
-import { useState } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
-import {
-  DndContext,
-  closestCenter,
-  KeyboardSensor,
-  PointerSensor,
-  useSensor,
-  useSensors,
-  DragEndEvent,
-} from '@dnd-kit/core';
-import {
-  SortableContext,
-  sortableKeyboardCoordinates,
-  verticalListSortingStrategy,
-  useSortable,
-} from '@dnd-kit/sortable';
-import { CSS } from '@dnd-kit/utilities';
-import { Trash2, Plus, X, ChevronLeft, ChevronRight, Star, Trophy, Zap } from 'lucide-react';
-import { cn } from '../../utils/helpers';
-import { Player, Position, LineupSlot } from '../../types/game';
-import { getPositionColor, getPositionIcon } from '../../utils/helpers';
+import { motion } from 'framer-motion';
+import { Plus, X, Star, Trophy } from 'lucide-react';
+import { cn, getPositionColor, getPositionLabel } from '../../utils/helpers';
+import { getPlayerPositions } from '../../types/game';
+import type { LineupSlot } from '../../types/game';
 import { POSITIONS } from '../../data/constants';
 
-interface SortableSlotProps {
+interface SlotProps {
   slot: LineupSlot;
   index: number;
-  currentRound: number;
+  hasAnyEmpty: boolean;
   onRemove: (index: number) => void;
 }
 
-function SortableSlot({ slot, index, currentRound, onRemove }: SortableSlotProps) {
-  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: index });
-
-  const style = {
-    transform: CSS.Transform.toString(transform),
-    transition,
-    opacity: isDragging ? 0.5 : 1,
-  };
-
-  const positionLabels: Record<Position, string> = {
-    PG: 'Point Guard',
-    SG: 'Shooting Guard',
-    SF: 'Small Forward',
-    PF: 'Power Forward',
-    C: 'Center',
-  };
-
-  const filled = index < currentRound;
-  const isCurrentSlot = index === currentRound - 1;
+function Slot({ slot, index, hasAnyEmpty, onRemove }: SlotProps) {
+  const hasPlayer = !!slot.player;
+  const expectedPos = POSITIONS[index]!;
+  const isNextUp = !hasPlayer && hasAnyEmpty;
+  const flexLabel = slot.player && (slot.player.secondaryPositions?.length ?? 0) > 0
+    ? getPlayerPositions(slot.player).join('/')
+    : null;
 
   return (
     <motion.div
-      ref={setNodeRef}
-      style={style}
-      className={cn(
-        'relative group',
-        !slot.player && !filled && 'opacity-50'
-      )}
-      animate={{ opacity: slot.player ? 1 : (filled ? 0.6 : 0.3) }}
+      className={cn('relative group')}
+      animate={{ opacity: hasPlayer ? 1 : isNextUp ? 0.9 : 0.55 }}
     >
       <div
-        {...attributes}
-        {...listeners}
         className={cn(
           'relative p-3 rounded-xl transition-all duration-300',
-          slot.player
+          hasPlayer
             ? 'bg-broadcast-card border-2 border-broadcast-accent/50 shadow-glow-accent player-card-selected'
-            : isCurrentSlot
+            : isNextUp
             ? 'bg-broadcast-accent/10 border-2 border-dashed border-broadcast-accent animate-pulse'
             : 'bg-broadcast-darker border border-broadcast-border'
         )}
@@ -78,21 +40,21 @@ function SortableSlot({ slot, index, currentRound, onRemove }: SortableSlotProps
             <div className="flex items-center justify-between mb-2">
               <div className="flex items-center gap-2">
                 <div
-                  className="w-8 h-8 rounded-lg flex items-center justify-center font-bold text-white text-sm"
+                  className="w-8 h-8 rounded-lg flex items-center justify-center font-bold text-white text-xs px-1"
                   style={{ backgroundColor: getPositionColor(slot.player.position) }}
                 >
-                  {slot.player.position}
+                  {flexLabel ?? slot.player.position}
                 </div>
                 <span className="font-medium text-broadcast-text-secondary text-sm">
-                  {positionLabels[slot.player.position]}
+                  {getPositionLabel(slot.position)} slot{flexLabel ? ` • plays ${flexLabel}` : ''}
                 </span>
               </div>
               <button
                 onClick={(e) => { e.stopPropagation(); onRemove(index); }}
-                className="p-1 rounded-lg hover:bg-broadcast-red/20 text-broadcast-red transition-colors opacity-0 group-hover:opacity-100"
-                aria-label="Remove player"
+                className="p-1 rounded-lg hover:bg-broadcast-red/20 text-broadcast-red transition-colors opacity-100 sm:opacity-0 sm:group-hover:opacity-100 sm:focus-within:opacity-100 focus:opacity-100 focus-visible:ring-2 focus-visible:ring-broadcast-red"
+                aria-label={`Remove ${slot.player.name}`}
               >
-                <X className="w-4 h-4" />
+                <X className="w-4 h-4" aria-hidden="true" />
               </button>
             </div>
 
@@ -100,8 +62,9 @@ function SortableSlot({ slot, index, currentRound, onRemove }: SortableSlotProps
               <div
                 className="w-12 h-12 rounded-xl flex items-center justify-center font-display font-bold text-white flex-shrink-0"
                 style={{ backgroundColor: getPositionColor(slot.player.position) }}
+                aria-hidden="true"
               >
-                <span className="text-xl">{getPositionIcon(slot.player.position)}</span>
+                <span className="text-lg">{slot.player.position}</span>
               </div>
 
               <div className="flex-1 min-w-0">
@@ -120,12 +83,12 @@ function SortableSlot({ slot, index, currentRound, onRemove }: SortableSlotProps
 
                 <div className="flex items-center gap-3 mt-2 text-xs">
                   <div className="flex items-center gap-1 text-broadcast-accent">
-                    <Star className="w-3 h-3" />
+                    <Star className="w-3 h-3" aria-hidden="true" />
                     <span className="font-bold">{slot.player.overall}</span>
                     <span className="text-broadcast-text-muted">OVR</span>
                   </div>
                   <div className="flex items-center gap-1 text-broadcast-gold">
-                    <Trophy className="w-3 h-3" />
+                    <Trophy className="w-3 h-3" aria-hidden="true" />
                     <span className="font-medium">{slot.player.stats.pts} PPG</span>
                   </div>
                 </div>
@@ -144,27 +107,27 @@ function SortableSlot({ slot, index, currentRound, onRemove }: SortableSlotProps
           <div className="flex flex-col items-center justify-center h-32">
             <div
               className="w-16 h-16 rounded-xl border-2 border-dashed flex items-center justify-center mb-3"
-              style={{ borderColor: getPositionColor(POSITIONS[index]) }}
+              style={{ borderColor: getPositionColor(expectedPos) }}
             >
-              <Plus className="w-8 h-8" style={{ color: getPositionColor(POSITIONS[index]) }} />
+              <Plus className="w-8 h-8" style={{ color: getPositionColor(expectedPos) }} aria-hidden="true" />
             </div>
             <div
               className="w-8 h-8 rounded-lg flex items-center justify-center font-bold text-white text-sm"
-              style={{ backgroundColor: getPositionColor(POSITIONS[index]) }}
+              style={{ backgroundColor: getPositionColor(expectedPos) }}
             >
-              {POSITIONS[index]}
+              {expectedPos}
             </div>
             <span className="mt-2 font-medium text-broadcast-text-secondary text-sm">
-              {positionLabels[POSITIONS[index]]}
+              {getPositionLabel(expectedPos)}
             </span>
-            {isCurrentSlot && (
+            {isNextUp && (
               <motion.p
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
                 transition={{ repeat: Infinity, duration: 1 }}
                 className="mt-1 text-xs text-broadcast-accent font-medium"
               >
-                CLICK TO DRAFT →
+                OPEN →
               </motion.p>
             )}
           </div>
@@ -185,22 +148,19 @@ function StatMini({ label, value, color }: { label: string; value: number; color
 
 interface LineupBuilderProps {
   lineup: LineupSlot[];
-  currentRound: number;
+  currentRound?: number;
   onRemovePlayer: (index: number) => void;
   teamStrength: number;
   projectedWins: number;
 }
 
-export function LineupBuilder({ lineup, currentRound, onRemovePlayer, teamStrength, projectedWins }: LineupBuilderProps) {
-  const sensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
-    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
-  );
-
+export function LineupBuilder({ lineup, onRemovePlayer, teamStrength, projectedWins }: LineupBuilderProps) {
+  const filled = lineup.filter(s => s.player).length;
+  const hasAnyEmpty = filled < lineup.length;
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
-        <h2 className="section-title font-display text-xl">YOUR LINEUP</h2>
+        <h2 className="section-title font-display text-xl">YOUR LINEUP ({filled}/5)</h2>
         <div className="flex items-center gap-4">
           <div className="text-center p-3 bg-broadcast-card border border-broadcast-border rounded-xl min-w-[80px]">
             <div className="text-2xl font-bold font-display gradient-text">{teamStrength}</div>
@@ -213,48 +173,35 @@ export function LineupBuilder({ lineup, currentRound, onRemovePlayer, teamStreng
         </div>
       </div>
 
-      <DndContext
-        sensors={sensors}
-        collisionDetection={closestCenter}
-        onDragEnd={(event: DragEndEvent) => {
-          const { active, over } = event;
-          if (over && active.id !== over.id) {
-            console.log('Reorder:', active.id, over.id);
-          }
-        }}
-      >
-        <SortableContext
-          items={lineup.map((_, i) => i.toString())}
-          strategy={verticalListSortingStrategy}
-        >
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-3">
-            {lineup.map((slot, index) => (
-              <SortableSlot
-                key={index}
-                slot={slot}
-                index={index}
-                currentRound={currentRound}
-                onRemove={onRemovePlayer}
-              />
-            ))}
-          </div>
-        </SortableContext>
-      </DndContext>
+      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-1 gap-3">
+        {lineup.map((slot, index) => (
+          <Slot
+            key={`${slot.position}-${index}`}
+            slot={slot}
+            index={index}
+            hasAnyEmpty={hasAnyEmpty}
+            onRemove={onRemovePlayer}
+          />
+        ))}
+      </div>
 
       <div className="p-4 bg-broadcast-card border border-broadcast-border rounded-xl">
-        <h4 className="font-medium text-broadcast-text-secondary mb-3">TEAM CHEMISTRY</h4>
-        <div className="grid grid-cols-5 gap-4">
-          {POSITIONS.map(pos => (
-            <div key={pos} className="text-center">
-              <div
-                className="w-10 h-10 rounded-xl mx-auto mb-2 flex items-center justify-center font-bold text-white text-sm"
-                style={{ backgroundColor: getPositionColor(pos) }}
-              >
-                {pos}
+        <h4 className="font-medium text-broadcast-text-secondary mb-3">TEAM CHEMISTRY — {filled}/5 SLOTS FILLED</h4>
+        <div className="grid grid-cols-5 gap-4" aria-hidden="true">
+          {POSITIONS.map(pos => {
+            const hasPos = lineup.some(s => s.player?.position === pos);
+            return (
+              <div key={pos} className="text-center" style={{ opacity: hasPos ? 1 : 0.4 }}>
+                <div
+                  className="w-10 h-10 rounded-xl mx-auto mb-2 flex items-center justify-center font-bold text-white text-sm"
+                  style={{ backgroundColor: getPositionColor(pos) }}
+                >
+                  {pos}
+                </div>
+                <div className="text-xs text-broadcast-text-muted">{pos}</div>
               </div>
-              <div className="text-xs text-broadcast-text-muted">{pos}</div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       </div>
     </div>

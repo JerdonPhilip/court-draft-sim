@@ -1,13 +1,10 @@
-'use client';
-
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ChevronLeft, Trophy, Zap, Crown, Star, Target, Calendar, X } from 'lucide-react';
-import { cn } from '../../utils/helpers';
+import { ChevronLeft, Trophy, Zap, Crown, Star } from 'lucide-react';
+import { cn, getPositionColor, calculateTeamStrength, getWinProjection } from '../../utils/helpers';
 import { useGameStore } from '../../store/gameStore';
-import { HistoricalTeam, VSModeMatchup, VSSeriesResult, VSBoxScore, PlayerGamePerformance } from '../../types/game';
-import { calculateTeamStrength, getWinProjection } from '../../utils/helpers';
-import { Position } from '../../types/game';
+import { api } from '../../utils/api';
+import type { HistoricalTeam, VSModeMatchup, VSSeriesResult, PlayerGamePerformance, Player } from '../../types/game';
 
 interface VSModeScreenProps {
   onBack: () => void;
@@ -18,6 +15,7 @@ export function VSModeScreen({ onBack }: VSModeScreenProps) {
     draftState,
     vsMatchup,
     historicalTeams,
+    setHistoricalTeams,
     startVSMode,
     setPhase,
     setVSMatchup,
@@ -26,22 +24,19 @@ export function VSModeScreen({ onBack }: VSModeScreenProps) {
   const [selectedTeam, setSelectedTeam] = useState<HistoricalTeam | null>(null);
   const [seriesLength, setSeriesLength] = useState<1 | 7>(7);
   const [isLoading, setIsLoading] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
-  const lineup = draftState.lineup.slots.map(s => s.player!).filter(Boolean);
-  const teamStrength = calculateTeamStrength(lineup as any[]);
+  const lineup = draftState.lineup.slots.map(s => s.player).filter((p): p is Player => p !== null);
+  const teamStrength = calculateTeamStrength(lineup);
   const projectedWins = getWinProjection(teamStrength);
 
   useEffect(() => {
     if (historicalTeams.length === 0) {
-      fetch('/api/simulation/historical-teams')
-        .then(res => res.json())
-        .then(data => {
-          if (data.teams) {
-            // We need to set this in the store, but for now we'll use local state
-          }
-        });
+      api.simulation.getHistoricalTeams()
+        .then(data => setHistoricalTeams(data.teams))
+        .catch((err) => setLoadError(err instanceof Error ? err.message : 'Failed to load historical teams'));
     }
-  }, []);
+  }, [historicalTeams.length, setHistoricalTeams]);
 
   const handleStartVS = async () => {
     if (!selectedTeam) return;
@@ -61,7 +56,7 @@ export function VSModeScreen({ onBack }: VSModeScreenProps) {
 
   return (
     <div className="min-h-screen bg-broadcast-dark">
-      <div className="fixed top-0 left-0 right-0 z-40 bg-gradient-to-b from-broadcast-dark/95 to-transparent pb-4">
+      <div className="sticky top-0 z-40 bg-broadcast-dark/95 backdrop-blur border-b border-broadcast-border/50">
         <div className="max-w-7xl mx-auto px-4 py-4">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
@@ -70,8 +65,9 @@ export function VSModeScreen({ onBack }: VSModeScreenProps) {
                 whileHover={{ scale: 1.05 }}
                 whileTap={{ scale: 0.95 }}
                 className="p-2 rounded-lg bg-broadcast-card border border-broadcast-border hover:border-broadcast-accent/50 transition-colors"
+                aria-label="Back"
               >
-                <ChevronLeft className="w-5 h-5 text-broadcast-text-secondary" />
+                <ChevronLeft className="w-5 h-5 text-broadcast-text-secondary" aria-hidden="true" />
               </motion.button>
               <div>
                 <h1 className="font-display text-2xl font-bold gradient-text">VS MODE</h1>
@@ -87,15 +83,25 @@ export function VSModeScreen({ onBack }: VSModeScreenProps) {
         </div>
       </div>
 
-      <main className="max-w-7xl mx-auto px-4 py-6 pb-20 pt-20">
+      <main className="max-w-7xl mx-auto px-4 py-6 pb-20">
+        {loadError && (
+          <div className="mb-4 p-3 rounded-xl bg-broadcast-red/10 border border-broadcast-red/30 text-broadcast-red text-sm" role="alert">
+            {loadError}
+          </div>
+        )}
+        {historicalTeams.length === 0 && !loadError && (
+          <div className="text-center py-12 text-broadcast-text-secondary" role="status">Loading legendary opponents...</div>
+        )}
         <div className="grid lg:grid-cols-3 gap-6">
           <div className="lg:col-span-2 space-y-6">
             <div className="card-elevated p-6">
               <h3 className="section-title font-display text-lg mb-4">SELECT OPPONENT</h3>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3" role="radiogroup" aria-label="Historical opponents">
                 {historicalTeams.map(team => (
                   <motion.button
                     key={team.id}
+                    role="radio"
+                    aria-checked={selectedTeam?.id === team.id}
                     onClick={() => setSelectedTeam(team)}
                     whileHover={{ scale: 1.02 }}
                     whileTap={{ scale: 0.98 }}
@@ -108,7 +114,7 @@ export function VSModeScreen({ onBack }: VSModeScreenProps) {
                   >
                     <div className="flex items-center gap-3">
                       <div className="w-12 h-12 rounded-xl bg-broadcast-gold/20 flex items-center justify-center">
-                        <Crown className="w-6 h-6 text-broadcast-gold" />
+                        <Crown className="w-6 h-6 text-broadcast-gold" aria-hidden="true" />
                       </div>
                       <div className="flex-1">
                         <h4 className="font-semibold text-white">{team.name}</h4>
@@ -116,15 +122,15 @@ export function VSModeScreen({ onBack }: VSModeScreenProps) {
                       </div>
                       {selectedTeam?.id === team.id && (
                         <div className="absolute top-2 right-2 w-5 h-5 rounded-full bg-broadcast-gold flex items-center justify-center">
-                          <Star className="w-3 h-3 text-broadcast-dark" />
+                          <Star className="w-3 h-3 text-broadcast-dark" aria-hidden="true" />
                         </div>
                       )}
                     </div>
                     <p className="mt-3 text-sm text-broadcast-text-muted line-clamp-2">{team.description}</p>
                     <div className="mt-3 flex items-center gap-2 text-xs text-broadcast-text-secondary">
-                      <span className="px-2 py-0.5 bg-broadcast-border rounded">{team.championships}🏆</span>
-                      <span>•</span>
-                      <span>Legends: {team.players.slice(0, 3).map(p => p.name).join(', ')}...</span>
+                      <span className="px-2 py-0.5 bg-broadcast-border rounded">{team.championships} title{team.championships === 1 ? '' : 's'}</span>
+                      <span aria-hidden="true">•</span>
+                      <span>Legends: {team.players.length > 0 ? `${team.players.slice(0, 3).map(p => p.name).join(', ')}${team.players.length > 3 ? '…' : ''}` : 'Roster loading…'}</span>
                     </div>
                   </motion.button>
                 ))}
@@ -133,10 +139,12 @@ export function VSModeScreen({ onBack }: VSModeScreenProps) {
 
             <div className="card-elevated p-6">
               <h3 className="section-title font-display text-lg mb-4">SERIES FORMAT</h3>
-              <div className="flex gap-4">
+              <div className="flex gap-4" role="radiogroup" aria-label="Series length">
                 {([1, 7] as const).map(length => (
                   <button
                     key={length}
+                    role="radio"
+                    aria-checked={seriesLength === length}
                     onClick={() => setSeriesLength(length)}
                     className={cn(
                       'flex-1 py-4 rounded-xl font-medium transition-all',
@@ -148,7 +156,7 @@ export function VSModeScreen({ onBack }: VSModeScreenProps) {
                     <div className="text-center">
                       <div className="font-display text-2xl font-bold">{length}</div>
                       <div className="text-sm">{length === 1 ? 'SINGLE GAME' : '7-GAME SERIES'}</div>
-                      <div className="text-xs text-broadcast-text-muted mt-1">
+                      <div className="text-xs opacity-70 mt-1">
                         {length === 1 ? 'Winner takes all' : 'First to 4 wins'}
                       </div>
                     </div>
@@ -160,8 +168,8 @@ export function VSModeScreen({ onBack }: VSModeScreenProps) {
             <div className="card-elevated p-6">
               <h3 className="section-title font-display text-lg mb-4">YOUR LINEUP</h3>
               <div className="space-y-2">
-                {lineup.map((player, i) => (
-                  <div key={i} className="flex items-center gap-3 p-3 bg-broadcast-darker rounded-lg">
+                {lineup.map((player) => (
+                  <div key={player.id} className="flex items-center gap-3 p-3 bg-broadcast-darker rounded-lg">
                     <div className="w-8 h-8 rounded-lg flex items-center justify-center font-bold text-white text-sm"
                       style={{ backgroundColor: getPositionColor(player.position) }}>
                       {player.position}
@@ -183,7 +191,7 @@ export function VSModeScreen({ onBack }: VSModeScreenProps) {
             <div className="sticky top-24 space-y-4">
               <div className="card-elevated p-6 text-center">
                 <div className="w-20 h-20 mx-auto mb-4 rounded-2xl bg-gradient-to-br from-broadcast-accent to-broadcast-gold flex items-center justify-center">
-                  <Zap className="w-10 h-10 text-broadcast-dark" />
+                  <Zap className="w-10 h-10 text-broadcast-dark" aria-hidden="true" />
                 </div>
                 <h3 className="font-display text-xl font-bold mb-2">DYNASTY VS LEGENDS</h3>
                 <p className="text-broadcast-text-secondary text-sm mb-4">
@@ -211,8 +219,8 @@ export function VSModeScreen({ onBack }: VSModeScreenProps) {
                   <div className="space-y-3">
                     <ScoutingRow label="ERA" value={selectedTeam.players[0]?.era || 'Unknown'} />
                     <ScoutingRow label="RECORD" value={selectedTeam.record} />
-                    <ScoutingRow label="TITLES" value={`${selectedTeam.championships} CHAMPIONSHIPS`} />
-                    <ScoutingRow label="KEY PLAYERS" value={selectedTeam.players.slice(0, 3).map(p => p.name).join(', ')} />
+                    <ScoutingRow label="TITLES" value={`${selectedTeam.championships} CHAMPIONSHIP${selectedTeam.championships === 1 ? '' : 'S'}`} />
+                    <ScoutingRow label="KEY PLAYERS" value={selectedTeam.players.length > 0 ? selectedTeam.players.slice(0, 3).map(p => p.name).join(', ') : 'Unknown'} />
                     <div className="pt-3 border-t border-broadcast-border">
                       <p className="text-sm text-broadcast-text-muted">{selectedTeam.description}</p>
                     </div>
@@ -230,7 +238,7 @@ export function VSModeScreen({ onBack }: VSModeScreenProps) {
                   !selectedTeam && 'opacity-50 cursor-not-allowed'
                 )}
               >
-                <Trophy className="w-6 h-6" />
+                <Trophy className="w-6 h-6" aria-hidden="true" />
                 {isLoading ? 'SIMULATING...' : `CHALLENGE ${selectedTeam?.name.toUpperCase() || 'A LEGEND'}`}
               </motion.button>
             </div>
@@ -245,18 +253,34 @@ function ScoutingRow({ label, value }: { label: string; value: string }) {
   return (
     <div className="flex items-center justify-between text-sm">
       <span className="text-broadcast-text-muted uppercase tracking-wider">{label}</span>
-      <span className="font-medium text-white">{value}</span>
+      <span className="font-medium text-white text-right ml-4">{value}</span>
     </div>
   );
 }
 
 function VSModeResult({ matchup, onBack }: { matchup: VSModeMatchup; onBack: () => void }) {
-  const { result, historicalTeam, games, userWins, historicalWins, seriesWinner } = matchup as any;
+  const games = matchup.games ?? matchup.results ?? [];
+  const historicalTeam = matchup.historicalTeam;
+  const userWins = matchup.userWins ?? games.filter(g => g.winner === 'user').length;
+  const historicalWins = matchup.historicalWins ?? games.filter(g => g.winner === 'historical').length;
+  const seriesWinner = matchup.seriesWinner ?? (userWins > historicalWins ? 'user' : 'historical');
   const userWon = seriesWinner === 'user';
+
+  if (!historicalTeam || games.length === 0) {
+    return (
+      <div className="min-h-screen bg-broadcast-dark flex items-center justify-center px-4">
+        <div className="text-center" role="alert">
+          <h1 className="font-display text-2xl font-bold text-white mb-2">Series data missing</h1>
+          <p className="text-broadcast-text-secondary mb-4">The VS result came back incomplete.</p>
+          <button onClick={onBack} className="btn-secondary px-6 py-3">BACK TO RESULTS</button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-broadcast-dark">
-      <div className="fixed top-0 left-0 right-0 z-40 bg-gradient-to-b from-broadcast-dark/95 to-transparent pb-4">
+      <div className="sticky top-0 z-40 bg-broadcast-dark/95 backdrop-blur border-b border-broadcast-border/50">
         <div className="max-w-7xl mx-auto px-4 py-4">
           <div className="flex items-center justify-between">
             <motion.button
@@ -264,8 +288,9 @@ function VSModeResult({ matchup, onBack }: { matchup: VSModeMatchup; onBack: () 
               whileHover={{ scale: 1.05 }}
               whileTap={{ scale: 0.95 }}
               className="p-2 rounded-lg bg-broadcast-card border border-broadcast-border hover:border-broadcast-accent/50 transition-colors"
+              aria-label="Back to results"
             >
-              <ChevronLeft className="w-5 h-5 text-broadcast-text-secondary" />
+              <ChevronLeft className="w-5 h-5 text-broadcast-text-secondary" aria-hidden="true" />
             </motion.button>
             <div>
               <h1 className="font-display text-2xl font-bold gradient-text">SERIES COMPLETE</h1>
@@ -275,7 +300,7 @@ function VSModeResult({ matchup, onBack }: { matchup: VSModeMatchup; onBack: () 
         </div>
       </div>
 
-      <main className="max-w-7xl mx-auto px-4 py-6 pb-20 pt-20">
+      <main className="max-w-7xl mx-auto px-4 py-6 pb-20">
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
@@ -287,7 +312,7 @@ function VSModeResult({ matchup, onBack }: { matchup: VSModeMatchup; onBack: () 
               border: userWon ? '1px solid rgba(0, 212, 170, 0.3)' : '1px solid rgba(255, 59, 48, 0.3)'
             }}
           >
-            <Trophy className={cn('w-6 h-6', userWon ? 'text-broadcast-accent' : 'text-broadcast-red')} />
+            <Trophy className={cn('w-6 h-6', userWon ? 'text-broadcast-accent' : 'text-broadcast-red')} aria-hidden="true" />
             <span className="font-display text-xl font-bold" style={{ color: userWon ? '#00d4aa' : '#ff3b30' }}>
               {userWon ? 'SERIES VICTORY' : 'SERIES DEFEAT'}
             </span>
@@ -313,7 +338,7 @@ function VSModeResult({ matchup, onBack }: { matchup: VSModeMatchup; onBack: () 
                 <h3 className="section-title font-display text-lg">GAME BOX SCORES</h3>
               </div>
               <div className="p-4 overflow-x-auto">
-                {games.map((game: any, i: number) => (
+                {games.map((game, i) => (
                   <BoxScoreTable key={game.gameNumber} game={game} index={i} historicalTeam={historicalTeam} />
                 ))}
               </div>
@@ -336,9 +361,9 @@ function VSModeResult({ matchup, onBack }: { matchup: VSModeMatchup; onBack: () 
   );
 }
 
-function GameCards({ games }: { games: any[] }) {
+function GameCards({ games }: { games: VSSeriesResult[] }) {
   return (
-    <div className="space-y-3">
+    <div className="space-y-3 md:col-span-2">
       {games.map((game: VSSeriesResult) => (
         <motion.div
           key={game.gameNumber}
@@ -366,7 +391,8 @@ function GameCards({ games }: { games: any[] }) {
   );
 }
 
-function BoxScoreTable({ game, index, historicalTeam }: { game: any; index: number; historicalTeam: HistoricalTeam }) {
+function BoxScoreTable({ game, index, historicalTeam }: { game: VSSeriesResult; index: number; historicalTeam: HistoricalTeam }) {
+  void index;
   const isUserWinner = game.winner === 'user';
 
   return (
@@ -378,16 +404,16 @@ function BoxScoreTable({ game, index, historicalTeam }: { game: any; index: numb
         </span>
       </div>
 
-      <div className="grid grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <div>
           <h5 className="text-sm text-broadcast-text-secondary mb-2">YOUR TEAM</h5>
           <table className="w-full text-xs">
             <thead>
               <tr className="border-b border-broadcast-border text-broadcast-text-muted">
-                <th className="text-left py-1">PLAYER</th>
-                <th className="text-center py-1">PTS</th>
-                <th className="text-center py-1">REB</th>
-                <th className="text-center py-1">AST</th>
+                <th scope="col" className="text-left py-1">PLAYER</th>
+                <th scope="col" className="text-center py-1">PTS</th>
+                <th scope="col" className="text-center py-1">REB</th>
+                <th scope="col" className="text-center py-1">AST</th>
               </tr>
             </thead>
             <tbody>
@@ -408,10 +434,10 @@ function BoxScoreTable({ game, index, historicalTeam }: { game: any; index: numb
           <table className="w-full text-xs">
             <thead>
               <tr className="border-b border-broadcast-border text-broadcast-text-muted">
-                <th className="text-left py-1">PLAYER</th>
-                <th className="text-center py-1">PTS</th>
-                <th className="text-center py-1">REB</th>
-                <th className="text-center py-1">AST</th>
+                <th scope="col" className="text-left py-1">PLAYER</th>
+                <th scope="col" className="text-center py-1">PTS</th>
+                <th scope="col" className="text-center py-1">REB</th>
+                <th scope="col" className="text-center py-1">AST</th>
               </tr>
             </thead>
             <tbody>
@@ -429,15 +455,4 @@ function BoxScoreTable({ game, index, historicalTeam }: { game: any; index: numb
       </div>
     </div>
   );
-}
-
-function getPositionColor(position: Position): string {
-  const colors: Record<Position, string> = {
-    PG: '#00d4aa',
-    SG: '#ffd700',
-    SF: '#ff6b6b',
-    PF: '#7c5cff',
-    C: '#007aff',
-  };
-  return colors[position];
 }

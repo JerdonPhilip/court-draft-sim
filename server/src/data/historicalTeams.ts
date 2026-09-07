@@ -1,8 +1,13 @@
-import { HistoricalTeam, Player } from '../types/game';
-import { getPlayerById } from './players';
+import { HistoricalTeam } from '../types/game.js';
+import { getPlayerById } from './players.js';
 
 const buildHistoricalTeam = (id: string, name: string, season: string, playerIds: string[], record: string, championships: number, description: string): HistoricalTeam => {
-  const players = playerIds.map(id => getPlayerById(id)!).filter(Boolean);
+  const players = playerIds
+    .map(pid => getPlayerById(pid))
+    .filter((p): p is NonNullable<typeof p> => p !== undefined);
+  if (players.length !== 5) {
+    console.warn(`Historical team ${id} resolved to ${players.length}/5 players: ${playerIds.join(', ')}`);
+  }
   return { id, name, season, players, record, championships, description };
 };
 
@@ -12,11 +17,11 @@ export const HISTORICAL_TEAMS: HistoricalTeam[] = [
     '1995-96 Chicago Bulls',
     '1995-96',
     [
+      'ron-harper-90s',
       'michael-jordan-90s',
       'scottie-pippen-90s',
-      'john-stockton-90s', // Using as proxy for Ron Harper
-      'dennis-rodman-90s', // Need to add
-      'luc-longley-90s', // Need to add
+      'dennis-rodman-90s',
+      'luc-longley-90s',
     ],
     '72-10',
     1,
@@ -30,8 +35,8 @@ export const HISTORICAL_TEAMS: HistoricalTeam[] = [
       'stephen-curry-10s',
       'klay-thompson-10s',
       'kevin-durant-10s',
-      'draymond-green-10s', // Need to add
-      'andrew-bogut-10s', // Need to add
+      'draymond-green-10s',
+      'zaza-pachulia-10s',
     ],
     '67-15',
     1,
@@ -42,11 +47,11 @@ export const HISTORICAL_TEAMS: HistoricalTeam[] = [
     '2000-01 Los Angeles Lakers',
     '2000-01',
     [
-      'shaquille-oneal-00s',
+      'derek-fisher-00s',
       'kobe-bryant-00s',
-      'derek-fisher-00s', // Need to add
-      'rick-fox-00s', // Need to add
-      'horace-grant-00s', // Need to add
+      'rick-fox-00s',
+      'horace-grant-00s',
+      'shaquille-oneal-00s',
     ],
     '56-26',
     1,
@@ -57,11 +62,11 @@ export const HISTORICAL_TEAMS: HistoricalTeam[] = [
     '1985-86 Boston Celtics',
     '1985-86',
     [
+      'dennis-johnson-80s',
+      'danny-ainge-80s',
       'larry-bird-80s',
       'kevin-mchale-80s',
       'robert-parish-80s',
-      'dennis-johnson-80s', // Need to add
-      'danny-ainge-80s', // Need to add
     ],
     '67-15',
     1,
@@ -72,11 +77,11 @@ export const HISTORICAL_TEAMS: HistoricalTeam[] = [
     '2012-13 Miami Heat',
     '2012-13',
     [
-      'lebron-james-10s',
       'dwyane-wade-10s',
-      'chris-bosh-10s', // Need to add
       'ray-allen-10s',
-      'shane-battier-10s', // Need to add
+      'lebron-james-10s',
+      'chris-bosh-10s',
+      'shane-battier-10s',
     ],
     '66-16',
     1,
@@ -87,11 +92,11 @@ export const HISTORICAL_TEAMS: HistoricalTeam[] = [
     '2013-14 San Antonio Spurs',
     '2013-14',
     [
-      'tim-duncan-00s',
+      'tony-parker-10s',
+      'manu-ginobili-10s',
       'kawhi-leonard-10s',
-      'tony-parker-10s', // Need to add
-      'manu-ginobili-10s', // Need to add
-      'boris-diaw-10s', // Need to add
+      'boris-diaw-10s',
+      'tim-duncan-00s',
     ],
     '62-20',
     1,
@@ -103,10 +108,10 @@ export const HISTORICAL_TEAMS: HistoricalTeam[] = [
     '1986-87',
     [
       'magic-johnson-80s',
-      'kareem-abdul-jabbar-80s',
+      'byron-scott-80s',
       'james-worthy-80s',
-      'byron-scott-80s', // Need to add
-      'ac-green-80s', // Need to add
+      'ac-green-80s',
+      'kareem-abdul-jabbar-80s',
     ],
     '65-17',
     1,
@@ -117,11 +122,11 @@ export const HISTORICAL_TEAMS: HistoricalTeam[] = [
     '2007-08 Boston Celtics',
     '2007-08',
     [
+      'rajon-rondo-00s',
+      'ray-allen-00s',
       'paul-pierce-00s',
       'kevin-garnett-00s',
-      'ray-allen-00s',
-      'rajondo-rondo-00s', // Need to add
-      'kendrick-perkins-00s', // Need to add
+      'kendrick-perkins-00s',
     ],
     '66-16',
     1,
@@ -132,11 +137,11 @@ export const HISTORICAL_TEAMS: HistoricalTeam[] = [
     '2003-04 Detroit Pistons',
     '2003-04',
     [
-      'chauncey-billups-00s', // Need to add
-      'richard-hamilton-00s', // Need to add
-      'tayshaun-prince-00s', // Need to add
-      'rasheed-wallace-00s', // Need to add
-      'ben-wallace-00s', // Need to add
+      'chauncey-billups-00s',
+      'richard-hamilton-00s',
+      'tayshaun-prince-00s',
+      'rasheed-wallace-00s',
+      'ben-wallace-00s',
     ],
     '54-28',
     1,
@@ -147,11 +152,11 @@ export const HISTORICAL_TEAMS: HistoricalTeam[] = [
     '2010-11 Dallas Mavericks',
     '2010-11',
     [
-      'dirk-nowitzki-00s',
       'jason-kidd-00s',
-      'jason-terry-00s', // Need to add
-      'shawn-marion-00s', // Need to add
-      'tyson-chandler-10s', // Need to add
+      'jason-terry-00s',
+      'shawn-marion-00s',
+      'dirk-nowitzki-00s',
+      'tyson-chandler-10s',
     ],
     '57-25',
     1,

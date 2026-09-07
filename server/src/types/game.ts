@@ -12,6 +12,8 @@ export interface Player {
   id: string;
   name: string;
   position: Position;
+  /** Extra positions the player can credibly fill (e.g. Garnett PF/C). Primary stays in `position`. */
+  secondaryPositions?: Position[];
   team: string;
   decade: string;
   era: string;
@@ -19,6 +21,16 @@ export interface Player {
   overall: number;
   archetype: string;
   imageUrl?: string;
+}
+
+export function getPlayerPositions(player: Pick<Player, 'position' | 'secondaryPositions'>): Position[] {
+  const seen = new Set<Position>([player.position]);
+  for (const p of player.secondaryPositions ?? []) seen.add(p);
+  return [...seen];
+}
+
+export function canPlayPosition(player: Pick<Player, 'position' | 'secondaryPositions'>, slot: Position): boolean {
+  return getPlayerPositions(player).includes(slot);
 }
 
 export interface HistoricalTeam {
@@ -53,8 +65,8 @@ export interface GameSimulationInput {
 export interface GameSimulationOutput {
   homeScore: number;
   awayScore: number;
-  homePlayerStats: Map<string, PlayerStats>;
-  awayPlayerStats: Map<string, PlayerStats>;
+  homePlayerStats: Record<string, PlayerStats>;
+  awayPlayerStats: Record<string, PlayerStats>;
   events: GameEvent[];
 }
 
@@ -69,11 +81,13 @@ export interface GameEvent {
   description: string;
 }
 
+export type GameWinner = 'home' | 'away' | 'tie';
+
 export interface SeasonSimulationResult {
   wins: number;
   losses: number;
   games: SeasonGameResult[];
-  playerSeasonStats: Map<string, PlayerSeasonStats>;
+  playerSeasonStats: Record<string, PlayerSeasonStats>;
   teamStats: TeamSeasonStats;
 }
 
@@ -81,9 +95,9 @@ export interface SeasonGameResult {
   gameNumber: number;
   opponent: string;
   isHome: boolean;
-  result: 'W' | 'L';
+  result: 'W' | 'L' | 'T';
   score: { us: number; them: number };
-  playerStats: Map<string, PlayerStats>;
+  playerStats: Record<string, PlayerStats>;
 }
 
 export interface PlayerSeasonStats {
