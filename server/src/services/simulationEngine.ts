@@ -339,6 +339,8 @@ export function simulateSeason(
   const games: SeasonSimulationResult['games'] = [];
   const playerSeasonStats: Record<string, PlayerSeasonStats> = {};
   const playerMinutes: Record<string, number[]> = {};
+  const opponentPlayerSeasonStats: Record<string, PlayerSeasonStats> = {};
+  const opponentPlayerMinutes: Record<string, number[]> = {};
 
   userLineup.forEach(player => {
     playerSeasonStats[player.id] = {
@@ -352,6 +354,20 @@ export function simulateSeason(
     };
     playerMinutes[player.id] = [];
   });
+  for (const team of opponentPool) {
+    for (const player of team) {
+      opponentPlayerSeasonStats[player.id] = {
+        playerId: player.id,
+        playerName: player.name,
+        gamesPlayed: 0,
+        minutesPerGame: 0,
+        averages: { pts: 0, reb: 0, ast: 0, stl: 0, blk: 0 },
+        totals: { pts: 0, reb: 0, ast: 0, stl: 0, blk: 0 },
+        highGames: { pts: 0, reb: 0, ast: 0, stl: 0, blk: 0 },
+      };
+      opponentPlayerMinutes[player.id] = [];
+    }
+  }
 
   let wins = 0;
   let losses = 0;
@@ -432,6 +448,22 @@ export function simulateSeason(
         playerMinutes[playerId]?.push(userMinutes[playerId] ?? 40);
       }
     }
+    for (const [playerId, stats] of Object.entries(oppPlayerStats)) {
+      const seasonStat = opponentPlayerSeasonStats[playerId];
+      if (!seasonStat) continue;
+      seasonStat.gamesPlayed++;
+      seasonStat.totals.pts += stats.pts;
+      seasonStat.totals.reb += stats.reb;
+      seasonStat.totals.ast += stats.ast;
+      seasonStat.totals.stl += stats.stl;
+      seasonStat.totals.blk += stats.blk;
+      seasonStat.highGames.pts = Math.max(seasonStat.highGames.pts, stats.pts);
+      seasonStat.highGames.reb = Math.max(seasonStat.highGames.reb, stats.reb);
+      seasonStat.highGames.ast = Math.max(seasonStat.highGames.ast, stats.ast);
+      seasonStat.highGames.stl = Math.max(seasonStat.highGames.stl, stats.stl);
+      seasonStat.highGames.blk = Math.max(seasonStat.highGames.blk, stats.blk);
+      opponentPlayerMinutes[playerId]?.push(oppMinutes[playerId] ?? 40);
+    }
 
     games.push({
       gameNumber: gameNum,
@@ -479,6 +511,8 @@ export function simulateSeason(
     { wins: oppWins, losses: oppLosses, pointsFor: oppPF, pointsAgainst: oppPA, gamesVsUser },
     config,
     totalGames,
+    opponentPlayerSeasonStats,
+    opponentPlayerMinutes,
   );
 
   return {
@@ -488,6 +522,7 @@ export function simulateSeason(
     playerSeasonStats,
     teamStats,
     standings,
+    opponentPlayerSeasonStats,
   };
 }
 
@@ -505,6 +540,8 @@ function simulateLeagueStandings(
   opp: { wins: number[]; losses: number[]; pointsFor: number[]; pointsAgainst: number[]; gamesVsUser: number[] },
   config: SimulationConfig,
   totalGames: number,
+  opponentPlayerSeasonStats: Record<string, PlayerSeasonStats>,
+  opponentPlayerMinutes: Record<string, number[]>,
 ): SeasonSimulationResult['standings'] {
   const n = opponentPool.length;
   const wins = [...opp.wins];
@@ -584,6 +621,26 @@ function simulateLeagueStandings(
     const homeRating = calculateTeamRating(aHome ? teamA : teamB, config, true, midSeason, totalGames);
     const awayRating = calculateTeamRating(aHome ? teamB : teamA, config, false, midSeason, totalGames);
     const { home, away } = simulateGameScore(homeRating, awayRating, config);
+    for (const [team, rating, opposingRating] of [[teamA, homeRating, awayRating], [teamB, awayRating, homeRating]] as const) {
+      for (const player of team) {
+        const seasonStat = opponentPlayerSeasonStats[player.id];
+        if (!seasonStat) continue;
+        const minutes = assignMinutes(player);
+        const stats = generatePlayerGameStats(player, rating, opposingRating, minutes, config);
+        opponentPlayerMinutes[player.id]?.push(minutes);
+        seasonStat.gamesPlayed++;
+        seasonStat.totals.pts += stats.pts;
+        seasonStat.totals.reb += stats.reb;
+        seasonStat.totals.ast += stats.ast;
+        seasonStat.totals.stl += stats.stl;
+        seasonStat.totals.blk += stats.blk;
+        seasonStat.highGames.pts = Math.max(seasonStat.highGames.pts, stats.pts);
+        seasonStat.highGames.reb = Math.max(seasonStat.highGames.reb, stats.reb);
+        seasonStat.highGames.ast = Math.max(seasonStat.highGames.ast, stats.ast);
+        seasonStat.highGames.stl = Math.max(seasonStat.highGames.stl, stats.stl);
+        seasonStat.highGames.blk = Math.max(seasonStat.highGames.blk, stats.blk);
+      }
+    }
     const aScore = aHome ? home : away;
     const bScore = aHome ? away : home;
     if (aScore >= bScore) {
@@ -597,6 +654,20 @@ function simulateLeagueStandings(
     pa[a]! += bScore;
     pf[b]! += bScore;
     pa[b]! += aScore;
+  }
+  for (const stats of Object.values(opponentPlayerSeasonStats)) {
+    if (stats.gamesPlayed === 0) continue;
+    stats.averages = {
+      pts: Number((stats.totals.pts / stats.gamesPlayed).toFixed(1)),
+      reb: Number((stats.totals.reb / stats.gamesPlayed).toFixed(1)),
+      ast: Number((stats.totals.ast / stats.gamesPlayed).toFixed(1)),
+      stl: Number((stats.totals.stl / stats.gamesPlayed).toFixed(1)),
+      blk: Number((stats.totals.blk / stats.gamesPlayed).toFixed(1)),
+    };
+    const minutes = opponentPlayerMinutes[stats.playerId] ?? [];
+    stats.minutesPerGame = minutes.length > 0
+      ? Number((minutes.reduce((sum, value) => sum + value, 0) / minutes.length).toFixed(1))
+      : 0;
   }
 
   const rows: SeasonSimulationResult['standings'] = [];

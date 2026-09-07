@@ -361,6 +361,24 @@ function buildLeagueRows(result: SimulationResult): LeagueRow[] {
     });
   }
 
+  if (result.opponentPlayerStats?.length) {
+    for (const p of result.opponentPlayerStats) {
+      rows.push({
+        playerId: p.playerId,
+        playerName: p.playerName,
+        team: p.team ?? 'Opponent',
+        isUser: false,
+        position: p.position,
+        overall: p.overall,
+        gp: p.gamesPlayed,
+        mpg: p.minutesPerGame ?? 0,
+        averages: { ...p.averages },
+        totals: { ...p.totals },
+      });
+    }
+    return rows;
+  }
+
   const agg = new Map<string, LeagueRow & { minTotal: number }>();
   for (const g of result.games) {
     for (const perf of g.opponentPerformances ?? []) {
@@ -571,7 +589,7 @@ function LeagueView({ result }: { result: SimulationResult }) {
           )}
         </div>
         <p className="px-3 py-2 text-[11px] text-broadcast-text-muted border-t border-broadcast-border/50">
-          {filtered.length} of {rows.length} players • your drafted 5 are tagged YOU • opponents average 2–3 GP because each team only faces you a few times per shuffled schedule.
+          {filtered.length} of {rows.length} players • your drafted 5 are tagged YOU • all players reflect their complete simulated season.
         </p>
       </div>
     </div>

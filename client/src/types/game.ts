@@ -110,6 +110,7 @@ export interface SimulationResult {
   teamStats: TeamSeasonStats;
   /** Full league table. Absent on seasons simulated before this shipped. */
   standings?: TeamStanding[];
+  opponentPlayerStats?: SimulatedPlayerStats[];
 }
 
 export interface TeamStanding {

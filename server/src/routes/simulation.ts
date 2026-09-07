@@ -205,6 +205,22 @@ router.post('/season', (req: Request, res: Response) => {
     }),
     teamStats: seasonResult.teamStats,
     standings: seasonResult.standings,
+    opponentPlayerStats: Object.values(seasonResult.opponentPlayerSeasonStats).map(s => {
+      const player = opponentPool.flat().find(p => p.id === s.playerId);
+      return {
+        playerId: s.playerId,
+        playerName: s.playerName,
+        gamesPlayed: s.gamesPlayed,
+        minutesPerGame: s.minutesPerGame,
+        averages: s.averages,
+        totals: s.totals,
+        highGames: s.highGames,
+        position: player?.position,
+        overall: player?.overall,
+        team: player?.team,
+        baseStats: player?.stats,
+      };
+    }),
   };
 
   res.json({ result: formattedResult });

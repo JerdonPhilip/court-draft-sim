@@ -96,6 +96,7 @@ export interface SeasonSimulationResult {
   playerSeasonStats: Record<string, PlayerSeasonStats>;
   teamStats: TeamSeasonStats;
   standings: TeamStanding[];
+  opponentPlayerSeasonStats: Record<string, PlayerSeasonStats>;
 }
 
 export interface TeamStanding {
