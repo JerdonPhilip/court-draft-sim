@@ -1,3 +1,4 @@
+import { useEffect, useMemo, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { cn, getPositionColor, getPositionLabel, formatHeight, heightEdgeLabel } from '../../utils/helpers';
 import { FRANCHISES, DECADES } from '../../data/constants';
@@ -27,14 +28,51 @@ function fittingEmptySlots(player: Player, slots: LineupSlot[]): Position[] {
     .filter(pos => canPlayPosition(player, pos));
 }
 
+const POSITION_ORDER: Position[] = ['PG', 'SG', 'SF', 'PF', 'C'];
+
+type SortKey = 'overall' | 'pts' | 'name';
+
 export function PlayerPool({ pool, draftedPlayerIds, onDraftPlayer, onDragStartPlayer, onDragEndPlayer, emptyPositions, lineupSlots, selectedSlotPosition }: PlayerPoolProps) {
+  const [posFilter, setPosFilter] = useState<Position | 'ALL'>('ALL');
+  const [sortKey, setSortKey] = useState<SortKey>('overall');
+
+  // New pool = fresh filter; keep the chosen sort.
+  useEffect(() => {
+    setPosFilter('ALL');
+  }, [pool?.franchise, pool?.decade]);
+
+  const availablePlayers = useMemo(
+    () => (pool ? pool.players.filter((p: Player) => !draftedPlayerIds.includes(p.id)) : []),
+    [pool, draftedPlayerIds]
+  );
+
+  const presentPositions = useMemo(
+    () => POSITION_ORDER.filter(pos => availablePlayers.some(p => getPlayerPositions(p).includes(pos))),
+    [availablePlayers]
+  );
+
+  const visiblePlayers = useMemo(() => {
+    const filtered = posFilter === 'ALL'
+      ? [...availablePlayers]
+      : availablePlayers.filter(p => getPlayerPositions(p).includes(posFilter));
+    switch (sortKey) {
+      case 'pts':
+        return filtered.sort((a, b) => b.stats.pts - a.stats.pts || b.overall - a.overall);
+      case 'name':
+        return filtered.sort((a, b) => a.name.localeCompare(b.name));
+      case 'overall':
+      default:
+        return filtered.sort((a, b) => b.overall - a.overall);
+    }
+  }, [availablePlayers, posFilter, sortKey]);
+
   if (!pool) return null;
 
-  const availablePlayers = pool.players.filter((p: Player) => !draftedPlayerIds.includes(p.id));
   const franchiseName = FRANCHISES.find(f => f.id === pool.franchise)?.name ?? pool.franchise;
   const decadeLabel = DECADES.find(d => d.id === pool.decade)?.label ?? pool.decade;
 
   const draftableCount = availablePlayers.filter(p => fittingEmptySlots(p, lineupSlots).length > 0).length;
+  const isFiltered = posFilter !== 'ALL';
 
   return (
     <AnimatePresence mode="wait">
@@ -55,19 +93,58 @@ export function PlayerPool({ pool, draftedPlayerIds, onDraftPlayer, onDragStartP
           </div>
         </div>
 
-        {emptyPositions.length > 0 && (
-          <p className="text-sm text-broadcast-text-secondary" aria-live="polite">
-            {selectedSlotPosition ? (
-              <><span className="font-bold text-broadcast-gold">{selectedSlotPosition} slot selected</span> — click a fitting player or drag one onto a glowing slot.</>
-            ) : (
-              <><span className="font-bold text-broadcast-accent">Open: {emptyPositions.join(', ')}</span> — pick a slot first, then a player.</>
+        <div className="flex flex-wrap items-center gap-2" role="group" aria-label="Filter available players">
+          <button
+            type="button"
+            onClick={() => setPosFilter('ALL')}
+            aria-pressed={posFilter === 'ALL'}
+            className={cn(
+              'rounded-full border px-3 py-1 text-xs font-bold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-broadcast-accent',
+              posFilter === 'ALL'
+                ? 'border-broadcast-accent/50 bg-broadcast-accent/15 text-broadcast-accent'
+                : 'border-white/10 bg-white/5 text-broadcast-text-secondary hover:border-broadcast-accent/30 hover:text-white'
             )}
-            {' '}Flex players show all their spots and can be dragged to any of them.
-          </p>
-        )}
+          >
+            ALL
+          </button>
+          {presentPositions.map(pos => (
+            <button
+              key={pos}
+              type="button"
+              onClick={() => setPosFilter(posFilter === pos ? 'ALL' : pos)}
+              aria-pressed={posFilter === pos}
+              className={cn(
+                'rounded-full border px-3 py-1 text-xs font-bold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-broadcast-accent',
+                posFilter === pos
+                  ? 'border-broadcast-accent/50 bg-broadcast-accent/15 text-broadcast-accent'
+                  : 'border-white/10 bg-white/5 text-broadcast-text-secondary hover:border-broadcast-accent/30 hover:text-white'
+              )}
+            >
+              {pos}
+            </button>
+          ))}
+          <div className="ml-auto flex items-center gap-2">
+            {isFiltered && (
+              <span className="text-xs text-broadcast-text-muted" aria-live="polite">
+                {visiblePlayers.length} of {availablePlayers.length}
+              </span>
+            )}
+            <label htmlFor="pool-sort" className="sr-only">Sort players</label>
+            <select
+              id="pool-sort"
+              value={sortKey}
+              onChange={(e) => setSortKey(e.target.value as SortKey)}
+              className="rounded-lg border border-white/10 bg-broadcast-card px-2 py-1 text-xs font-medium text-broadcast-text-secondary focus:border-broadcast-accent/50 focus:outline-none"
+            >
+              <option value="overall">Best overall</option>
+              <option value="pts">Most points</option>
+              <option value="name">Name A–Z</option>
+            </select>
+          </div>
+        </div>
 
         <div className="grid grid-cols-1 items-stretch gap-5 sm:grid-cols-2 [grid-auto-rows:1fr] 2xl:grid-cols-3" role="list">
-          {availablePlayers.map((player: Player, index: number) => {
+          {visiblePlayers.map((player: Player, index: number) => {
             const fits = fittingEmptySlots(player, lineupSlots);
             const isDraftable = fits.length > 0;
             const isFlex = (player.secondaryPositions?.length ?? 0) > 0;
