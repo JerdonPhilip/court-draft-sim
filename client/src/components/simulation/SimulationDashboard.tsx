@@ -1,6 +1,6 @@
 import { useState, useMemo, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ChevronRight, X, Trophy, TrendingUp, TrendingDown, Target, Calendar, BarChart2, Users, Search, ListOrdered } from 'lucide-react';
+import { ChevronRight, X, Trophy, TrendingUp, TrendingDown, Target, Calendar, BarChart2, Users, Search, ListOrdered, Award, Shield, Flame } from 'lucide-react';
 import { cn } from '../../utils/helpers';
 import { otLabel, formatTeamName } from '../../utils/helpers';
 import { useLockBodyScroll } from '../../utils/useLockBodyScroll';
@@ -28,7 +28,7 @@ const STAT_COLORS: Record<keyof PlayerStats, string> = {
   blk: '#af52de',
 };
 
-type SeasonView = 'overview' | 'games' | 'standings' | 'players' | 'league';
+type SeasonView = 'overview' | 'games' | 'standings' | 'players' | 'league' | 'awards';
 
 export function SimulationDashboard({ result, onNewDraft, onVSMode }: SimulationDashboardProps) {
   const [view, setView] = useState<SeasonView>('overview');
@@ -93,7 +93,7 @@ export function SimulationDashboard({ result, onNewDraft, onVSMode }: Simulation
           </div>
 
           <div className="mt-2.5 flex flex-wrap gap-2" role="tablist" aria-label="Season views">
-            {(['overview', 'games', 'standings', 'players', 'league'] as const).map(tab => (
+            {(['overview', 'games', 'standings', 'players', 'league', 'awards'] as const).map(tab => (
               <button
                 key={tab}
                 role="tab"
@@ -111,6 +111,7 @@ export function SimulationDashboard({ result, onNewDraft, onVSMode }: Simulation
                 {tab === 'standings' && <><ListOrdered className="w-4 h-4 inline mr-1" aria-hidden="true" /> STANDINGS</>}
                 {tab === 'players' && <><Target className="w-4 h-4 inline mr-1" aria-hidden="true" /> MY TEAM</>}
                 {tab === 'league' && <><Users className="w-4 h-4 inline mr-1" aria-hidden="true" /> LEAGUE STATS</>}
+                {tab === 'awards' && <><Award className="w-4 h-4 inline mr-1" aria-hidden="true" /> AWARDS</>}
               </button>
             ))}
           </div>
@@ -124,31 +125,34 @@ export function SimulationDashboard({ result, onNewDraft, onVSMode }: Simulation
           {view === 'standings' && <StandingsView key="st" result={result} />}
           {view === 'players' && <PlayersView key="pl" result={result} />}
           {view === 'league' && <LeagueView key="lg" result={result} />}
+          {view === 'awards' && <AwardsView key="aw" result={result} />}
         </AnimatePresence>
 
         {selectedGame && (
           <GameBoxScoreModal game={selectedGame} result={result} onClose={() => setSelectedGame(null)} />
         )}
 
-        <div className="mt-5 flex flex-wrap items-center justify-center gap-3">
-          <motion.button
-            onClick={onVSMode}
-            whileHover={{ scale: 1.02 }}
-            whileTap={{ scale: 0.98 }}
-            className="btn-gold px-6 py-2.5 text-base gap-2"
-          >
-            <Trophy className="w-5 h-5" aria-hidden="true" />
-            VS MODE: CHALLENGE A LEGEND
-          </motion.button>
-          <motion.button
-            onClick={onNewDraft}
-            whileHover={{ scale: 1.02 }}
-            whileTap={{ scale: 0.98 }}
-            className="btn-secondary px-6 py-2.5 text-base"
-          >
-            NEW DRAFT
-          </motion.button>
-        </div>
+        {view === 'overview' && (
+          <div className="mt-5 flex flex-wrap items-center justify-center gap-3">
+            <motion.button
+              onClick={onVSMode}
+              whileHover={{ scale: 1.02 }}
+              whileTap={{ scale: 0.98 }}
+              className="btn-gold px-6 py-2.5 text-base gap-2"
+            >
+              <Trophy className="w-5 h-5" aria-hidden="true" />
+              VS MODE: CHALLENGE A LEGEND
+            </motion.button>
+            <motion.button
+              onClick={onNewDraft}
+              whileHover={{ scale: 1.02 }}
+              whileTap={{ scale: 0.98 }}
+              className="btn-secondary px-6 py-2.5 text-base"
+            >
+              NEW DRAFT
+            </motion.button>
+          </div>
+        )}
       </main>
     </div>
   );
@@ -322,6 +326,135 @@ function PlayersView({ result }: { result: SimulationResult }) {
           </div>
         </motion.div>
       ))}
+    </div>
+  );
+}
+
+function awardScore(player: LeagueRow, defensive = false): number {
+  if (defensive) {
+    return player.averages.stl * 2 + player.averages.blk * 2 + player.averages.reb * 0.35 + (player.overall ?? 75) * 0.05;
+  }
+  return player.averages.pts + player.averages.reb * 0.7 + player.averages.ast * 0.7
+    + player.averages.stl * 1.2 + player.averages.blk * 1.2 + (player.overall ?? 75) * 0.15;
+}
+
+function selectTeam(rows: LeagueRow[], defensive = false): LeagueRow[] {
+  const selected: LeagueRow[] = [];
+  const positions = ['PG', 'SG', 'SF', 'PF', 'C'];
+  const sorted = rows.slice().sort((a, b) => awardScore(b, defensive) - awardScore(a, defensive));
+  for (const position of positions) {
+    const player = sorted.find(row => row.position === position && !selected.some(p => p.playerId === row.playerId));
+    if (player) selected.push(player);
+  }
+  for (const player of sorted) {
+    if (selected.length >= 5) break;
+    if (!selected.some(p => p.playerId === player.playerId)) selected.push(player);
+  }
+  return selected;
+}
+
+function ClutchPlayer({ result, rows }: { result: SimulationResult; rows: LeagueRow[] }): LeagueRow | null {
+  const closeGames = result.games.filter(game => Math.abs(game.score.us - game.score.them) <= 5);
+  if (closeGames.length === 0) return rows.slice().sort((a, b) => awardScore(b) - awardScore(a))[0] ?? null;
+
+  const totals = new Map<string, { points: number; games: number }>();
+  for (const game of closeGames) {
+    for (const performance of [...game.playerPerformances, ...(game.opponentPerformances ?? [])]) {
+      const current = totals.get(performance.playerId) ?? { points: 0, games: 0 };
+      current.points += performance.stats.pts;
+      current.games += 1;
+      totals.set(performance.playerId, current);
+    }
+  }
+  return rows
+    .filter(row => totals.has(row.playerId))
+    .sort((a, b) => {
+      const aStats = totals.get(a.playerId)!;
+      const bStats = totals.get(b.playerId)!;
+      return bStats.points / bStats.games - aStats.points / aStats.games
+        || awardScore(b) - awardScore(a);
+    })[0] ?? rows.slice().sort((a, b) => awardScore(b) - awardScore(a))[0] ?? null;
+}
+
+function AwardsView({ result }: { result: SimulationResult }) {
+  const rows = useMemo(() => buildLeagueRows(result), [result]);
+  const standings = result.standings ?? [];
+  const mvp = rows.slice().sort((a, b) => {
+    const aTeam = standings.find(team => a.isUser ? team.isUser : team.team === a.team);
+    const bTeam = standings.find(team => b.isUser ? team.isUser : team.team === b.team);
+    return awardScore(b) + (bTeam?.winPct ?? 0) * 10 - awardScore(a) - (aTeam?.winPct ?? 0) * 10;
+  })[0] ?? null;
+  const clutch = ClutchPlayer({ result, rows });
+  const dpoy = rows.slice().sort((a, b) => awardScore(b, true) - awardScore(a, true))[0] ?? null;
+  const defensiveFirst = selectTeam(rows, true);
+  const defensiveSecond = selectTeam(rows.filter(row => !defensiveFirst.some(player => player.playerId === row.playerId)), true);
+  const allNbaFirst = selectTeam(rows);
+  const allNbaFirstIds = new Set(allNbaFirst.map(player => player.playerId));
+  const allNbaSecond = selectTeam(rows.filter(row => !allNbaFirstIds.has(row.playerId)));
+  const allNbaSecondIds = new Set(allNbaSecond.map(player => player.playerId));
+  const allNbaThird = selectTeam(rows.filter(row => !allNbaFirstIds.has(row.playerId) && !allNbaSecondIds.has(row.playerId)));
+
+  return (
+    <div className="space-y-4">
+      <div className="grid gap-3 md:grid-cols-3">
+        <AwardCard title="MOST VALUABLE PLAYER" icon={Trophy} player={mvp} accent="text-broadcast-gold" />
+        <AwardCard title="CLUTCH PLAYER OF THE YEAR" icon={Flame} player={clutch} accent="text-orange-400" />
+        <AwardCard title="DEFENSIVE PLAYER OF THE YEAR" icon={Shield} player={dpoy} accent="text-blue-400" />
+      </div>
+      <div className="grid gap-3 lg:grid-cols-2">
+        <AwardTeamCard title="ALL-DEFENSIVE FIRST TEAM" players={defensiveFirst} />
+        <AwardTeamCard title="ALL-DEFENSIVE SECOND TEAM" players={defensiveSecond} />
+        <AwardTeamCard title="ALL-NBA FIRST TEAM" players={allNbaFirst} />
+        <AwardTeamCard title="ALL-NBA SECOND TEAM" players={allNbaSecond} />
+        <AwardTeamCard title="ALL-NBA THIRD TEAM" players={allNbaThird} />
+      </div>
+    </div>
+  );
+}
+
+function AwardCard({ title, icon: Icon, player, accent }: {
+  title: string;
+  icon: typeof Trophy;
+  player: LeagueRow | null;
+  accent: string;
+}) {
+  return (
+    <div className="card-elevated p-4">
+      <div className={cn('flex items-center gap-2 text-xs font-bold tracking-wider', accent)}>
+        <Icon className="h-4 w-4" aria-hidden="true" />
+        {title}
+      </div>
+      <div className="mt-4">
+        <div className="font-display text-xl font-bold text-white">{player?.playerName ?? '—'}</div>
+        <div className="mt-1 text-xs text-broadcast-text-secondary">
+          {player ? `${player.position ?? '—'} • ${player.isUser ? 'YOUR TEAM' : formatTeamName(player.team)}` : 'No eligible player'}
+        </div>
+        {player && (
+          <div className="mt-3 flex gap-4 text-xs text-broadcast-text-muted">
+            <span><strong className="text-white">{player.averages.pts.toFixed(1)}</strong> PPG</span>
+            <span><strong className="text-white">{player.averages.reb.toFixed(1)}</strong> RPG</span>
+            <span><strong className="text-white">{player.averages.ast.toFixed(1)}</strong> APG</span>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function AwardTeamCard({ title, players }: { title: string; players: LeagueRow[] }) {
+  return (
+    <div className="card p-4">
+      <h3 className="text-xs font-bold tracking-wider text-broadcast-accent">{title}</h3>
+      <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-5">
+        {players.map((player, index) => (
+          <div key={player.playerId} className="rounded-lg bg-broadcast-darker p-2 text-center">
+            <div className="text-[10px] font-bold text-broadcast-text-muted">{player.position ?? `#${index + 1}`}</div>
+            <div className="mt-1 truncate text-sm font-semibold text-white" title={player.playerName}>{toCompactName(player.playerName)}</div>
+            <div className="mt-1 text-[10px] text-broadcast-text-muted">{player.averages.pts.toFixed(1)} PPG</div>
+          </div>
+        ))}
+        {players.length === 0 && <div className="text-sm text-broadcast-text-muted">No eligible players</div>}
+      </div>
     </div>
   );
 }
