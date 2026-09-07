@@ -173,7 +173,7 @@ export function DraftScreen() {
 
       <main id="draft-pools" className={`mx-auto max-w-7xl px-4 pt-4 2xl:max-w-[1500px] ${isLineupComplete ? 'pb-28' : 'pb-6'}`}>
         <div className="grid gap-6 lg:grid-cols-5 lg:gap-8">
-          <div className="space-y-5 lg:col-span-3">
+          <div className="space-y-4 lg:col-span-3">
             <SlotMachine
               pool={pool}
               isSpinning={isSpinning}

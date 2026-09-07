@@ -109,7 +109,7 @@ function Slot({ slot, index, isSelected, draggedPlayer, onSelect, onDropPlayer }
               >
                 {slot.player.position}
               </span>
-              <div className="min-w-0 flex-1 leading-tight" title={slot.player.name}>
+              <div className="min-w-0 flex-1 overflow-hidden leading-tight" title={slot.player.name}>
                 <div className="truncate text-[11px] font-semibold uppercase tracking-[0.16em] text-broadcast-text-secondary">{splitPlayerName(slot.player.name).first}</div>
                 <h4 className="whitespace-nowrap font-display text-xl font-bold leading-tight text-white" style={{ fontSize: fitNameSize(splitPlayerName(slot.player.name).last || slot.player.name) }}>{splitPlayerName(slot.player.name).last || splitPlayerName(slot.player.name).first}</h4>
               </div>

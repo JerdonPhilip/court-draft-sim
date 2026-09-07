@@ -93,12 +93,15 @@ export function splitPlayerName(fullName: string): { first: string; last: string
 }
 
 /**
- * Single-line name sizing: longer last names render slightly smaller so the
+ * Single-line name sizing: longer last names render smaller so the
  * row never wraps (which would stretch the card and scroll the page).
- * Returns a px size; pair with whitespace-nowrap.
+ * Returns a px size; pair with whitespace-nowrap + an overflow-hidden
+ * wrapper so extreme cases clip at the boundary instead of painting
+ * behind the overall rating.
  */
 export function fitNameSize(lastName: string, basePx = 20): number {
   const len = lastName.length;
+  if (len > 17) return Math.max(12, basePx - 7);
   if (len > 14) return Math.max(13, basePx - 4);
   if (len > 10) return Math.max(14, basePx - 2);
   return basePx;

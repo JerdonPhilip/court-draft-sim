@@ -143,7 +143,7 @@ export function PlayerPool({ pool, draftedPlayerIds, onDraftPlayer, onDragStartP
           </div>
         </div>
 
-        <div className="grid grid-cols-1 items-stretch gap-5 sm:grid-cols-2 [grid-auto-rows:1fr] 2xl:grid-cols-3" role="list">
+        <div className="grid grid-cols-1 items-stretch gap-4 sm:grid-cols-2 [grid-auto-rows:1fr] 2xl:grid-cols-3" role="list">
           {visiblePlayers.map((player: Player, index: number) => {
             const fits = fittingEmptySlots(player, lineupSlots);
             const isDraftable = fits.length > 0;
@@ -202,7 +202,7 @@ export function PlayerPool({ pool, draftedPlayerIds, onDraftPlayer, onDragStartP
                   style={{ backgroundImage: `linear-gradient(90deg, transparent, ${posColor}, transparent)` }}
                   aria-hidden="true"
                 />
-                <div className="flex items-center gap-3 px-5 pt-4">
+                <div className="flex items-center gap-3 px-5 pt-3">
                   <span
                     className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg font-display text-sm font-bold text-white ring-1 ring-white/25 [box-shadow:inset_0_2px_8px_rgb(0,0,0,0.35)]"
                     style={{ backgroundImage: `linear-gradient(135deg, ${posColor}, ${posColor}55 130%)` }}
@@ -211,7 +211,7 @@ export function PlayerPool({ pool, draftedPlayerIds, onDraftPlayer, onDragStartP
                   >
                     {player.position}
                   </span>
-                  <div className="min-w-0 flex-1 leading-tight" title={player.name}>
+                  <div className="min-w-0 flex-1 overflow-hidden leading-tight" title={player.name}>
                     <div className="truncate text-[11px] font-semibold uppercase tracking-[0.16em] text-broadcast-text-secondary">{splitPlayerName(player.name).first}</div>
                     <h4 className="whitespace-nowrap font-display font-bold leading-tight text-white" style={{ fontSize: fitNameSize(splitPlayerName(player.name).last || player.name) }}>{splitPlayerName(player.name).last || splitPlayerName(player.name).first}</h4>
                   </div>
@@ -221,7 +221,7 @@ export function PlayerPool({ pool, draftedPlayerIds, onDraftPlayer, onDragStartP
                   </span>
                 </div>
 
-                <div className="space-y-1.5 px-5 pb-2 pt-3">
+                <div className="space-y-1.5 px-5 pb-1.5 pt-2">
                   <p className="text-sm leading-relaxed text-broadcast-text-secondary">
                     <span className="font-bold text-broadcast-accent">{getPlayerPositions(player).join(' / ')}</span>
                     <span aria-hidden="true"> • </span>
@@ -240,7 +240,7 @@ export function PlayerPool({ pool, draftedPlayerIds, onDraftPlayer, onDragStartP
                   </p>
                 </div>
 
-                <div className="mt-auto grid grid-cols-5 gap-2 border-t border-white/5 bg-black/20 px-5 pb-4 pt-3">
+                <div className="mt-auto grid grid-cols-5 gap-2 border-t border-white/5 bg-black/20 px-5 pb-3 pt-2.5">
                   <StatMini label="PTS" value={player.stats.pts} color="text-broadcast-accent" />
                   <StatMini label="REB" value={player.stats.reb} color="text-broadcast-gold" />
                   <StatMini label="AST" value={player.stats.ast} color="text-broadcast-blue" />

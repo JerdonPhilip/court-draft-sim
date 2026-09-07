@@ -220,14 +220,14 @@ function RerollLink({ label, hint, rerollsLeft, disabled, onReroll }: {
       title={hint}
       aria-label={exhausted ? `${label} — no rerolls left` : `${label} — ${hint} (${rerollsLeft} left)`}
       className={cn(
-        'flex items-center justify-center gap-1 rounded-md py-0.5 text-[11px] font-bold uppercase tracking-[0.14em] transition-colors',
+        'flex items-center justify-center gap-1.5 rounded-md py-1 text-xs font-bold uppercase tracking-[0.14em] transition-colors',
         'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-broadcast-accent',
         exhausted
           ? 'cursor-default text-broadcast-text-muted'
           : 'text-broadcast-text-secondary hover:text-broadcast-accent disabled:cursor-not-allowed disabled:opacity-40'
       )}
     >
-      <RotateCcw className="h-3 w-3" aria-hidden="true" />
+      <RotateCcw className="h-3.5 w-3.5" aria-hidden="true" />
       {exhausted ? 'No rerolls left' : `${label} · ${rerollsLeft} left`}
     </button>
   );
