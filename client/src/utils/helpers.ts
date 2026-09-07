@@ -85,7 +85,24 @@ const HEIGHT_BLK_PER_INCH = 0.08;
 const HEIGHT_FACTOR_MIN = 0.85;
 const HEIGHT_FACTOR_MAX = 1.15;
 
-/** 81 -> "6'9\"". Falls back to positional average when unknown (old saves). */
+/** "Michael Jordan" -> { first: "Michael", last: "Jordan" }. Suffixes stay on the last line ("Robert Horry III"). */
+export function splitPlayerName(fullName: string): { first: string; last: string } {
+  const parts = fullName.trim().split(/\s+/);
+  const [first = '', ...rest] = parts;
+  return { first, last: rest.join(' ') };
+}
+
+/**
+ * Single-line name sizing: longer last names render slightly smaller so the
+ * row never wraps (which would stretch the card and scroll the page).
+ * Returns a px size; pair with whitespace-nowrap.
+ */
+export function fitNameSize(lastName: string, basePx = 20): number {
+  const len = lastName.length;
+  if (len > 14) return Math.max(13, basePx - 4);
+  if (len > 10) return Math.max(14, basePx - 2);
+  return basePx;
+}
 export function formatHeight(heightIn: number | undefined, position?: string): string {
   const baseline = (position ? POSITION_HEIGHT_BASELINE[position] : undefined) ?? 79;
   const h = typeof heightIn === 'number' && Number.isFinite(heightIn) ? heightIn : baseline;

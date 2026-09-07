@@ -154,14 +154,14 @@ export function DraftScreen() {
         </div>
       </div>
 
-      <main id="draft-pools" className={`mx-auto max-w-7xl px-4 py-5 2xl:max-w-[1500px] ${isLineupComplete ? 'pb-32' : 'pb-10'}`}>
+      <main id="draft-pools" className={`mx-auto max-w-7xl px-4 pt-4 2xl:max-w-[1500px] ${isLineupComplete ? 'pb-28' : 'pb-6'}`}>
         {draftError && (
           <div className="mb-4 p-3 rounded-xl bg-broadcast-red/10 border border-broadcast-red/30 text-broadcast-red text-sm" role="alert" aria-live="assertive">
             {draftError}
           </div>
         )}
         <div className="grid gap-6 lg:grid-cols-5 lg:gap-8">
-          <div className="space-y-6 lg:col-span-3">
+          <div className="space-y-5 lg:col-span-3">
             <SlotMachine
               pool={pool}
               isSpinning={isSpinning}

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { cn, getPositionColor, getPositionLabel, formatHeight, heightEdgeLabel } from '../../utils/helpers';
+import { cn, getPositionColor, formatHeight, splitPlayerName, fitNameSize } from '../../utils/helpers';
 import { FRANCHISES, DECADES } from '../../data/constants';
 import { canPlayPosition, getPlayerPositions } from '../../types/game';
 import type { LineupSlot, Player, Position } from '../../types/game';
@@ -202,65 +202,42 @@ export function PlayerPool({ pool, draftedPlayerIds, onDraftPlayer, onDragStartP
                   style={{ backgroundImage: `linear-gradient(90deg, transparent, ${posColor}, transparent)` }}
                   aria-hidden="true"
                 />
-                <div className="flex items-start gap-4 p-5">
-                  <div
-                    className="flex h-16 w-16 shrink-0 items-center justify-center rounded-2xl font-display text-sm font-bold text-white ring-1 ring-white/25 [box-shadow:inset_0_2px_10px_rgb(0,0,0,0.35)]"
+                <div className="flex items-center gap-3 px-5 pt-4">
+                  <span
+                    className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg font-display text-sm font-bold text-white ring-1 ring-white/25 [box-shadow:inset_0_2px_8px_rgb(0,0,0,0.35)]"
                     style={{ backgroundImage: `linear-gradient(135deg, ${posColor}, ${posColor}55 130%)` }}
                     aria-hidden="true"
+                    title={`Plays ${getPlayerPositions(player).join(' / ')}`}
                   >
-                    <span className="px-1 text-center leading-tight [overflow-wrap:anywhere]">{getPlayerPositions(player).join('/')}</span>
+                    {player.position}
+                  </span>
+                  <div className="min-w-0 flex-1 leading-tight" title={player.name}>
+                    <div className="truncate text-[11px] font-semibold uppercase tracking-[0.16em] text-broadcast-text-secondary">{splitPlayerName(player.name).first}</div>
+                    <h4 className="whitespace-nowrap font-display font-bold leading-tight text-white" style={{ fontSize: fitNameSize(splitPlayerName(player.name).last || player.name) }}>{splitPlayerName(player.name).last || splitPlayerName(player.name).first}</h4>
                   </div>
+                  <span className="shrink-0 whitespace-nowrap font-display text-2xl font-bold leading-none text-broadcast-accent" title={`Overall rating ${player.overall}`}>
+                    {player.overall}
+                    <span className="ml-1 align-middle text-[11px] font-semibold uppercase tracking-[0.18em] text-broadcast-text-muted">OVR</span>
+                  </span>
+                </div>
 
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-start justify-between gap-3">
-                      <h4 className="min-w-0 flex-1 break-words font-display text-xl font-bold leading-snug text-white">{player.name}</h4>
-                      <div className="shrink-0 text-right">
-                        <div className="font-display text-2xl font-bold leading-none text-broadcast-accent">{player.overall}</div>
-                        <div className="mt-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-broadcast-text-muted">OVR</div>
-                      </div>
-                    </div>
-                    <div className="mb-2 mt-2 flex flex-wrap items-center gap-1.5">
-                      <span className="whitespace-nowrap rounded-full border border-broadcast-accent/30 bg-broadcast-accent/10 px-2.5 py-0.5 text-xs font-semibold text-broadcast-accent">
-                        {getPlayerPositions(player).join(' / ')}
-                      </span>
-                      <span className="whitespace-nowrap rounded-full border border-white/10 bg-white/5 px-2.5 py-0.5 text-xs font-medium text-broadcast-text-secondary" title="Height — taller players rebound and block better">
-                        {formatHeight(player.heightIn, player.position)}
-                      </span>
-                      {isFlex && (
-                        <span className="whitespace-nowrap rounded-full border border-broadcast-gold/30 bg-broadcast-gold/10 px-2.5 py-0.5 text-xs font-semibold text-broadcast-gold">
-                          FLEX
-                        </span>
-                      )}
-                    </div>
-
-                    <div className="mb-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-broadcast-text-secondary">
-                      <span className="whitespace-nowrap font-semibold text-broadcast-text-primary">{FRANCHISES.find(f => f.id === player.team)?.abbreviation ?? player.team}</span>
-                      <span aria-hidden="true" className="text-broadcast-text-muted">•</span>
-                      <span className="whitespace-nowrap">{DECADES.find(d => d.id === player.decade)?.label ?? player.decade}</span>
-                      <span aria-hidden="true" className="text-broadcast-text-muted">•</span>
-                      <span className="break-words text-broadcast-gold">{player.archetype}</span>
-                      <span aria-hidden="true" className="text-broadcast-text-muted">•</span>
-                      <span className="whitespace-nowrap font-medium text-broadcast-gold">{player.stats.pts} PPG</span>
-                    </div>
-
-                    <div className="mt-2 text-xs">
-                      {isDraftable ? (
-                        <span className="font-medium text-broadcast-accent">
-                          Fits: {fits.join(', ')}
-                          {selectedSlotPosition && (
-                            fitsSelected
-                              ? ` • fits selected ${selectedSlotPosition}`
-                              : ` • not ${selectedSlotPosition} — change slot`
-                          )}
-                          {heightEdgeLabel(player.heightIn, fits[0] ?? player.position) && (
-                            <> • {heightEdgeLabel(player.heightIn, fits[0] ?? player.position)}</>
-                          )}
-                        </span>
-                      ) : (
-                        <span className="text-broadcast-text-muted">Needs: {getPositionLabel(player.position)} — no open slot</span>
-                      )}
-                    </div>
-                  </div>
+                <div className="space-y-1.5 px-5 pb-2 pt-3">
+                  <p className="text-sm leading-relaxed text-broadcast-text-secondary">
+                    <span className="font-bold text-broadcast-accent">{getPlayerPositions(player).join(' / ')}</span>
+                    <span aria-hidden="true"> • </span>
+                    <span className="whitespace-nowrap" title="Height — taller players rebound and block better">{formatHeight(player.heightIn, player.position)}</span>
+                    {isFlex && (
+                      <><span aria-hidden="true"> • </span><span className="font-bold text-broadcast-gold">FLEX</span></>
+                    )}
+                    <span aria-hidden="true"> • </span>
+                    <span className="font-semibold text-broadcast-text-primary">{FRANCHISES.find(f => f.id === player.team)?.abbreviation ?? player.team}</span>
+                    <span aria-hidden="true"> • </span>
+                    <span className="whitespace-nowrap">{DECADES.find(d => d.id === player.decade)?.label ?? player.decade}</span>
+                    <span aria-hidden="true"> • </span>
+                    <span className="text-broadcast-gold">{player.archetype}</span>
+                    <span aria-hidden="true"> • </span>
+                    <span className="whitespace-nowrap font-medium text-broadcast-gold">{player.stats.pts} PPG</span>
+                  </p>
                 </div>
 
                 <div className="mt-auto grid grid-cols-5 gap-2 border-t border-white/5 bg-black/20 px-5 pb-4 pt-3">
@@ -296,8 +273,8 @@ export function PlayerPool({ pool, draftedPlayerIds, onDraftPlayer, onDragStartP
 function StatMini({ label, value, color }: { label: string; value: number; color: string }) {
   return (
     <div className="text-center py-1">
-      <div className={cn('font-bold font-mono text-base', color)}>{value}</div>
-      <div className="text-[10px] text-broadcast-text-muted uppercase tracking-wide mt-0.5">{label}</div>
+      <div className={cn('font-bold font-mono text-lg', color)}>{value}</div>
+      <div className="text-[11px] text-broadcast-text-muted uppercase tracking-wide mt-0.5">{label}</div>
     </div>
   );
 }

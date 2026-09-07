@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { motion } from 'framer-motion';
 import { Plus, Star, Trophy } from 'lucide-react';
-import { cn, getPositionColor, getPositionLabel, formatHeight } from '../../utils/helpers';
+import { cn, getPositionColor, getPositionLabel, formatHeight, splitPlayerName, fitNameSize } from '../../utils/helpers';
 import { canPlayPosition, getPlayerPositions } from '../../types/game';
 import type { LineupSlot, Player, Position } from '../../types/game';
 import { POSITIONS } from '../../data/constants';
@@ -132,8 +132,9 @@ function Slot({ slot, index, isSelected, draggedPlayer, onSelect, onDropPlayer }
                 <span className="break-words px-1 text-center text-lg leading-tight">{slot.player.position}</span>
               </div>
 
-              <div className="min-w-0 flex-1">
-                <h4 className="break-words text-base font-semibold leading-snug text-white">{slot.player.name}</h4>
+              <div className="min-w-0 flex-1 leading-tight" title={slot.player.name}>
+                <div className="truncate text-[11px] font-semibold uppercase tracking-[0.16em] text-broadcast-text-secondary">{splitPlayerName(slot.player.name).first}</div>
+                <h4 className="whitespace-nowrap font-semibold leading-snug text-white" style={{ fontSize: fitNameSize(splitPlayerName(slot.player.name).last || slot.player.name, 16) }}>{splitPlayerName(slot.player.name).last || splitPlayerName(slot.player.name).first}</h4>
                 <div className="mt-1.5 flex flex-wrap items-center gap-1.5 text-xs text-broadcast-text-secondary">
                   <span className="whitespace-nowrap rounded border border-broadcast-accent/30 bg-broadcast-accent/20 px-1.5 py-0.5 text-broadcast-accent" title="Height">
                     {formatHeight(slot.player.heightIn, slot.player.position)}
