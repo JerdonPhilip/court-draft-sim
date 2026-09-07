@@ -1,4 +1,4 @@
-import type { DraftPool, EraInfo, HistoricalTeam, Player, Position, SimulationResult, VSModeMatchup } from '../types/game';
+import type { DraftPool, EraInfo, HistoricalTeam, Player, Position, SimulationResult, VSModeMatchup, PlayoffGameResult } from '../types/game';
 
 const API_BASE = (import.meta.env.VITE_API_URL as string | undefined)?.replace(/\/$/, '') || '/api';
 
@@ -94,7 +94,7 @@ export const api = {
         body: JSON.stringify({ lineup, config, ...(era ? { era } : {}) }),
       }, 30000),
     runGame: (homeTeam: Player[], awayTeam: Player[]) =>
-      fetchAPI<{ result: unknown }>('/simulation/game', {
+      fetchAPI<{ result: PlayoffGameResult }>('/simulation/game', {
         method: 'POST',
         body: JSON.stringify({ homeTeam, awayTeam }),
       }),

@@ -176,6 +176,26 @@ export interface TeamSeasonStats {
   avgBlk: number;
 }
 
+export interface PlayoffGameResult {
+  homeScore: number;
+  awayScore: number;
+  otPeriods: number;
+  homePlayerStats: Record<string, PlayerStats>;
+  awayPlayerStats: Record<string, PlayerStats>;
+  homeMinutes: Record<string, number>;
+  awayMinutes: Record<string, number>;
+  events: Array<{
+    quarter: number;
+    time: string;
+    type: string;
+    playerId: string;
+    playerName: string;
+    team: 'home' | 'away';
+    points?: number;
+    description: string;
+  }>;
+}
+
 // Matches GET /api/simulation/historical-teams + POST /vs-mode response.
 export interface VSModeMatchup {
   userLineup: Lineup;

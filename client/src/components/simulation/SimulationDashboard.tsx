@@ -4,7 +4,9 @@ import { ChevronRight, X, Trophy, TrendingUp, TrendingDown, Target, Calendar, Ba
 import { cn } from '../../utils/helpers';
 import { otLabel, formatTeamName } from '../../utils/helpers';
 import { useLockBodyScroll } from '../../utils/useLockBodyScroll';
-import type { SimulationResult, PlayerStats, GameResult, PlayerGamePerformance, SimulatedPlayerStats } from '../../types/game';
+import { api } from '../../utils/api';
+import { notify } from '../../store/toastStore';
+import type { SimulationResult, PlayerStats, GameResult, PlayerGamePerformance, SimulatedPlayerStats, Player, PlayoffGameResult } from '../../types/game';
 
 interface SimulationDashboardProps {
   result: SimulationResult;
@@ -28,11 +30,12 @@ const STAT_COLORS: Record<keyof PlayerStats, string> = {
   blk: '#af52de',
 };
 
-type SeasonView = 'overview' | 'games' | 'standings' | 'players' | 'league' | 'awards';
+type SeasonView = 'overview' | 'games' | 'standings' | 'players' | 'league' | 'awards' | 'playoffs';
 
 export function SimulationDashboard({ result, onNewDraft, onVSMode }: SimulationDashboardProps) {
   const [view, setView] = useState<SeasonView>('overview');
   const [selectedGame, setSelectedGame] = useState<GameResult | null>(null);
+  const [selectedPlayoffOpponent, setSelectedPlayoffOpponent] = useState<string | null>(null);
 
   const totalGames = result.games.length || 1;
   const record = `${result.wins}-${result.losses}`;
@@ -93,12 +96,14 @@ export function SimulationDashboard({ result, onNewDraft, onVSMode }: Simulation
           </div>
 
           <div className="mt-2.5 flex flex-wrap gap-2" role="tablist" aria-label="Season views">
-            {(['overview', 'games', 'standings', 'players', 'league', 'awards'] as const).map(tab => (
+            {(['overview', 'games', 'standings', 'players', 'league', 'awards', 'playoffs'] as const).map(tab => (
               <button
                 key={tab}
                 role="tab"
                 aria-selected={view === tab}
-                onClick={() => setView(tab)}
+                onClick={() => {
+                  setView(tab);
+                }}
                 className={cn(
                   'px-3 py-1.5 rounded-lg text-sm font-medium transition-all',
                   view === tab
@@ -112,6 +117,7 @@ export function SimulationDashboard({ result, onNewDraft, onVSMode }: Simulation
                 {tab === 'players' && <><Target className="w-4 h-4 inline mr-1" aria-hidden="true" /> MY TEAM</>}
                 {tab === 'league' && <><Users className="w-4 h-4 inline mr-1" aria-hidden="true" /> LEAGUE STATS</>}
                 {tab === 'awards' && <><Award className="w-4 h-4 inline mr-1" aria-hidden="true" /> AWARDS</>}
+                {tab === 'playoffs' && <><Trophy className="w-4 h-4 inline mr-1" aria-hidden="true" /> PLAYOFFS</>}
               </button>
             ))}
           </div>
@@ -126,10 +132,18 @@ export function SimulationDashboard({ result, onNewDraft, onVSMode }: Simulation
           {view === 'players' && <PlayersView key="pl" result={result} />}
           {view === 'league' && <LeagueView key="lg" result={result} />}
           {view === 'awards' && <AwardsView key="aw" result={result} />}
+          {view === 'playoffs' && <PlayoffsView key="po" result={result} onOpen={setSelectedPlayoffOpponent} />}
         </AnimatePresence>
 
         {selectedGame && (
           <GameBoxScoreModal game={selectedGame} result={result} onClose={() => setSelectedGame(null)} />
+        )}
+        {selectedPlayoffOpponent && (
+          <PlayoffsModal
+            result={result}
+            opponentName={selectedPlayoffOpponent}
+            onClose={() => setSelectedPlayoffOpponent(null)}
+          />
         )}
 
         {view === 'overview' && (
@@ -454,6 +468,197 @@ function AwardTeamCard({ title, players }: { title: string; players: LeagueRow[]
           </div>
         ))}
         {players.length === 0 && <div className="text-sm text-broadcast-text-muted">No eligible players</div>}
+      </div>
+    </div>
+  );
+}
+
+function PlayoffsView({ result, onOpen }: { result: SimulationResult; onOpen: (opponent: string) => void }) {
+  const rankedTeams = (result.standings ?? []).slice().sort((a, b) => b.wins - a.wins || b.pointDiff - a.pointDiff).map(team => team.team);
+  const teams = Array.from({ length: 32 }, (_, index) => rankedTeams[index] ?? `Playoff Team ${index + 1}`);
+  const eastTeams = teams.slice(0, 16);
+  const westTeams = teams.slice(16, 32);
+  const makeRound = (conference: string[]) => Array.from({ length: 8 }, (_, index) => ({
+    home: conference[index]!,
+    away: conference[15 - index]!,
+  }));
+  const eastRound = makeRound(eastTeams);
+  const westRound = makeRound(westTeams);
+  const rounds = (teams: string[], label: string) => {
+    const firstRound = makeRound(teams);
+    return [
+      [`${label} FIRST ROUND`, firstRound],
+      [`${label} SEMIFINALS`, Array.from({ length: 4 }, (_, index) => `Winner ${index + 1}`)],
+      [`${label} FINALS`, ['Conference Finalist 1', 'Conference Finalist 2']],
+    ] as const;
+  };
+  const eastColumns = rounds(eastTeams, 'EAST');
+  const westColumns = [...rounds(westTeams, 'WEST')].reverse();
+  const championshipColumn = ['CHAMPIONSHIP', ['East Champion', 'West Champion', '🏆 CHAMPION'] as const] as const;
+  return (
+    <div className="space-y-4">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h2 className="section-title">NBA PLAYOFFS</h2>
+          <p className="mt-1 text-xs text-broadcast-text-secondary">Best-of-seven series • live game simulation</p>
+        </div>
+      </div>
+      <div className="card-elevated overflow-x-auto p-4">
+        <div className="grid min-w-[1100px] grid-cols-7 gap-3">
+          {[...eastColumns, championshipColumn, ...westColumns].map(([title, matchups], columnIndex) => (
+            <div key={String(title)} className={cn(
+              'space-y-3',
+              columnIndex === eastColumns.length && 'flex flex-col justify-center'
+            )}>
+              <h3 className="text-center text-[10px] font-bold tracking-wider text-broadcast-accent">{String(title)}</h3>
+              <div className={cn(
+                'grid min-h-[560px] grid-rows-8 gap-2',
+                matchups.length === 8 && 'items-center',
+                matchups.length === 4 && 'items-center',
+                matchups.length === 2 && 'items-center',
+                columnIndex === eastColumns.length && 'place-items-center'
+              )}>
+              {(matchups as readonly (string | { home: string; away: string })[]).map((matchup, index) => {
+                const label = typeof matchup === 'string' ? matchup : `${matchup.home} vs ${matchup.away}`;
+                const clickable = typeof matchup !== 'string';
+                const rowSpan = matchups.length === 8 ? 'row-span-1' : matchups.length === 4 ? 'row-span-2' : matchups.length === 3 ? 'row-span-1' : 'row-span-4';
+                const centerRow = columnIndex === eastColumns.length
+                  ? index === 0 ? 'row-start-3' : index === 1 ? 'row-start-5' : 'row-start-4'
+                  : '';
+                return (
+                <button
+                  key={`${label}-${index}`}
+                  type="button"
+                  disabled={!clickable}
+                  onClick={() => { if (typeof matchup !== 'string') onOpen(matchup.away); }}
+                  className={cn(
+                    'w-full self-center rounded-lg border p-3 text-center text-xs text-white',
+                    rowSpan,
+                    centerRow,
+                    clickable
+                      ? 'border-broadcast-accent/40 bg-broadcast-card hover:border-broadcast-accent hover:bg-broadcast-accent/10'
+                      : 'cursor-default border-broadcast-border bg-broadcast-card'
+                  )}
+                >
+                  {label}
+                </button>
+                );
+              })}
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+      <p className="text-xs text-broadcast-text-muted">East: 16 teams • West: 16 teams • Click any first-round matchup to choose what to simulate.</p>
+    </div>
+  );
+}
+
+type PlayoffScope = 'game' | 'round' | 'conference' | 'playoffs';
+
+const PLAYOFF_POSITIONS = ['PG', 'SG', 'SF', 'PF', 'C'] as const;
+
+function playoffRoster(result: SimulationResult, opponentName: string): Player[] {
+  const game = result.games.find(candidate => candidate.opponent === opponentName && candidate.opponentPerformances?.length)
+    ?? result.games.find(candidate => candidate.opponentPerformances?.length);
+  const candidates = game?.opponentPerformances ?? [];
+  const stats = result.opponentPlayerStats ?? [];
+  return Array.from({ length: 5 }, (_, index) => {
+    const player = candidates[index];
+    const stat = stats[index];
+    return {
+    id: player?.playerId ?? stat?.playerId ?? `playoff-${opponentName}-${index}`,
+    name: player?.playerName ?? stat?.playerName ?? `${opponentName} Player ${index + 1}`,
+    position: PLAYOFF_POSITIONS[index]!,
+    heightIn: player?.position === 'C' ? 84 : player?.position === 'PF' ? 82 : 78,
+    team: opponentName,
+    decade: 'modern',
+    era: 'modern',
+    stats: player?.baseStats ?? player?.stats ?? stat?.baseStats ?? stat?.averages ?? { pts: 10, reb: 5, ast: 3, stl: 1, blk: 1 },
+    overall: player?.overall ?? stat?.overall ?? 78,
+    archetype: 'Playoff rotation',
+    };
+  });
+}
+
+function PlayoffsModal({ result, opponentName, onClose }: { result: SimulationResult; opponentName: string; onClose: () => void }) {
+  const [scope, setScope] = useState<PlayoffScope>('game');
+  const [games, setGames] = useState(7);
+  const [progress, setProgress] = useState(0);
+  const [lastGame, setLastGame] = useState<PlayoffGameResult | null>(null);
+  const [liveEvent, setLiveEvent] = useState<string | null>(null);
+  const [running, setRunning] = useState(false);
+  const lineup = result.playerStats.slice(0, 5).map((player, index) => ({
+    id: player.playerId,
+    name: player.playerName,
+    position: PLAYOFF_POSITIONS[index]!,
+    heightIn: player.position === 'C' ? 84 : player.position === 'PF' ? 82 : 78,
+    team: 'Your Team',
+    decade: 'modern',
+    era: 'modern',
+    stats: player.baseStats ?? player.averages,
+    overall: player.overall ?? 78,
+    archetype: 'Playoff rotation',
+  })) as Player[];
+  const opponent = playoffRoster(result, opponentName);
+  const total = scope === 'game' ? 1 : (scope === 'round' ? 4 : scope === 'conference' ? 8 : 15) * games;
+
+  const simulate = async () => {
+    if (lineup.length !== 5 || opponent.length !== 5) return;
+    setRunning(true);
+    setProgress(0);
+    setLiveEvent(null);
+    try {
+      for (let index = 0; index < total; index++) {
+        const response = await api.simulation.runGame(lineup, opponent);
+        setLastGame(response.result);
+        if (scope === 'game') {
+          for (const event of response.result.events) {
+            setLiveEvent(event.description);
+            await new Promise(resolve => window.setTimeout(resolve, 300));
+          }
+        }
+        setProgress(index + 1);
+        await new Promise(resolve => window.setTimeout(resolve, 350));
+      }
+    } catch (error) {
+      notify.error(error instanceof Error ? error.message : 'Playoff simulation failed');
+    } finally {
+      setRunning(false);
+    }
+  };
+
+  useLockBodyScroll(true);
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-broadcast-dark/90 p-4 backdrop-blur-sm" onClick={onClose}>
+      <div className="w-full max-w-2xl rounded-2xl border border-broadcast-border bg-broadcast-card p-5 shadow-2xl" onClick={event => event.stopPropagation()} role="dialog" aria-modal="true" aria-label="Playoff simulation">
+        <div className="flex items-center justify-between">
+          <div>
+            <h2 className="font-display text-xl font-bold text-white">SIMULATE PLAYOFFS</h2>
+            <p className="text-xs text-broadcast-text-secondary">Choose how much of the bracket to play live.</p>
+          </div>
+          <button onClick={onClose} className="rounded-lg p-2 text-broadcast-text-secondary hover:bg-broadcast-border" aria-label="Close playoff simulation"><X className="h-5 w-5" /></button>
+        </div>
+        <div className="mt-5 grid grid-cols-2 gap-2 sm:grid-cols-4" role="radiogroup" aria-label="Playoff simulation scope">
+          {(['game', 'round', 'conference', 'playoffs'] as const).map(option => (
+            <button key={option} role="radio" aria-checked={scope === option} onClick={() => setScope(option)} className={cn('rounded-lg border px-3 py-3 text-xs font-bold uppercase', scope === option ? 'border-broadcast-accent bg-broadcast-accent text-broadcast-dark' : 'border-broadcast-border bg-broadcast-darker text-broadcast-text-secondary')}>
+              {option}
+            </button>
+          ))}
+        </div>
+        <label className="mt-4 block text-xs font-bold uppercase tracking-wider text-broadcast-text-secondary">
+          Games per series: {games}
+          <input type="range" min="1" max="7" value={games} onChange={event => setGames(Number(event.target.value))} className="mt-2 w-full accent-broadcast-accent" />
+        </label>
+        <button onClick={() => void simulate()} disabled={running} className="btn-primary mt-5 w-full py-3">
+          {running ? `SIMULATING GAME ${progress + 1} OF ${total}…` : 'START REAL-TIME SIMULATION'}
+        </button>
+        {running || progress > 0 ? <div className="mt-4" role="status">
+          <div className="mb-2 flex justify-between text-xs text-broadcast-text-secondary"><span>LIVE PLAYOFF PROGRESS</span><span>{progress}/{total}</span></div>
+          <div className="h-2 overflow-hidden rounded-full bg-broadcast-darker"><div className="h-full bg-broadcast-accent transition-all" style={{ width: `${(progress / total) * 100}%` }} /></div>
+        </div> : null}
+        {liveEvent && <div className="mt-4 rounded-lg border border-broadcast-accent/30 bg-broadcast-accent/5 p-3 text-center text-sm text-white">{liveEvent}</div>}
+        {lastGame && <div className="mt-5 rounded-xl border border-broadcast-border bg-broadcast-darker p-4 text-center"><div className="text-xs text-broadcast-text-secondary">LATEST FINAL</div><div className="mt-1 font-display text-3xl font-bold text-white">{lastGame.homeScore} - {lastGame.awayScore}</div><div className="text-xs text-broadcast-text-muted">{lastGame.otPeriods ? `${lastGame.otPeriods} OT` : 'REGULATION'}</div></div>}
       </div>
     </div>
   );
