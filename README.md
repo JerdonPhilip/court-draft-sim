@@ -140,8 +140,8 @@ GET  /api/simulation/historical-teams  # List historical teams
 
 ## Player Database
 
-The game includes 100+ historical players across 7 eras:
-- **1960s**: Russell, Chamberlain, Robertson, West, Baylor
+The game includes 180+ historical players across 7 eras:
+- **1960s**: Russell, Chamberlain, Robertson, West, Baylor, Pettit, Lucas, Reed, Hayes, Alcindor, Monroe, Cunningham + full 4–7 man pools for all 14 period franchises
 - **1970s**: Kareem, Dr. J, Maravich, Gervin, Cowens
 - **1980s**: Magic, Bird, Moses, Isiah, Dominique
 - **1990s**: Jordan, Hakeem, Malone, Stockton, Robinson, Shaq
