@@ -190,42 +190,15 @@ interface LineupBuilderProps {
   draggedPlayer: Player | null;
   onSelectSlot: (index: number) => void;
   onDropPlayer: (player: Player, slotIndex: number) => void;
-  teamStrength: number;
-  projectedWins: number;
 }
 
-function eligibleLabel(player: Player | null): string {
-  if (!player) return '';
-  return getPlayerPositions(player).join('/');
-}
-
-export function LineupBuilder({ lineup, selectedSlot, draggedPlayer, onSelectSlot, onDropPlayer, teamStrength, projectedWins }: LineupBuilderProps) {
+export function LineupBuilder({ lineup, selectedSlot, draggedPlayer, onSelectSlot, onDropPlayer }: LineupBuilderProps) {
   const filled = lineup.filter(s => s.player).length;
-  const selectedPos: Position | null = selectedSlot !== null ? lineup[selectedSlot]?.position ?? null : null;
-  void eligibleLabel;
   return (
-    <div className="space-y-7">
+    <div className="space-y-6">
       <div className="flex items-center justify-between gap-3">
         <h2 className="section-title font-display text-xl">YOUR LINEUP ({filled}/5)</h2>
-        <div className="flex items-center gap-3">
-          <div className="min-w-[88px] rounded-xl border border-broadcast-border bg-broadcast-card p-3.5 text-center">
-            <div className="font-display text-2xl font-bold gradient-text">{teamStrength}</div>
-            <div className="mt-0.5 text-xs text-broadcast-text-muted">TEAM STR</div>
-          </div>
-          <div className="min-w-[88px] rounded-xl border border-broadcast-gold/30 bg-broadcast-card p-3.5 text-center">
-            <div className="font-display text-2xl font-bold text-broadcast-gold">{projectedWins}-{82 - projectedWins}</div>
-            <div className="mt-0.5 text-xs text-broadcast-text-muted">PROJ. RECORD</div>
-          </div>
-        </div>
       </div>
-
-      <p className="text-xs leading-relaxed text-broadcast-text-secondary" aria-live="polite">
-        {draggedPlayer
-          ? `Placing ${draggedPlayer.name} (${eligibleLabel(draggedPlayer)}) — glowing slots accept him.`
-          : selectedPos
-            ? `${selectedPos} slot selected — click a fitting player, or drag one in. Picks lock once made.`
-            : 'Click an open slot to target it, then pick a player. Picks lock once made.'}
-      </p>
 
       <div className="grid grid-cols-1 gap-5">
         {lineup.map((slot, index) => (
@@ -239,26 +212,6 @@ export function LineupBuilder({ lineup, selectedSlot, draggedPlayer, onSelectSlo
             onDropPlayer={onDropPlayer}
           />
         ))}
-      </div>
-
-      <div className="rounded-xl border border-broadcast-border bg-broadcast-card p-5">
-        <h4 className="mb-4 font-medium text-broadcast-text-secondary">TEAM CHEMISTRY — {filled}/5 SLOTS FILLED</h4>
-        <div className="grid grid-cols-5 gap-4" aria-hidden="true">
-          {POSITIONS.map(pos => {
-            const hasPos = lineup.some(s => s.player && canPlayPosition(s.player, pos));
-            return (
-              <div key={pos} className="text-center" style={{ opacity: hasPos ? 1 : 0.4 }}>
-                <div
-                  className="w-10 h-10 rounded-xl mx-auto mb-2 flex items-center justify-center font-bold text-white text-sm"
-                  style={{ backgroundColor: getPositionColor(pos) }}
-                >
-                  {pos}
-                </div>
-                <div className="text-xs text-broadcast-text-muted">{pos}</div>
-              </div>
-            );
-          })}
-        </div>
       </div>
     </div>
   );

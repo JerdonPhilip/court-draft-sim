@@ -132,16 +132,39 @@ export function DraftScreen() {
                 </p>
               </div>
             </div>
-            <div className="flex items-center gap-2">
-              <div className="hidden sm:flex items-center gap-1 px-3 py-1 bg-broadcast-card border border-broadcast-border rounded-lg">
-                <Zap className="w-4 h-4 text-broadcast-accent" aria-hidden="true" />
-                <span className="text-sm font-mono font-bold text-broadcast-accent">{teamStrength}</span>
-                <span className="text-xs text-broadcast-text-muted">STR</span>
+            <div
+              className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-2xl border border-white/10 bg-broadcast-card/90 px-3 py-1.5 shadow-[0_10px_36px_rgb(0,0,0,0.38)] backdrop-blur-sm"
+              aria-live="polite"
+              aria-label={`Team strength ${teamStrength}, projected record ${projectedWins} and ${82 - projectedWins}, ${filledPlayers.length} of ${maxRounds} picks made`}
+            >
+              <div className="flex items-center gap-1.5">
+                <Zap className="h-4 w-4 shrink-0 text-broadcast-accent" aria-hidden="true" />
+                <span className="font-display text-lg font-bold leading-none text-broadcast-accent">{teamStrength}</span>
+                <span className="text-[10px] font-bold uppercase tracking-[0.14em] text-broadcast-text-muted">STR</span>
+                <span className="h-1 w-10 overflow-hidden rounded-full bg-white/10" role="img" aria-label={`Strength ${teamStrength} out of 100`}>
+                  <span
+                    className="block h-full rounded-full bg-gradient-to-r from-broadcast-accent to-broadcast-gold transition-[width] duration-500"
+                    style={{ width: `${Math.max(4, Math.min(100, teamStrength))}%` }}
+                  />
+                </span>
               </div>
-              <div className="flex items-center gap-1 px-3 py-1 bg-broadcast-card border border-broadcast-gold/30 rounded-lg">
-                <Trophy className="w-4 h-4 text-broadcast-gold" aria-hidden="true" />
-                <span className="text-sm font-mono font-bold text-broadcast-gold">{projectedWins}-{82 - projectedWins}</span>
-                <span className="text-xs text-broadcast-text-muted">PROJ</span>
+              <div className="h-6 w-px shrink-0 bg-white/10" aria-hidden="true" />
+              <div className="flex items-center gap-1.5">
+                <Trophy className="h-4 w-4 shrink-0 text-broadcast-gold" aria-hidden="true" />
+                <span className="font-display text-lg font-bold leading-none text-broadcast-gold">{projectedWins}-{82 - projectedWins}</span>
+                <span className="text-[10px] font-bold uppercase tracking-[0.14em] text-broadcast-text-muted">PROJ</span>
+              </div>
+              <div className="hidden h-6 w-px shrink-0 bg-white/10 min-[420px]:block" aria-hidden="true" />
+              <div className="hidden items-center gap-1.5 min-[420px]:flex">
+                <span className="flex items-center gap-1" aria-hidden="true">
+                  {lineup.slots.map((s, i) => (
+                    <span
+                      key={i}
+                      className={`h-1.5 w-1.5 rounded-full transition-colors duration-300 ${s.player ? 'bg-broadcast-accent shadow-glow-accent' : 'bg-white/15'}`}
+                    />
+                  ))}
+                </span>
+                <span className="text-[10px] font-bold uppercase tracking-[0.14em] text-broadcast-text-muted">{filledPlayers.length}/{maxRounds}</span>
               </div>
             </div>
           </div>
@@ -222,8 +245,6 @@ export function DraftScreen() {
               draggedPlayer={draggedPlayer}
               onSelectSlot={handleSelectSlot}
               onDropPlayer={handleDropToSlot}
-              teamStrength={teamStrength}
-              projectedWins={projectedWins}
             />
             </div>
           </div>
