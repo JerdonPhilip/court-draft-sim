@@ -62,11 +62,13 @@ export interface Lineup {
 
 export interface TeamSkip {
   used: boolean;
+  remaining: number;
   franchise?: string;
 }
 
 export interface DecadeSkip {
   used: boolean;
+  remaining: number;
   decade?: string;
 }
 
@@ -77,6 +79,7 @@ export interface DraftState {
   lineup: Lineup;
   teamSkip: TeamSkip;
   decadeSkip: DecadeSkip;
+  spinsLeft: number;
   draftedPlayers: string[];
   availablePools: DraftPool[];
   isSpinning: boolean;

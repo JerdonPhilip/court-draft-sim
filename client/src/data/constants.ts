@@ -46,6 +46,13 @@ export const DECADES = [
 
 export const POSITIONS: Position[] = ['PG', 'SG', 'SF', 'PF', 'C'];
 
+// Rerolls granted per axis (franchise / decade) at the start of each draft.
+export const MAX_REROLLS_PER_AXIS = 3;
+
+// Manual SPIN presses granted per draft. Automatic spins (first pool of the
+// draft and the pool dealt after each pick) are always free.
+export const MAX_MANUAL_SPINS = 4;
+
 export const ARCHETYPES: Record<Position, string[]> = {
   PG: ['Floor General', 'Scoring PG', 'Playmaker', 'Defensive PG', 'Two-Way PG'],
   SG: ['Sharpshooter', 'Slashing SG', '3-and-D', 'Score-First SG', 'Playmaking SG'],

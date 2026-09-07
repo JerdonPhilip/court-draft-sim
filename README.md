@@ -6,7 +6,7 @@ An NBA roster-building and 82-game simulation game inspired by 82-0.com. Build y
 
 - **Slot Machine Draft Engine**: Spin for random NBA franchise + decade combinations to create your draft pool
 - **5-Round Draft**: Fill PG, SG, SF, PF, C positions with strategic picks
-- **Team/Decade Skips**: Limited tactical skips to bypass unfavorable rolls
+- **Franchise/Decade Rerolls**: Limited tactical rerolls — keep the decade and roll a new team, or vice versa
 - **82-Game Simulation**: Non-linear win curve that makes 82-0 progressively harder unless all stats are balanced
 - **VS Mode**: Challenge historical all-time great teams (96 Bulls, 17 Warriors, 01 Lakers, etc.)
 - **Dark Mode Sports Broadcast UI**: High-contrast, animated interface modeled after modern sports dashboards
@@ -97,11 +97,11 @@ npm run start
 ## Game Mechanics
 
 ### Draft Phase
-1. **Spin** the slot machine to get a random Franchise + Decade combination
+1. **Spin** the slot machine to get a random Franchise + Decade combination (4 manual re-spins per game; dealt pools are always free)
 2. **Review** 5-6 available players from that franchise/era
 3. **Draft** one player for your current position slot (PG→SG→SF→PF→C)
 4. **Repeat** for 5 rounds
-5. **Use Skips** strategically (1 Team Skip, 1 Decade Skip per game)
+5. **Use Rerolls** strategically (3 Franchise Rerolls, 3 Decade Rerolls per game)
 
 ### Simulation Phase
 - Player ratings (PTS, REB, AST, STL, BLK) feed into a weighted algorithm

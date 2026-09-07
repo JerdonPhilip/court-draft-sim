@@ -9,7 +9,7 @@ import {
   HistoricalTeam,
   canPlayPosition,
 } from '../types/game';
-import { POSITIONS } from '../data/constants';
+import { POSITIONS, MAX_REROLLS_PER_AXIS, MAX_MANUAL_SPINS } from '../data/constants';
 import { api } from '../utils/api';
 
 function getEmptyPositions(slots: DraftState['lineup']['slots']): Position[] {
@@ -34,9 +34,11 @@ interface GameStore {
   setError: (error: string | null) => void;
 
   initializeDraft: () => void;
-  spinDraftPool: (excludeFranchise?: string, excludeDecade?: string, neededPositions?: Position[]) => Promise<void>;
-  useTeamSkip: () => void;
-  useDecadeSkip: () => void;
+  spinDraftPool: (excludeFranchise?: string, excludeDecade?: string, neededPositions?: Position[], consumeManualSpin?: boolean) => Promise<void>;
+  rerollFranchise: () => void;
+  rerollDecade: () => void;
+  // `reroll` = the axis being re-rolled (server keeps the opposite one).
+  rerollPool: (reroll: 'franchise' | 'decade') => Promise<void>;
   draftPlayer: (player: Player, slotIndex: number) => void;
   removePlayerFromSlot: (slotIndex: number) => void;
   clearLineup: () => void;
@@ -54,8 +56,9 @@ const createInitialDraftState = (): DraftState => ({
   lineup: {
     slots: POSITIONS.map(pos => ({ position: pos, player: null })),
   },
-  teamSkip: { used: false },
-  decadeSkip: { used: false },
+  teamSkip: { used: false, remaining: MAX_REROLLS_PER_AXIS },
+  decadeSkip: { used: false, remaining: MAX_REROLLS_PER_AXIS },
+  spinsLeft: MAX_MANUAL_SPINS,
   draftedPlayers: [],
   availablePools: [],
   isSpinning: false,
@@ -94,9 +97,18 @@ export const useGameStore = create<GameStore>()(
         });
       },
 
-      spinDraftPool: async (excludeFranchise, excludeDecade, neededPositions) => {
+      spinDraftPool: async (excludeFranchise, excludeDecade, neededPositions, consumeManualSpin = false) => {
         const { draftState } = get();
         if (draftState.isSpinning) return;
+        // Manual re-spins redraw the CURRENT pool and are budgeted; automatic
+        // spins (first pool, post-pick pools) and recovery spins from empty
+        // are always free so the draft can never soft-lock.
+        const hadPool = !!draftState.pool;
+        const consuming = consumeManualSpin && hadPool;
+        if (consuming && draftState.spinsLeft <= 0) {
+          set({ draftState: { ...draftState, error: 'No spins left — draft from this pool or use a reroll.' } });
+          return;
+        }
         const myRequest = ++spinRequestId;
         set({ draftState: { ...get().draftState, isSpinning: true, error: null } });
 
@@ -120,6 +132,7 @@ export const useGameStore = create<GameStore>()(
               spinResult: { franchise: data.pool.franchise, decade: data.pool.decade },
               availablePools: newPools,
               isSpinning: false,
+              spinsLeft: consuming ? currentState.spinsLeft - 1 : currentState.spinsLeft,
             },
           });
         } catch (error) {
@@ -130,36 +143,69 @@ export const useGameStore = create<GameStore>()(
         }
       },
 
-      useTeamSkip: () => {
-        const { draftState } = get();
-        if (draftState.teamSkip.used || !draftState.pool || draftState.isSpinning) return;
-
-        const evictedFranchise = draftState.pool.franchise;
-        set({
-          draftState: {
-            ...draftState,
-            teamSkip: { used: true, franchise: evictedFranchise },
-            pool: null,
-            spinResult: null,
-          },
-        });
-        void get().spinDraftPool(evictedFranchise, undefined);
+      rerollFranchise: () => {
+        // "Reroll franchise" = roll a NEW team, keep the era.
+        void get().rerollPool('franchise');
       },
 
-      useDecadeSkip: () => {
-        const { draftState } = get();
-        if (draftState.decadeSkip.used || !draftState.pool || draftState.isSpinning) return;
+      rerollDecade: () => {
+        // "Reroll decade" = keep the team, roll a NEW era.
+        void get().rerollPool('decade');
+      },
 
-        const evictedDecade = draftState.pool.decade;
-        set({
-          draftState: {
-            ...draftState,
-            decadeSkip: { used: true, decade: evictedDecade },
-            pool: null,
-            spinResult: null,
-          },
-        });
-        void get().spinDraftPool(undefined, evictedDecade);
+      rerollPool: async (reroll) => {
+        // The server's `keep` is the axis that STAYS, i.e. the opposite of
+        // the button pressed. The remaining-count consumed below must follow
+        // the REROLLED axis (the button), not the kept one.
+        const keep = reroll === 'franchise' ? 'decade' : 'franchise';
+        const { draftState } = get();
+        // Internal teamSkip/decadeSkip entries track remaining rerolls per axis.
+        const remaining = reroll === 'franchise'
+          ? draftState.teamSkip.remaining
+          : draftState.decadeSkip.remaining;
+        if (remaining <= 0 || !draftState.pool || draftState.isSpinning) return;
+
+        const myRequest = ++spinRequestId;
+        const { franchise, decade } = draftState.pool;
+        set({ draftState: { ...get().draftState, isSpinning: true, error: null } });
+
+        try {
+          const need = getEmptyPositions(get().draftState.lineup.slots);
+          const data = await api.draft.reroll(keep, franchise, decade, need.length > 0 ? need : undefined);
+
+          if (myRequest !== spinRequestId) return;
+
+          const { draftState: currentState } = get();
+          const newPools = [...currentState.availablePools, data.pool].slice(-10);
+          const teamRemaining = reroll === 'franchise'
+            ? currentState.teamSkip.remaining - 1
+            : currentState.teamSkip.remaining;
+          const decadeRemaining = reroll === 'decade'
+            ? currentState.decadeSkip.remaining - 1
+            : currentState.decadeSkip.remaining;
+
+          set({
+            draftState: {
+              ...currentState,
+              pool: data.pool,
+              spinResult: { franchise: data.pool.franchise, decade: data.pool.decade },
+              availablePools: newPools,
+              isSpinning: false,
+              // Consume one reroll only on success — a failed reroll stays available.
+              teamSkip: reroll === 'franchise'
+                ? { used: teamRemaining <= 0, remaining: teamRemaining, franchise }
+                : currentState.teamSkip,
+              decadeSkip: reroll === 'decade'
+                ? { used: decadeRemaining <= 0, remaining: decadeRemaining, decade }
+                : currentState.decadeSkip,
+            },
+          });
+        } catch (error) {
+          if (myRequest !== spinRequestId) return;
+          set({
+            draftState: { ...get().draftState, isSpinning: false, error: error instanceof Error ? error.message : String(error) },
+          });
+        }
       },
 
       draftPlayer: (player, slotIndex) => {
@@ -314,7 +360,7 @@ export const useGameStore = create<GameStore>()(
     }),
     {
       name: 'court-draft-sim-store',
-      version: 2,
+      version: 4,
       partialize: (state) => ({
         phase: state.phase === 'simulation' ? 'draft' : state.phase,
         draftState: {
@@ -327,13 +373,32 @@ export const useGameStore = create<GameStore>()(
         vsMatchup: state.vsMatchup,
       } as unknown as GameStore),
       migrate: (persisted: unknown, version: number) => {
-        if (version < 2 || typeof persisted !== 'object' || persisted === null) {
+        if (typeof persisted !== 'object' || persisted === null) {
           return persisted as GameStore;
         }
         const p = persisted as { draftState?: Partial<DraftState> };
         if (p.draftState) {
           p.draftState.isSpinning = false;
           p.draftState.error = null;
+          if (!p.draftState.teamSkip) {
+            p.draftState.teamSkip = { used: false, remaining: MAX_REROLLS_PER_AXIS };
+          }
+          if (!p.draftState.decadeSkip) {
+            p.draftState.decadeSkip = { used: false, remaining: MAX_REROLLS_PER_AXIS };
+          }
+          // v2 -> v3: single-use reroll flags become 3-count buckets.
+          const teamSkip = p.draftState.teamSkip as { used?: boolean; remaining?: number; franchise?: string } | undefined;
+          if (teamSkip && typeof teamSkip.remaining !== 'number') {
+            teamSkip.remaining = teamSkip.used ? 0 : MAX_REROLLS_PER_AXIS;
+          }
+          const decadeSkip = p.draftState.decadeSkip as { used?: boolean; remaining?: number; decade?: string } | undefined;
+          if (decadeSkip && typeof decadeSkip.remaining !== 'number') {
+            decadeSkip.remaining = decadeSkip.used ? 0 : MAX_REROLLS_PER_AXIS;
+          }
+          // v3 -> v4: manual-spin budget (older saves get a full set).
+          if (typeof p.draftState.spinsLeft !== 'number') {
+            p.draftState.spinsLeft = MAX_MANUAL_SPINS;
+          }
         }
         return persisted as GameStore;
       },

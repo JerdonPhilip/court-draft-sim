@@ -53,6 +53,11 @@ export const api = {
         method: 'POST',
         body: JSON.stringify({ excludeFranchise, excludeDecade, neededPositions }),
       }),
+    reroll: (keep: 'franchise' | 'decade', franchise: string, decade: string, neededPositions?: Position[]) =>
+      fetchAPI<{ pool: DraftPool }>('/draft/reroll', {
+        method: 'POST',
+        body: JSON.stringify({ keep, franchise, decade, neededPositions }),
+      }),
     getPool: (franchise: string, decade: string) =>
       fetchAPI<{ pool: DraftPool }>(`/draft/pool/${encodeURIComponent(franchise)}/${encodeURIComponent(decade)}`),
   },

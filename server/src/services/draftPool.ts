@@ -141,3 +141,54 @@ export function spinForDraftPool(excludeFranchise?: string, excludeDecade?: stri
     players,
   };
 }
+
+function poolCoversNeed(franchiseId: string, decadeId: string, neededPositions?: Position[]): boolean {
+  if (!isValidCombo(franchiseId, decadeId)) return false;
+  if (!neededPositions || neededPositions.length === 0) return true;
+  return getPlayersByFranchiseAndDecade(franchiseId, decadeId)
+    .some(p => neededPositions.some(need => canPlayPosition(p, need)));
+}
+
+/**
+ * Reroll exactly one axis of the current pool, keeping the other fixed.
+ * Candidates are restricted to combos that actually exist (MIN_POOL_SIZE),
+ * so e.g. keeping 2020s can never land on the SuperSonics, and keeping
+ * Seattle can never land on the 2020s. Returns null when there is no
+ * alternative (caller should surface an error, not consume the reroll).
+ */
+export function rerollDraftPool(
+  keep: 'franchise' | 'decade',
+  franchiseId: string,
+  decadeId: string,
+  neededPositions?: Position[]
+): DraftPool | null {
+  if (keep === 'decade') {
+    const decade = DECADES.find(d => d.id === decadeId);
+    if (!decade) return null;
+    // Prefer candidates that also cover an open slot; fall back to any
+    // valid combo in the kept decade so the reroll never dead-ends.
+    const covering = FRANCHISES.filter(
+      f => f.id !== franchiseId && poolCoversNeed(f.id, decadeId, neededPositions)
+    );
+    const pool = covering.length > 0
+      ? covering
+      : FRANCHISES.filter(f => f.id !== franchiseId && isValidCombo(f.id, decadeId));
+    if (pool.length === 0) return null;
+    const franchise = pool[randomIndex(pool.length)]!;
+    const players = getRandomPlayersByFranchiseAndDecade(franchise.id, decadeId, 6);
+    return { franchise: franchise.id, decade: decadeId, players };
+  }
+
+  const franchise = FRANCHISES.find(f => f.id === franchiseId);
+  if (!franchise) return null;
+  const covering = DECADES.filter(
+    d => d.id !== decadeId && poolCoversNeed(franchiseId, d.id, neededPositions)
+  );
+  const pool = covering.length > 0
+    ? covering
+    : DECADES.filter(d => d.id !== decadeId && isValidCombo(franchiseId, d.id));
+  if (pool.length === 0) return null;
+  const decade = pool[randomIndex(pool.length)]!;
+  const players = getRandomPlayersByFranchiseAndDecade(franchiseId, decade.id, 6);
+  return { franchise: franchiseId, decade: decade.id, players };
+}

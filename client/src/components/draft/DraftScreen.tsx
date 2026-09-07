@@ -13,8 +13,8 @@ export function DraftScreen() {
   const {
     draftState,
     spinDraftPool,
-    useTeamSkip,
-    useDecadeSkip,
+    rerollFranchise,
+    rerollDecade,
     draftPlayer,
     finalizeDraft,
     initializeDraft,
@@ -22,7 +22,7 @@ export function DraftScreen() {
     error: globalError,
   } = useGameStore();
 
-  const { pool, lineup, currentRound, maxRounds, teamSkip, decadeSkip, draftedPlayers, isSpinning, spinResult } = draftState;
+  const { pool, lineup, currentRound, maxRounds, teamSkip, decadeSkip, spinsLeft, draftedPlayers, isSpinning, spinResult } = draftState;
   void spinResult;
 
   const filledPlayers = useMemo(
@@ -166,13 +166,14 @@ export function DraftScreen() {
               pool={pool}
               isSpinning={isSpinning}
               onSpinComplete={handleSpinComplete}
-              teamSkipUsed={teamSkip.used}
-              decadeSkipUsed={decadeSkip.used}
-              onTeamSkip={useTeamSkip}
-              onDecadeSkip={useDecadeSkip}
+              franchiseRerollsLeft={teamSkip.remaining}
+              decadeRerollsLeft={decadeSkip.remaining}
+              spinsLeft={spinsLeft}
+              onRerollFranchise={rerollFranchise}
+              onRerollDecade={rerollDecade}
               currentRound={currentRound}
               maxRounds={maxRounds}
-              onSpin={() => void spinDraftPool()}
+              onSpin={() => void spinDraftPool(undefined, undefined, undefined, true)}
             />
 
             {pool ? (
