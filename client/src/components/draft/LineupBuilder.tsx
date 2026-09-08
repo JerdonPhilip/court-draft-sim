@@ -4,7 +4,6 @@ import { Plus } from 'lucide-react';
 import { cn, getPositionColor, getPositionLabel, formatHeight, splitPlayerName, fitNameSize } from '../../utils/helpers';
 import { canPlayPosition, getPlayerPositions } from '../../types/game';
 import type { LineupSlot, Player, Position } from '../../types/game';
-import { POSITIONS } from '../../data/constants';
 
 interface SlotProps {
   slot: LineupSlot;
@@ -13,11 +12,13 @@ interface SlotProps {
   draggedPlayer: Player | null;
   onSelect: (index: number) => void;
   onDropPlayer: (player: Player, slotIndex: number) => void;
+  onSetSixthMan: (index: number) => void;
 }
 
-function Slot({ slot, index, isSelected, draggedPlayer, onSelect, onDropPlayer }: SlotProps) {
+function Slot({ slot, index, isSelected, draggedPlayer, onSelect, onDropPlayer, onSetSixthMan }: SlotProps) {
   const hasPlayer = !!slot.player;
-  const expectedPos = POSITIONS[index]!;
+  const expectedPos = slot.position;
+  const roleLabel = slot.role === 'bench' ? 'Bench' : 'Starter';
   const [isDragOver, setIsDragOver] = useState(false);
   const isFlex = slot.player ? (slot.player.secondaryPositions?.length ?? 0) > 0 : false;
 
@@ -50,7 +51,7 @@ function Slot({ slot, index, isSelected, draggedPlayer, onSelect, onDropPlayer }
         {expectedPos}
       </div>
       <span className="mt-2.5 text-sm font-medium text-broadcast-text-secondary">
-        {getPositionLabel(expectedPos)}
+        {roleLabel} {getPositionLabel(expectedPos)}
       </span>
       {isSelected && !draggedPlayer && (
         <motion.p
@@ -127,6 +128,13 @@ function Slot({ slot, index, isSelected, draggedPlayer, onSelect, onDropPlayer }
                 {isFlex && (
                   <><span aria-hidden="true"> • </span><span className="font-bold text-broadcast-gold">FLEX</span></>
                 )}
+                <span aria-hidden="true"> • </span>
+                <span className={cn('font-bold uppercase tracking-wide', slot.role === 'bench' ? 'text-broadcast-blue' : 'text-broadcast-accent')}>
+                  {slot.role === 'bench' ? 'BENCH' : 'STARTER'}
+                </span>
+                {slot.isSixthMan && (
+                  <><span aria-hidden="true"> • </span><span className="font-bold text-broadcast-gold">6TH MAN</span></>
+                )}
               </p>
               <p className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-broadcast-text-secondary">
                 <span className="whitespace-nowrap font-semibold text-broadcast-text-primary">{slot.player.team.toUpperCase()}</span>
@@ -139,13 +147,32 @@ function Slot({ slot, index, isSelected, draggedPlayer, onSelect, onDropPlayer }
               </p>
             </div>
 
-            <div className="mt-auto grid grid-cols-5 gap-2 border-t border-white/5 bg-black/20 px-6 pb-5 pt-4">
+            <div className="mt-auto grid grid-cols-5 gap-2 border-t border-white/5 bg-black/20 px-6 pb-3 pt-4">
               <StatMini label="PTS" value={slot.player.stats.pts} color="text-broadcast-accent" />
               <StatMini label="REB" value={slot.player.stats.reb} color="text-broadcast-gold" />
               <StatMini label="AST" value={slot.player.stats.ast} color="#007aff" />
               <StatMini label="STL" value={slot.player.stats.stl} color="#34c759" />
               <StatMini label="BLK" value={slot.player.stats.blk} color="#af52de" />
             </div>
+            {slot.role === 'bench' && (
+              <div className="px-6 pb-4">
+                <button
+                  type="button"
+                  onClick={() => onSetSixthMan(index)}
+                  disabled={slot.isSixthMan}
+                  className={cn(
+                    'w-full rounded-lg border px-3 py-1.5 text-xs font-bold tracking-wide transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-broadcast-gold',
+                    slot.isSixthMan
+                      ? 'border-broadcast-gold/60 bg-broadcast-gold/15 text-broadcast-gold'
+                      : 'border-white/10 bg-white/5 text-broadcast-text-secondary hover:border-broadcast-gold/50 hover:text-broadcast-gold'
+                  )}
+                  aria-pressed={!!slot.isSixthMan}
+                  title={slot.isSixthMan ? 'Your Sixth Man — first off the bench (~24 min)' : 'Make Sixth Man — first off the bench (~24 min)'}
+                >
+                  {slot.isSixthMan ? '★ 6TH MAN' : 'SET 6TH MAN'}
+                </button>
+              </div>
+            )}
           </div>
         ) : (
           <button
@@ -164,7 +191,7 @@ function Slot({ slot, index, isSelected, draggedPlayer, onSelect, onDropPlayer }
               if (player) onDropPlayer(player, index);
             }}
             className="w-full flex-1 rounded-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-broadcast-gold"
-            aria-label={`Select ${slot.position} slot (${getPositionLabel(slot.position)})${isSelected ? ', selected' : ''}`}
+            aria-label={`Select ${roleLabel} ${slot.position} slot (${getPositionLabel(slot.position)})${isSelected ? ', selected' : ''}`}
             aria-pressed={isSelected}
           >
             {emptySlotBody}
@@ -190,28 +217,48 @@ interface LineupBuilderProps {
   draggedPlayer: Player | null;
   onSelectSlot: (index: number) => void;
   onDropPlayer: (player: Player, slotIndex: number) => void;
+  onSetSixthMan: (index: number) => void;
 }
 
-export function LineupBuilder({ lineup, selectedSlot, draggedPlayer, onSelectSlot, onDropPlayer }: LineupBuilderProps) {
+export function LineupBuilder({ lineup, selectedSlot, draggedPlayer, onSelectSlot, onDropPlayer, onSetSixthMan }: LineupBuilderProps) {
   const filled = lineup.filter(s => s.player).length;
+  const total = lineup.length || 10;
+  const starters = lineup.slice(0, 5);
+  const bench = lineup.slice(5, 10);
+  const sixthSet = lineup.some(s => s.isSixthMan && s.player);
+  const renderSlot = (slot: LineupSlot, index: number) => (
+    <Slot
+      key={`${slot.position}-${slot.role ?? (index < 5 ? 'starter' : 'bench')}-${index}`}
+      slot={slot}
+      index={index}
+      isSelected={selectedSlot === index}
+      draggedPlayer={draggedPlayer}
+      onSelect={onSelectSlot}
+      onDropPlayer={onDropPlayer}
+      onSetSixthMan={onSetSixthMan}
+    />
+  );
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between gap-3">
-        <h2 className="section-title font-display text-xl">YOUR LINEUP ({filled}/5)</h2>
+        <h2 className="section-title font-display text-xl">YOUR LINEUP ({filled}/{total})</h2>
+        {filled >= 5 && !sixthSet && (
+          <span className="text-xs font-bold text-broadcast-gold">PICK A 6TH MAN ↓</span>
+        )}
       </div>
 
-      <div className="grid grid-cols-1 gap-5">
-        {lineup.map((slot, index) => (
-          <Slot
-            key={`${slot.position}-${index}`}
-            slot={slot}
-            index={index}
-            isSelected={selectedSlot === index}
-            draggedPlayer={draggedPlayer}
-            onSelect={onSelectSlot}
-            onDropPlayer={onDropPlayer}
-          />
-        ))}
+      <div>
+        <h3 className="mb-3 text-xs font-bold uppercase tracking-[0.18em] text-broadcast-accent">Starters</h3>
+        <div className="grid grid-cols-1 gap-5">
+          {starters.map((slot, i) => renderSlot(slot, i))}
+        </div>
+      </div>
+
+      <div>
+        <h3 className="mb-3 text-xs font-bold uppercase tracking-[0.18em] text-broadcast-blue">Bench</h3>
+        <div className="grid grid-cols-1 gap-5">
+          {bench.map((slot, i) => renderSlot(slot, i + 5))}
+        </div>
       </div>
     </div>
   );

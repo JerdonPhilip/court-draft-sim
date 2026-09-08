@@ -46,6 +46,14 @@ export const DECADES = [
 
 export const POSITIONS: Position[] = ['PG', 'SG', 'SF', 'PF', 'C'];
 
+/** 10-man roster: 5 starters + 5 backups (PG-C each). First 5 = starters. */
+export const ROSTER_SLOTS: Array<{ position: Position; role: 'starter' | 'bench'; label: string }> = [
+  ...POSITIONS.map(pos => ({ position: pos, role: 'starter' as const, label: `Starter ${pos}` })),
+  ...POSITIONS.map(pos => ({ position: pos, role: 'bench' as const, label: `Backup ${pos}` })),
+];
+
+export const MAX_ROSTER_SIZE = 10;
+
 // Rerolls granted per axis (franchise / decade) at the start of each draft.
 export const MAX_REROLLS_PER_AXIS = 3;
 

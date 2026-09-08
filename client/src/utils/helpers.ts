@@ -201,7 +201,27 @@ function traitFoulProneness(p: StrengthInput): number {
   return Math.max(1, Math.min(100, Math.round(42 + (p.stats.stl + p.stats.blk) * 7 - (p.overall - 80) * 0.3)));
 }
 
-export function getBaseTeamImpact(players: StrengthInput[]): number {
+export const BENCH_WEIGHT = 0.35;
+export const SIXTH_WEIGHT = 0.65;
+export const SIXTH_TEAM_BOOST = 1.015;
+
+function rotationWeight(index: number, playerId: string, sixthManId: string | null | undefined, totalLen: number): number {
+  if (totalLen <= 5) return 1;
+  if (index < 5) return 1;
+  if (sixthManId && playerId === sixthManId) return SIXTH_WEIGHT;
+  return BENCH_WEIGHT;
+}
+
+function rotationDivisor(players: StrengthInput[], sixthManId: string | null | undefined): number {
+  if (players.length <= 5) return Math.max(1, players.length);
+  let div = 0;
+  players.forEach((p, i) => {
+    div += rotationWeight(i, (p as { id?: string }).id ?? String(i), sixthManId, players.length);
+  });
+  return div > 0 ? div : 5;
+}
+
+export function getBaseTeamImpact(players: StrengthInput[], sixthManId?: string | null): number {
   const impacts: Array<{ impact: number; usage: number }> = [];
   const primaries = new Set<string>();
   const assigned = new Array<string | undefined>(players.length).fill(undefined);
@@ -248,6 +268,7 @@ export function getBaseTeamImpact(players: StrengthInput[]): number {
     let impact = pts + defense + rest;
     const slot = assigned[i];
     if (slot && slot !== p.position) impact *= 0.95;
+    impact *= rotationWeight(i, (p as { id?: string }).id ?? String(i), sixthManId, players.length);
     impacts.push({ impact, usage: traitUsage(p) });
     primaries.add(p.position);
   });
@@ -256,6 +277,9 @@ export function getBaseTeamImpact(players: StrengthInput[]): number {
   let total = 0;
   for (let i = 0; i < impacts.length; i++) {
     total += impacts[i]!.impact * (STAR_USAGE_BONUS[i] ?? 1);
+  }
+  if (players.length > 5) {
+    total = total / rotationDivisor(players, sixthManId) * 5;
   }
   const mouths = impacts.filter((it) => it.usage > 30).length;
   if (mouths > 1) total *= 1.0 - 0.035 * (mouths - 1);
@@ -268,13 +292,17 @@ export function getBaseTeamImpact(players: StrengthInput[]): number {
     impacts.length > 0 ? players.reduce((t, p) => t + (ERA_3PAR[p.decade ?? ''] ?? 0.2), 0) / players.length : 0.2;
   const excess = present3PAR - era3PAR;
   if (excess > 0) total *= 1 + Math.min(0.04, 0.01 + excess * 0.15);
+  if (players.length > 5 && sixthManId && players.some((p, i) => i >= 5 && (p as { id?: string }).id === sixthManId)) {
+    total *= SIXTH_TEAM_BOOST;
+  }
   const counted = impacts.length;
-  return total * (counted / 5);
+  const fullSize = players.length > 5 ? 10 : 5;
+  return total * (counted / fullSize);
 }
 
-export function calculateTeamStrength(players: StrengthInput[]): number {
+export function calculateTeamStrength(players: StrengthInput[], sixthManId?: string | null): number {
   if (players.length === 0) return 0;
-  const base = getBaseTeamImpact(players);
+  const base = getBaseTeamImpact(players, sixthManId);
   return Math.max(0, Math.min(100, Math.round(50 + (base - LEAGUE_AVG_IMPACT) * IMPACT_TO_STRENGTH)));
 }
 
@@ -317,7 +345,7 @@ export function generateId(): string {
 }
 
 export function isFullLineup(slots: Array<{ player: Player | null }>): boolean {
-  return slots.length === 5 && slots.every(s => s.player !== null);
+  return (slots.length === 5 || slots.length === 10) && slots.every(s => s.player !== null);
 }
 
 /** Empty slots a player could fill right now. */

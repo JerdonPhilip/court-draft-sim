@@ -818,9 +818,10 @@ function alignGameToBracketSides(game: PlayoffGameResult, hostsAreBracketHome: b
 }
 
 /**
- * A real best-of-7 between two 5-man rotations (2-2-1-1-1 venues, first to 4),
+ * A real best-of-7 between two rotations (2-2-1-1-1 venues, first to 4),
  * bracket-home-aligned throughout. Powers background CPU-vs-CPU series so they
  * carry genuine box scores — reviewable exactly like your own series.
+ * User sides (10-man) pass their Sixth Man; CPU sides (5-man) pass none.
  */
 async function simulateRealSeries(
   homeRoster: Player[],
@@ -828,6 +829,8 @@ async function simulateRealSeries(
   onGame?: (gameNumber: number, game: PlayoffGameResult) => void,
   shouldAbort?: () => boolean,
   gameDelayMs = 250,
+  homeSixthManId?: string | null,
+  awaySixthManId?: string | null,
 ): Promise<{ homeWins: number; awayWins: number; games: PlayoffGameResult[] }> {
   // Higher seed hosts games 1, 2, 5, 7 — the bracket-home side.
   const hostsBracketHome = (n: number) => n === 1 || n === 2 || n === 5 || n === 7;
@@ -837,7 +840,7 @@ async function simulateRealSeries(
   for (let n = 1; n <= 7; n++) {
     if (shouldAbort?.()) break;
     const hostsHome = hostsBracketHome(n);
-    const response = await api.simulation.runGame(hostsHome ? homeRoster : awayRoster, hostsHome ? awayRoster : homeRoster, n);
+    const response = await api.simulation.runGame(hostsHome ? homeRoster : awayRoster, hostsHome ? awayRoster : homeRoster, n, hostsHome ? (homeSixthManId ?? null) : (awaySixthManId ?? null), hostsHome ? (awaySixthManId ?? null) : (homeSixthManId ?? null));
     if (shouldAbort?.()) break;
     const game = alignGameToBracketSides(response.result, hostsHome);
     games.push(game);
@@ -949,10 +952,16 @@ function PlayoffsView({
     [allSeriesKeys, eastFirstRound, westFirstRound, userInBracket, userEliminated, userTeamName],
   );
 
-  // Real 5-man rotation for any bracket team (yours or CPU).
+  // Real 10-man rotations for both sides (your rotation + CPU rotations).
+  // User sides pass their Sixth Man; CPU sides pass none.
   const rosterFor = useCallback(
     (team: string): Player[] =>
       team === userTeamName ? buildUserPlayoffLineup(result, userTeamName) : buildOpponentPlayoffRoster(result, team),
+    [result, userTeamName],
+  );
+  const sixthFor = useCallback(
+    (team: string): string | null =>
+      team === userTeamName ? (result.sixthManId ?? null) : null,
     [result, userTeamName],
   );
   const drainRoundRef = useRef(-1);
@@ -1006,11 +1015,12 @@ function PlayoffsView({
           const awayRoster = rosterFor(p.away);
           let winner: string | null = null;
           let games: PlayoffGameResult[] = [];
-          if (homeRoster.length === 5 && awayRoster.length === 5) {
+          const validRoster = (r: Player[]) => r.length === 5 || r.length === 10;
+          if (validRoster(homeRoster) && validRoster(awayRoster)) {
             try {
               const series = await simulateRealSeries(homeRoster, awayRoster, (gameNumber) => {
                 if (!simulationAborted.current) setBackgroundSimulation({ seriesKey: next, game: gameNumber });
-              });
+              }, undefined, 250, sixthFor(p.home), sixthFor(p.away));
               if (simulationAborted.current) break;
               games = series.games;
               winner =
@@ -1058,7 +1068,7 @@ function PlayoffsView({
       }
     };
     void drain();
-  }, [winners, hasStarted, allSeriesKeys, participantsFor, result, userTeamName, setWinner, roundReleased, rosterFor, onSeriesGames]);
+  }, [winners, hasStarted, allSeriesKeys, participantsFor, result, userTeamName, setWinner, roundReleased, rosterFor, sixthFor, onSeriesGames]);
 
   const runBackgroundPlayoffs = useCallback(async () => {
     // Initial sweep is now handled by the drain loop; this just kicks it and
@@ -1534,7 +1544,11 @@ function PlayoffsModal({
     () => (awayName === userTeamName ? buildUserPlayoffLineup(result, userTeamName) : buildOpponentPlayoffRoster(result, awayName)),
     [result, userTeamName, awayName],
   );
-  const lineupIssue = lineup.length !== 5 || opponent.length !== 5;
+  const userSixthManId = result.sixthManId ?? null;
+  const homeSixth = homeName === userTeamName ? userSixthManId : null;
+  const awaySixth = awayName === userTeamName ? userSixthManId : null;
+  const validPlayoffRoster = (r: Player[]) => r.length === 5 || r.length === 10;
+  const lineupIssue = !validPlayoffRoster(lineup) || !validPlayoffRoster(opponent);
 
   const MAX_GAMES = 7;
   const { homeWins, awayWins } = useMemo(() => {
@@ -1581,7 +1595,7 @@ function PlayoffsModal({
       let runningAwayWins = awayWins;
       for (let index = startIndex; index < MAX_GAMES; index++) {
         if (abortRef.current) break;
-        const response = await api.simulation.runGame(lineup, opponent, index + 1);
+        const response = await api.simulation.runGame(lineup, opponent, index + 1, homeSixth, awaySixth);
         if (abortRef.current) break;
         const nextGame = response.result;
         // Live from 0-0: animate first, record only on the final buzzer.
@@ -1641,7 +1655,7 @@ function PlayoffsModal({
       setRunning(false);
       setLiveGame(null);
     }
-  }, [readOnly, lineup, opponent, running, completedGames.length, seriesDecided, homeWins, awayWins, lineupIssue, homeName, awayName, onSeriesComplete]);
+  }, [readOnly, lineup, opponent, running, completedGames.length, seriesDecided, homeWins, awayWins, lineupIssue, homeName, awayName, onSeriesComplete, homeSixth, awaySixth]);
 
   useLockBodyScroll(true);
 

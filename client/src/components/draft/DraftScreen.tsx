@@ -17,6 +17,7 @@ export function DraftScreen() {
     rerollFranchise,
     rerollDecade,
     draftPlayer,
+    setSixthMan,
     finalizeDraft,
     initializeDraft,
     isLoading,
@@ -29,7 +30,11 @@ export function DraftScreen() {
     () => lineup.slots.map(s => s.player).filter((p): p is Player => p !== null),
     [lineup]
   );
-  const teamStrength = calculateTeamStrength(filledPlayers);
+  const sixthManId = useMemo(
+    () => lineup.slots.find(s => s.isSixthMan && s.player)?.player?.id,
+    [lineup]
+  );
+  const teamStrength = calculateTeamStrength(filledPlayers, sixthManId);
   const projectedWins = getWinProjection(teamStrength);
 
   const emptyPositions = useMemo(
@@ -223,7 +228,7 @@ export function DraftScreen() {
                   <Zap className="w-6 h-6 text-broadcast-gold" aria-hidden="true" />
                 </div>
                 <p className="text-broadcast-text-secondary mb-4">
-                  Your 5-man dynasty is ready. Picks are locked — choose which era to take them against.
+                  Your 10-man rotation is ready. Picks are locked — choose which era to take them against.
                 </p>
                 <button
                   onClick={() => void finalizeDraft()}
@@ -245,6 +250,7 @@ export function DraftScreen() {
               draggedPlayer={draggedPlayer}
               onSelectSlot={handleSelectSlot}
               onDropPlayer={handleDropToSlot}
+              onSetSixthMan={setSixthMan}
             />
             </div>
           </div>

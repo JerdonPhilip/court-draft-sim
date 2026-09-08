@@ -10,7 +10,7 @@ import {
   HistoricalTeam,
   canPlayPosition,
 } from '../types/game';
-import { POSITIONS, MAX_REROLLS_PER_AXIS, MAX_MANUAL_SPINS } from '../data/constants';
+import { POSITIONS, MAX_REROLLS_PER_AXIS, MAX_MANUAL_SPINS, ROSTER_SLOTS, MAX_ROSTER_SIZE } from '../data/constants';
 import { api } from '../utils/api';
 import { notify } from './toastStore';
 
@@ -57,6 +57,7 @@ interface GameStore {
   rerollPool: (reroll: 'franchise' | 'decade') => Promise<void>;
   draftPlayer: (player: Player, slotIndex: number) => void;
   removePlayerFromSlot: (slotIndex: number) => void;
+  setSixthMan: (slotIndex: number) => void;
   clearLineup: () => void;
   finalizeDraft: () => Promise<void>;
   runSimulation: () => Promise<void>;
@@ -66,11 +67,11 @@ interface GameStore {
 
 const createInitialDraftState = (): DraftState => ({
   currentRound: 1,
-  maxRounds: 5,
+  maxRounds: MAX_ROSTER_SIZE,
   pool: null,
   error: null,
   lineup: {
-    slots: POSITIONS.map(pos => ({ position: pos, player: null })),
+    slots: ROSTER_SLOTS.map(s => ({ position: s.position, player: null, role: s.role })),
   },
   teamSkip: { used: false, remaining: MAX_REROLLS_PER_AXIS },
   decadeSkip: { used: false, remaining: MAX_REROLLS_PER_AXIS },
@@ -138,8 +139,10 @@ export const useGameStore = create<GameStore>()(
 
         try {
           // Default to the currently empty slots so the server can guarantee
-          // at least one draftable player per spin.
-          const need = neededPositions ?? getEmptyPositions(get().draftState.lineup.slots);
+          // at least one draftable player per spin. Dedupe: 10-man lineups
+          // hold each position twice (starter + bench).
+          const rawNeed = neededPositions ?? getEmptyPositions(get().draftState.lineup.slots);
+          const need = [...new Set(rawNeed)].slice(0, 10) as Position[];
           const data = await api.draft.spin(excludeFranchise, excludeDecade, need.length > 0 ? need : undefined);
 
           // Stale response guard: ignore if a newer spin/reset started.
@@ -194,7 +197,8 @@ export const useGameStore = create<GameStore>()(
         set({ draftState: { ...get().draftState, isSpinning: true, error: null } });
 
         try {
-          const need = getEmptyPositions(get().draftState.lineup.slots);
+          const rawNeed = getEmptyPositions(get().draftState.lineup.slots);
+          const need = [...new Set(rawNeed)].slice(0, 10) as Position[];
           const data = await api.draft.reroll(keep, franchise, decade, need.length > 0 ? need : undefined);
 
           if (myRequest !== spinRequestId) return;
@@ -271,7 +275,7 @@ export const useGameStore = create<GameStore>()(
             error: null,
           },
         });
-        notify.success(`${player.name} locks in the ${slot.position} slot.`);
+        notify.success(`${player.name} locks in ${slot.role === 'bench' ? 'backup' : 'starter'} ${slot.position}.`);
 
         // Auto-spin the next pool so the user is never dead-ended.
         if (filledCount < draftState.maxRounds) {
@@ -286,7 +290,7 @@ export const useGameStore = create<GameStore>()(
 
         const removedId = slot.player.id;
         const newSlots = [...draftState.lineup.slots];
-        newSlots[slotIndex] = { ...slot, player: null };
+        newSlots[slotIndex] = { ...slot, player: null, isSixthMan: false };
 
         const filledCount = newSlots.filter(s => s.player).length;
 
@@ -301,13 +305,31 @@ export const useGameStore = create<GameStore>()(
         });
       },
 
+      setSixthMan: (slotIndex) => {
+        const { draftState } = get();
+        const slot = draftState.lineup.slots[slotIndex];
+        if (!slot || slot.role !== 'bench' || !slot.player) return;
+        const newSlots = draftState.lineup.slots.map((s, i) => ({
+          ...s,
+          isSixthMan: i === slotIndex,
+        }));
+        set({
+          draftState: {
+            ...draftState,
+            lineup: { slots: newSlots },
+            error: null,
+          },
+        });
+        notify.success(`${slot.player.name} is your Sixth Man.`);
+      },
+
       clearLineup: () => {
         spinRequestId++;
         const { draftState } = get();
         set({
           draftState: {
             ...draftState,
-            lineup: { slots: POSITIONS.map(pos => ({ position: pos, player: null })) },
+            lineup: { slots: ROSTER_SLOTS.map(s => ({ position: s.position, player: null, role: s.role })) },
             draftedPlayers: [],
             currentRound: 1,
             pool: null,
@@ -323,29 +345,43 @@ export const useGameStore = create<GameStore>()(
         const { draftState } = get();
         const filledSlots = draftState.lineup.slots.filter(s => s.player).length;
         if (filledSlots < draftState.maxRounds) {
-          const msg = 'Fill all 5 positions before finalizing';
+          const msg = `Fill all ${draftState.maxRounds} roster spots (5 starters + 5 bench) before finalizing`;
           set({ error: msg, draftState: { ...draftState, error: msg } });
           notify.warning(msg);
           return;
         }
+        // Default the Sixth Man to the best bench player if the user skipped it.
+        let slots = draftState.lineup.slots;
+        if (!slots.some(s => s.isSixthMan && s.player)) {
+          const benchFilled = slots
+            .map((s, i) => ({ s, i }))
+            .filter(({ s }) => s.role === 'bench' && s.player)
+            .sort((a, b) => (b.s.player?.overall ?? 0) - (a.s.player?.overall ?? 0));
+          if (benchFilled.length > 0) {
+            const sixthIdx = benchFilled[0]!.i;
+            slots = slots.map((s, i) => ({ ...s, isSixthMan: i === sixthIdx }));
+          }
+        }
         // Lineup locked — next stop is the season setup (era pick).
-        set({ phase: 'season-setup', error: null });
+        set({ phase: 'season-setup', error: null, draftState: { ...draftState, lineup: { slots } } });
       },
 
       runSimulation: async () => {
         const { draftState } = get();
         const players = draftState.lineup.slots.map(s => s.player).filter((p): p is Player => p !== null);
         if (players.length < draftState.maxRounds) {
-          set({ error: 'Fill all 5 positions before simulating', phase: 'draft' });
+          set({ error: `Fill all ${draftState.maxRounds} roster spots before simulating`, phase: 'draft' });
           return;
         }
+        const sixthSlot = draftState.lineup.slots.find(s => s.isSixthMan && s.player);
+        const sixthManId = sixthSlot?.player?.id;
         set({ isLoading: true, error: null });
 
         try {
           const era = get().selectedEra ?? null;
-          const data = await api.simulation.runSeason(players, undefined, era);
+          const data = await api.simulation.runSeason(players, undefined, era, sixthManId);
 
-          set({ simulationResult: data.result as SimulationResult, phase: 'results', isLoading: false });
+          set({ simulationResult: { ...(data.result as SimulationResult), sixthManId: sixthManId ?? null }, phase: 'results', isLoading: false });
         } catch (error) {
           set({ error: error instanceof Error ? error.message : String(error), isLoading: false, phase: 'results' });
         }
@@ -355,15 +391,17 @@ export const useGameStore = create<GameStore>()(
         const { draftState } = get();
         const players = draftState.lineup.slots.map(s => s.player).filter((p): p is Player => p !== null);
         if (players.length < draftState.maxRounds) {
-          const msg = 'Fill all 5 positions before VS Mode';
+          const msg = `Fill all ${draftState.maxRounds} roster spots before VS Mode`;
           set({ error: msg });
           notify.warning(msg);
           return;
         }
+        const sixthSlot = draftState.lineup.slots.find(s => s.isSixthMan && s.player);
+        const sixthManId = sixthSlot?.player?.id;
         set({ isLoading: true, error: null });
 
         try {
-          const data = await api.simulation.runVSMode(players, historicalTeamId, seriesLength);
+          const data = await api.simulation.runVSMode(players, historicalTeamId, seriesLength, sixthManId);
 
           set({
             vsMatchup: data.result as VSModeMatchup,
@@ -392,7 +430,7 @@ export const useGameStore = create<GameStore>()(
     }),
     {
       name: 'court-draft-sim-store',
-      version: 6,
+      version: 7,
       partialize: (state) => ({
         phase: state.phase === 'simulation' || state.phase === 'season-setup' ? 'draft' : state.phase,
         draftState: {
@@ -432,6 +470,19 @@ export const useGameStore = create<GameStore>()(
           // v3 -> v4: manual-spin budget (older saves get a full set).
           if (typeof p.draftState.spinsLeft !== 'number') {
             p.draftState.spinsLeft = MAX_MANUAL_SPINS;
+          }
+          // v6 -> v7: 5-man lineups expand to 10 (5 starters + 5 bench).
+          const lineup = (p.draftState as { lineup?: { slots?: Array<{ position: string; player: unknown; role?: string; isSixthMan?: boolean }> } }).lineup;
+          if (lineup && Array.isArray(lineup.slots) && lineup.slots.length === 5) {
+            const starters = lineup.slots.map(s => ({ ...s, role: 'starter' as const }));
+            const bench = (['PG', 'SG', 'SF', 'PF', 'C'] as const).map(pos => ({ position: pos, player: null, role: 'bench' as const }));
+            lineup.slots = [...starters, ...bench] as typeof lineup.slots;
+          }
+          if (typeof p.draftState.maxRounds !== 'number' || (p.draftState.maxRounds as number) < MAX_ROSTER_SIZE) {
+            p.draftState.maxRounds = MAX_ROSTER_SIZE;
+          }
+          if (typeof p.draftState.currentRound !== 'number') {
+            p.draftState.currentRound = 1;
           }
         }
         return persisted as GameStore;

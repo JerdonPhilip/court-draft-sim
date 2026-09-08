@@ -68,44 +68,58 @@ const playerSchema = z.object({
   foulProneness: z.number().finite().min(1).max(100).optional(),
 });
 
-// A legal lineup covers all 5 slots counting versatility (bipartite match),
+// A legal 5-man lineup covers all 5 slots counting versatility (bipartite match),
 // so e.g. Garnett (PF/C) can cover either big slot.
+// A legal 10-man rotation covers all 5 slots in starters (first 5) AND bench (last 5).
 function lineupCoversAllPositions(lineup: Array<{ position: Position; secondaryPositions?: Position[] }>): boolean {
   const slots: Position[] = ['PG', 'SG', 'SF', 'PF', 'C'];
-  const matchToPlayer = new Map<Position, number>();
-  const tryAssign = (playerIdx: number, seen: Set<Position>): boolean => {
-    const p = lineup[playerIdx]!;
-    for (const slot of getPlayerPositions(p)) {
-      if (seen.has(slot)) continue;
-      seen.add(slot);
-      const occupant = matchToPlayer.get(slot);
-      if (occupant === undefined || tryAssign(occupant, seen)) {
-        matchToPlayer.set(slot, playerIdx);
-        return true;
+  const covers = (group: Array<{ position: Position; secondaryPositions?: Position[] }>): boolean => {
+    const matchToPlayer = new Map<Position, number>();
+    const tryAssign = (playerIdx: number, seen: Set<Position>): boolean => {
+      const p = group[playerIdx]!;
+      for (const slot of getPlayerPositions(p)) {
+        if (seen.has(slot)) continue;
+        seen.add(slot);
+        const occupant = matchToPlayer.get(slot);
+        if (occupant === undefined || tryAssign(occupant, seen)) {
+          matchToPlayer.set(slot, playerIdx);
+          return true;
+        }
       }
+      return false;
+    };
+    for (let i = 0; i < group.length; i++) {
+      if (!tryAssign(i, new Set())) return false;
     }
-    return false;
+    return matchToPlayer.size === 5 && slots.every(s => matchToPlayer.has(s));
   };
-  for (let i = 0; i < lineup.length; i++) {
-    if (!tryAssign(i, new Set())) return false;
-  }
-  return matchToPlayer.size === 5 && slots.every(s => matchToPlayer.has(s));
+  if (lineup.length === 5) return covers(lineup);
+  if (lineup.length === 10) return covers(lineup.slice(0, 5)) && covers(lineup.slice(5, 10));
+  return false;
 }
 
-const lineupSchema = z.array(playerSchema).length(5)
+const sixthManSchema = z.string().min(1).max(100).nullable().optional();
+
+const lineupSchema = z.array(playerSchema).min(5).max(10)
   .refine(
-    (lineup) => new Set(lineup.map(p => p.id)).size === 5,
-    { message: 'Lineup must have 5 unique players' }
+    (lineup) => lineup.length === 5 || lineup.length === 10,
+    { message: 'Lineup must have 5 starters or 10 players (starters + bench)' }
+  )
+  .refine(
+    (lineup) => new Set(lineup.map(p => p.id)).size === lineup.length,
+    { message: 'Lineup must have unique players' }
   )
   .refine(
     (lineup) => lineupCoversAllPositions(lineup),
-    { message: 'Lineup must be able to cover all 5 positions (counting secondary positions)' }
+    { message: 'Lineup must be able to cover all 5 positions in starters (and bench if 10-man), counting secondary positions' }
   );
 
 const simulateSeasonSchema = z.object({
   lineup: lineupSchema,
   // Optional era (decade id). Omit for the default mixed modern league.
   era: z.enum(DECADES.map(d => d.id) as unknown as [string, ...string[]]).optional(),
+  // 10-man rotation Sixth Man (must be a bench player ID when provided).
+  sixthManId: sixthManSchema,
   config: z.object({
     variance: z.number().finite().min(0).max(1).optional(),
     homeCourtAdvantage: z.number().finite().min(0).max(0.2).optional(),
@@ -117,12 +131,15 @@ const simulateSeasonSchema = z.object({
 const simulateGameSchema = z.object({
   homeTeam: lineupSchema,
   awayTeam: lineupSchema,
+  homeSixthManId: sixthManSchema,
+  awaySixthManId: sixthManSchema,
   // 1-based game number within a best-of-7 (coaching adaptation past Game 1).
   seriesGameNumber: z.number().int().min(1).max(7).optional(),
 });
 
 const vsModeSchema = z.object({
   userLineup: lineupSchema,
+  sixthManId: sixthManSchema,
   historicalTeamId: z.string().min(1).max(50),
   seriesLength: z.union([z.literal(1), z.literal(7)]),
 });
@@ -149,8 +166,13 @@ router.post('/season', seasonLimiter, (req: Request, res: Response) => {
     return res.status(400).json({ error: 'Invalid request', details: result.error.flatten() });
   }
 
-  const { lineup, era, config } = result.data;
+  const { lineup, era, config, sixthManId } = result.data;
   const players = lineup as Player[];
+
+  // Sixth Man must be a bench player (indices 5-9) in 10-man rotations.
+  if (sixthManId && players.length === 10 && !players.slice(5, 10).some(p => p.id === sixthManId)) {
+    return res.status(400).json({ error: 'sixthManId must be a bench player (roster spots 6-10)' });
+  }
 
   // Era season: real historical lineups from that decade. Default: the
   // synthetic mixed modern league.
@@ -174,14 +196,14 @@ router.post('/season', seasonLimiter, (req: Request, res: Response) => {
   }
   const simulationConfig = { ...DEFAULT_SIMULATION_CONFIG, ...config };
 
-  const seasonResult = simulateSeason(players, opponentPool, simulationConfig, opponentNames);
-  const teamStrength = getTeamStrength(players);
+  const seasonResult = simulateSeason(players, opponentPool, simulationConfig, opponentNames, sixthManId ?? null);
+  const teamStrength = getTeamStrength(players, sixthManId ?? null);
   // Project against the league actually played: era leagues differ in
   // strength (a 60s season is easier than a modern one), so the same
   // roster projects differently per era.
   const effectiveStrength = eraAvgImpact === undefined
     ? teamStrength
-    : strengthVsLeague(getBaseTeamImpact(players), eraAvgImpact);
+    : strengthVsLeague(getBaseTeamImpact(players, sixthManId ?? null), eraAvgImpact);
   const projectedWins = calculateNonLinearWinCurve(effectiveStrength);
 
   const formattedResult = {
@@ -278,7 +300,7 @@ router.post('/game', gameLimiter, (req: Request, res: Response) => {
     return res.status(400).json({ error: 'Invalid request', details: result.error.flatten() });
   }
 
-  const { homeTeam, awayTeam, seriesGameNumber } = result.data;
+  const { homeTeam, awayTeam, seriesGameNumber, homeSixthManId, awaySixthManId } = result.data;
   try {
     const gameResult = simulateSingleGame({
       homeTeam: homeTeam as Player[],
@@ -288,6 +310,8 @@ router.post('/game', gameLimiter, (req: Request, res: Response) => {
       // handled caller-side; this series stays fair.
       config: { ...DEFAULT_SIMULATION_CONFIG, homeCourtAdvantage: 0 },
       seriesGameNumber,
+      homeSixthManId: homeSixthManId ?? null,
+      awaySixthManId: awaySixthManId ?? null,
     });
 
     res.json({
@@ -313,18 +337,22 @@ router.post('/vs-mode', vsLimiter, (req: Request, res: Response) => {
     return res.status(400).json({ error: 'Invalid request', details: result.error.flatten() });
   }
 
-  const { userLineup, historicalTeamId, seriesLength } = result.data;
+  const { userLineup, historicalTeamId, seriesLength, sixthManId } = result.data;
   const historicalTeam = getAllHistoricalTeams().find(t => t.id === historicalTeamId);
 
   if (!historicalTeam) {
     return res.status(404).json({ error: 'Historical team not found' });
   }
 
-  if (historicalTeam.players.length !== 5) {
+  if (historicalTeam.players.length !== 10) {
     return res.status(500).json({ error: 'Historical team data is incomplete' });
   }
 
-  const historicalLineup = historicalTeam.players.slice(0, 5) as Player[];
+  const historicalLineup = historicalTeam.players.slice(0, 10) as Player[];
+  const userSixth = sixthManId ?? null;
+  if (userSixth && (userLineup as Player[]).length === 10 && !(userLineup as Player[]).slice(5, 10).some(p => p.id === userSixth)) {
+    return res.status(400).json({ error: 'sixthManId must be a bench player (roster spots 6-10)' });
+  }
 
   const seriesResults = [];
   let userWins = 0;
@@ -339,6 +367,8 @@ router.post('/vs-mode', vsLimiter, (req: Request, res: Response) => {
       awayTeam: (isHome ? historicalLineup : userLineup) as Player[],
       config: DEFAULT_SIMULATION_CONFIG,
       seriesGameNumber: seriesLength === 7 ? gameNum : undefined,
+      homeSixthManId: isHome ? userSixth : null,
+      awaySixthManId: isHome ? null : userSixth,
     });
 
     const userScore = isHome ? gameResult.homeScore : gameResult.awayScore;
@@ -378,7 +408,7 @@ router.post('/vs-mode', vsLimiter, (req: Request, res: Response) => {
 
   res.json({
     result: {
-      userLineup: { slots: (userLineup as Player[]).map((p, i) => ({ position: p.position, player: p })) },
+      userLineup: { slots: (userLineup as Player[]).map((p, i) => ({ position: p.position, player: p, role: i < 5 ? 'starter' : 'bench', ...(userSixth && p.id === userSixth ? { isSixthMan: true } : {}) })) },
       historicalTeam: {
         id: historicalTeam.id,
         name: historicalTeam.name,
@@ -407,7 +437,7 @@ router.get('/historical-teams', (req: Request, res: Response) => {
     record: t.record,
     championships: t.championships,
     description: t.description,
-    players: t.players.slice(0, 5).map(p => ({
+    players: t.players.slice(0, 10).map(p => ({
       id: p.id,
       name: p.name,
       position: p.position,
@@ -439,12 +469,13 @@ function randomStat(min: number, max: number): number {
 export function generateOpponentPools(): { pools: Player[][]; names: string[] } {
   const pools: Player[][] = [];
 
-  // 30 distinct 5-man opponents (150 unique players).
+  // 30 distinct 10-man opponents (300 unique players, starters + bench).
   // A top-heavy league like the real NBA: 24 regular starter-quality
   // pools plus 6 contender pools that can actually beat elite user teams,
   // so 82-0 stays possible but never automatic.
   // Mean base impact ~= LEAGUE_AVG_IMPACT (services/constants.ts), measured
-  // empirically over generated pools. Keep them in sync if these ranges change.
+  // empirically over generated pools (10-man impacts normalize to the 5-man
+  // scale, so the reference still holds). Keep them in sync if these ranges change.
   // Heights sit near positional averages so size is neutral for the league.
   const HEIGHT_RANGE: Record<Position, [number, number]> = {
     PG: [71, 75],
@@ -453,45 +484,59 @@ export function generateOpponentPools(): { pools: Player[][]; names: string[] } 
     PF: [79, 83],
     C: [81, 87],
   };
+  const makePlayer = (i: number, j: number, pos: Position, overall: number, span: number, floor: number, contender: boolean): Player => {
+    const star = (overall - floor) / span; // 0..1
+    return {
+      id: `opp-${i}-${j}`,
+      name: `${OPPONENT_NAMES[i]} Player ${j + 1}`,
+      position: pos,
+      heightIn: Math.round(randomStat(HEIGHT_RANGE[pos][0], HEIGHT_RANGE[pos][1])),
+      // Display schedule name (not a generic tag) so standings, bracket,
+      // awards and playoff rosters can join on team.
+      team: OPPONENT_NAMES[i]!,
+      decade: '2020s',
+      era: 'Current',
+      stats: contender
+        ? {
+            pts: randomStat(18 + star * 6, 22 + star * 6),
+            reb: randomStat(5 + star * 2, 8 + star * 3),
+            ast: randomStat(4 + star * 2, 6 + star * 3),
+            stl: randomStat(0.8, 1.2 + star * 0.8),
+            blk: randomStat(0.4, 0.8 + star * 0.8),
+            pf: 0, // cards carry no fouls; per-game fouls generate live
+          }
+        : {
+            pts: randomStat(12 + star * 6, 16 + star * 6),
+            reb: randomStat(4 + star * 2, 7 + star * 3),
+            ast: randomStat(3 + star * 2, 5 + star * 3),
+            stl: randomStat(0.6, 1.0 + star * 0.8),
+            blk: randomStat(0.3, 0.6 + star * 0.8),
+            pf: 0,
+          },
+      overall,
+      archetype: contender ? 'Star' : 'Role Player',
+    };
+  };
   for (let i = 0; i < 30; i++) {
     const pool: Player[] = [];
     const contender = i % 5 === 4;
+    // Starters (first 5): same quality as before.
     for (let j = 0; j < 5; j++) {
       const pos = (['PG', 'SG', 'SF', 'PF', 'C'] as Position[])[j]!;
       const overall = Math.round(contender ? randomStat(88, 96) : randomStat(74, 88));
       const span = contender ? 8 : 14;
       const floor = contender ? 88 : 74;
-      const star = (overall - floor) / span; // 0..1
-      pool.push({
-        id: `opp-${i}-${j}`,
-        name: `${OPPONENT_NAMES[i]} Player ${j + 1}`,
-        position: pos,
-        heightIn: Math.round(randomStat(HEIGHT_RANGE[pos][0], HEIGHT_RANGE[pos][1])),
-        // Display schedule name (not a generic tag) so standings, bracket,
-        // awards and playoff rosters can join on team.
-        team: OPPONENT_NAMES[i]!,
-        decade: '2020s',
-        era: 'Current',
-        stats: contender
-          ? {
-              pts: randomStat(18 + star * 6, 22 + star * 6),
-              reb: randomStat(5 + star * 2, 8 + star * 3),
-              ast: randomStat(4 + star * 2, 6 + star * 3),
-              stl: randomStat(0.8, 1.2 + star * 0.8),
-              blk: randomStat(0.4, 0.8 + star * 0.8),
-              pf: 0, // cards carry no fouls; per-game fouls generate live
-            }
-          : {
-              pts: randomStat(12 + star * 6, 16 + star * 6),
-              reb: randomStat(4 + star * 2, 7 + star * 3),
-              ast: randomStat(3 + star * 2, 5 + star * 3),
-              stl: randomStat(0.6, 1.0 + star * 0.8),
-              blk: randomStat(0.3, 0.6 + star * 0.8),
-              pf: 0,
-            },
-        overall,
-        archetype: contender ? 'Star' : 'Role Player',
-      });
+      pool.push(makePlayer(i, j, pos, overall, span, floor, contender));
+    }
+    // Bench (last 5): a clear step below the starters.
+    for (let j = 5; j < 10; j++) {
+      const pos = (['PG', 'SG', 'SF', 'PF', 'C'] as Position[])[j - 5]!;
+      const overall = Math.round(contender ? randomStat(80, 88) : randomStat(68, 80));
+      const span = contender ? 8 : 12;
+      const floor = contender ? 80 : 68;
+      const bench = makePlayer(i, j, pos, overall, span, floor, false);
+      bench.archetype = 'Bench';
+      pool.push(bench);
     }
     pools.push(pool);
   }

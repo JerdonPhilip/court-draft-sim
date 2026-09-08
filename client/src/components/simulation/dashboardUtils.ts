@@ -526,16 +526,18 @@ export function buildUserPlayoffLineup(
   result: SimulationResult,
   userTeamName: string,
 ): Player[] {
-  return result.playerStats.slice(0, 5).map((player, index) => {
-    const slot = PLAYOFF_POSITIONS[index]!;
+  // Full 10-man rotation (starters first 5, bench last 5) with real positions.
+  // Legacy 5-man saves still work (slice caps at available length).
+  return result.playerStats.slice(0, 10).map((player, index) => {
+    const fallback: Position = PLAYOFF_POSITIONS[index % 5]!;
     const explicitHeight = (player as { heightIn?: number }).heightIn;
     return {
       id: player.playerId,
       name: player.playerName,
-      position: slot,
+      position: player.position ?? fallback,
       secondaryPositions: player.secondaryPositions,
       // Keep the real size edge — baseline only when the save predates height tracking.
-      heightIn: heightFor(slot, explicitHeight),
+      heightIn: heightFor(player.position ?? fallback, explicitHeight),
       team: userTeamName,
       decade: 'modern',
       era: 'modern',
@@ -604,11 +606,42 @@ function bestCoveringPlayoffFive(candidates: PlayoffCandidate[]): PlayoffCandida
   return best;
 }
 
+/** Best covering 10-man rotation (starters + bench) from candidates. */
+function bestCoveringPlayoffTen(candidates: PlayoffCandidate[]): PlayoffCandidate[] | null {
+  const n = candidates.length;
+  if (n < 10) return null;
+  const score = (c: PlayoffCandidate) => (c.overall ?? 75) * 2 + c.stats.pts;
+  let best: PlayoffCandidate[] | null = null;
+  let bestScore = -Infinity;
+  const idx = [0, 1, 2, 3, 4];
+  for (;;) {
+    const starters = idx.map((i) => candidates[i]!);
+    if (playoffFiveCoversAll(starters)) {
+      const rest = candidates.filter((_, i) => !idx.includes(i));
+      const bench = bestCoveringPlayoffFive(rest);
+      if (bench) {
+        const s = starters.reduce((t, c) => t + score(c), 0) + bench.reduce((t, c) => t + score(c), 0) * 0.4;
+        if (s > bestScore) {
+          bestScore = s;
+          best = [...starters, ...bench];
+        }
+      }
+    }
+    let p = 4;
+    while (p >= 0 && idx[p] === n - 5 + p) p--;
+    if (p < 0) break;
+    idx[p]++;
+    for (let q = p + 1; q < 5; q++) idx[q] = idx[q - 1] + 1;
+  }
+  return best;
+}
+
 /**
- * Opponent-specific 5-man rotation: prefer that opponent's own season-long
- * stats, then that opponent's box scores from games vs you, then a generic fallback.
+ * Opponent-specific 10-man rotation (starters + bench): prefer that opponent's
+ * own season-long stats, then that opponent's box scores from games vs you,
+ * then a generic fallback.
  * Team matching is era/normalization-tolerant ("bulls" == "1990s Chicago Bulls").
- * Never returns the first 5 league-wide players for the wrong team.
+ * Never returns the first 10 league-wide players for the wrong team.
  */
 export function buildOpponentPlayoffRoster(result: SimulationResult, opponentName: string): Player[] {
   const want = normalizeTeamName(opponentName);
@@ -637,9 +670,10 @@ export function buildOpponentPlayoffRoster(result: SimulationResult, opponentNam
 
   let pool: PlayoffCandidate[] = [];
   if (byTeam.length > 0) {
-    const covering = bestCoveringPlayoffFive(
-      byTeam.map((p) => toCandidate(p)!).filter(Boolean),
-    );
+    const candidates = byTeam.map((p) => toCandidate(p)!).filter(Boolean);
+    const covering = candidates.length >= 10
+      ? bestCoveringPlayoffTen(candidates)
+      : bestCoveringPlayoffFive(candidates);
     if (covering) {
       pool = covering;
     } else {
@@ -647,7 +681,7 @@ export function buildOpponentPlayoffRoster(result: SimulationResult, opponentNam
       pool = byTeam
         .slice()
         .sort((a, b) => (b.overall ?? 75) - (a.overall ?? 75) || b.averages.pts - a.averages.pts)
-        .slice(0, 5)
+        .slice(0, 10)
         .map((p) => toCandidate(p)!)
         .filter(Boolean);
     }
@@ -655,27 +689,28 @@ export function buildOpponentPlayoffRoster(result: SimulationResult, opponentNam
     const game =
       result.games.find((c) => normalizeTeamName(c.opponent) === want && (c.opponentPerformances?.length ?? 0) > 0) ??
       result.games.find((c) => (c.opponentPerformances?.length ?? 0) > 0);
-    const perfs = game?.opponentPerformances?.slice(0, 5) ?? [];
-    const covering = bestCoveringPlayoffFive(
-      perfs.map((perf) =>
-        toCandidate({
-          playerId: perf.playerId,
-          playerName: perf.playerName,
-          averages: perf.stats,
-          baseStats: perf.baseStats,
-          overall: perf.overall,
-          position: perf.position,
-          secondaryPositions: perf.secondaryPositions,
-          heightIn: perf.heightIn,
-        })!,
-      ),
+    const perfs = game?.opponentPerformances?.slice(0, 10) ?? [];
+    const candidates = perfs.map((perf) =>
+      toCandidate({
+        playerId: perf.playerId,
+        playerName: perf.playerName,
+        averages: perf.stats,
+        baseStats: perf.baseStats,
+        overall: perf.overall,
+        position: perf.position,
+        secondaryPositions: perf.secondaryPositions,
+        heightIn: perf.heightIn,
+      })!,
     );
+    const covering = candidates.length >= 10
+      ? bestCoveringPlayoffTen(candidates)
+      : bestCoveringPlayoffFive(candidates);
     pool = covering ?? perfs.map((perf, i) => ({
       id: perf.playerId,
       name: perf.playerName,
       stats: perf.baseStats ?? perf.stats,
       overall: perf.overall,
-      position: perf.position ?? PLAYOFF_POSITIONS[i]!,
+      position: perf.position ?? PLAYOFF_POSITIONS[i % 5]!,
       secondaryPositions: perf.secondaryPositions,
       heightIn: perf.heightIn,
     }));
@@ -686,7 +721,7 @@ export function buildOpponentPlayoffRoster(result: SimulationResult, opponentNam
     .slice()
     .sort((a, b) => b.averages.pts - a.averages.pts);
   let genericIdx = 0;
-  while (pool.length < 5 && genericIdx < generic.length) {
+  while (pool.length < 10 && genericIdx < generic.length) {
     const g = generic[genericIdx++]!;
     if (pool.some((p) => p.id === g.playerId)) continue;
     const c = toCandidate(g);
@@ -695,9 +730,11 @@ export function buildOpponentPlayoffRoster(result: SimulationResult, opponentNam
 
   // Final guard: versatility data missing (old saves) → force slot positions
   // so the league's coverage validation always passes.
-  const covers = pool.length === 5 && playoffFiveCoversAll(pool);
-  return Array.from({ length: 5 }, (_, index) => {
-    const slot = PLAYOFF_POSITIONS[index]!;
+  const starters = pool.slice(0, 5);
+  const bench = pool.slice(5, 10);
+  const covers = pool.length === 10 && playoffFiveCoversAll(starters) && playoffFiveCoversAll(bench);
+  return Array.from({ length: 10 }, (_, index) => {
+    const slot = PLAYOFF_POSITIONS[index % 5]!;
     const p = pool[index];
     return {
       id: p?.id ?? `playoff-${opponentName}-${index}`,

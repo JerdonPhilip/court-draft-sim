@@ -11,14 +11,14 @@ const decadeIds = DECADES.map(d => d.id) as unknown as [string, ...string[]];
 const spinSchema = z.object({
   excludeFranchise: z.enum(franchiseIds).optional(),
   excludeDecade: z.enum(decadeIds).optional(),
-  neededPositions: z.array(z.enum(['PG', 'SG', 'SF', 'PF', 'C'])).min(1).max(5).optional(),
+  neededPositions: z.array(z.enum(['PG', 'SG', 'SF', 'PF', 'C'])).min(1).max(10).optional(),
 });
 
 const rerollSchema = z.object({
   keep: z.enum(['franchise', 'decade']),
   franchise: z.enum(franchiseIds),
   decade: z.enum(decadeIds),
-  neededPositions: z.array(z.enum(['PG', 'SG', 'SF', 'PF', 'C'])).min(1).max(5).optional(),
+  neededPositions: z.array(z.enum(['PG', 'SG', 'SF', 'PF', 'C'])).min(1).max(10).optional(),
 });
 
 router.get('/pools', (req: Request, res: Response) => {

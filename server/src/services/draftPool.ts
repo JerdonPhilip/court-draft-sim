@@ -27,7 +27,7 @@ export function generateDraftPool(): DraftPool {
     ? validCombos[randomIndex(validCombos.length)]!
     : { franchise: FRANCHISES[0]!.id, decade: DECADES[0]!.id };
 
-  const players = getRandomPlayersByFranchiseAndDecade(pick.franchise, pick.decade, 6);
+  const players = getRandomPlayersByFranchiseAndDecade(pick.franchise, pick.decade, 10);
 
   return {
     franchise: pick.franchise,
@@ -42,7 +42,7 @@ export function getDraftPool(franchiseId: string, decadeId: string): DraftPool |
   return {
     franchise: franchiseId,
     decade: decadeId,
-    players: [...players].slice(0, 8),
+    players: [...players],
   };
 }
 
@@ -120,7 +120,7 @@ function getAvailableFranchiseAndDecade(
 export function spinForDraftPool(excludeFranchise?: string, excludeDecade?: string, neededPositions?: Position[]): DraftPool {
   const { franchise, decade } = getAvailableFranchiseAndDecade(excludeFranchise, excludeDecade, neededPositions);
 
-  const players = getRandomPlayersByFranchiseAndDecade(franchise.id, decade.id, 6);
+  const players = getRandomPlayersByFranchiseAndDecade(franchise.id, decade.id, 10);
 
   // Best-effort: if the random 6 still miss every needed slot (small pools),
   // swap one card for an eligible player so the spin is never unusable.
@@ -175,7 +175,7 @@ export function rerollDraftPool(
       : FRANCHISES.filter(f => f.id !== franchiseId && isValidCombo(f.id, decadeId));
     if (pool.length === 0) return null;
     const franchise = pool[randomIndex(pool.length)]!;
-    const players = getRandomPlayersByFranchiseAndDecade(franchise.id, decadeId, 6);
+    const players = getRandomPlayersByFranchiseAndDecade(franchise.id, decadeId, 10);
     return { franchise: franchise.id, decade: decadeId, players };
   }
 
@@ -189,6 +189,6 @@ export function rerollDraftPool(
     : DECADES.filter(d => d.id !== decadeId && isValidCombo(franchiseId, d.id));
   if (pool.length === 0) return null;
   const decade = pool[randomIndex(pool.length)]!;
-  const players = getRandomPlayersByFranchiseAndDecade(franchiseId, decade.id, 6);
+  const players = getRandomPlayersByFranchiseAndDecade(franchiseId, decade.id, 10);
   return { franchise: franchiseId, decade: decade.id, players };
 }

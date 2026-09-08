@@ -57,6 +57,37 @@ const STAT_IMPORTANCE = {
 };
 
 /**
+ * 10-man rotation weights (order = starters first 5, bench last 5).
+ * Bench matters but starters carry the team; the Sixth Man plays starter-lite
+ * minutes and gets a small team-wide boost for second-unit creation.
+ * Normalized back to a 5-man scale so league balance is preserved.
+ */
+export const BENCH_WEIGHT = 0.35;
+export const SIXTH_WEIGHT = 0.65;
+export const SIXTH_TEAM_BOOST = 1.015;
+
+function rotationWeight(index: number, playerId: string, sixthManId: string | null | undefined, totalLen: number): number {
+  if (totalLen <= 5) return 1;
+  if (index < 5) return 1;
+  if (sixthManId && playerId === sixthManId) return SIXTH_WEIGHT;
+  return BENCH_WEIGHT;
+}
+
+function rotationDivisor(players: Player[], sixthManId: string | null | undefined): number {
+  if (players.length <= 5) return Math.max(1, players.length);
+  let div = 0;
+  players.forEach((p, i) => {
+    div += rotationWeight(i, p.id, sixthManId, players.length);
+  });
+  return div > 0 ? div : 5;
+}
+
+function hasSixthMan(players: Player[], sixthManId: string | null | undefined): boolean {
+  if (!sixthManId) return false;
+  return players.some((p, i) => i >= 5 && p.id === sixthManId);
+}
+
+/**
  * Height edge on the glass and at the rim, measured against the
  * positional average. A 7-footer at center grabs boards/blocks shots
  * better than a 6'9" one with identical stats — and vice versa.
@@ -162,6 +193,7 @@ function calculateTeamRating(
   totalGames = 82,
   opponentPlayers?: Player[],
   handcuffed = false,
+  sixthManId?: string | null,
 ): number {
   // Direct positional suppression received: an opposing stopper (defRating
   // 88+) at your primary slot shaves 4-8% off your scoring impact, while a
@@ -193,6 +225,8 @@ function calculateTeamRating(
     // Flex-slot adaptation: playing off-primary retains 95%.
     const slot = slots[i];
     if (slot && slot !== player.position) impact *= 0.95;
+    // 10-man rotation: bench counts less, Sixth Man counts more.
+    impact *= rotationWeight(i, player.id, sixthManId, players.length);
     if (config.fatigueFactor > 0 && totalGames > 1) {
       const fatigue = config.fatigueFactor * (gameIndex / totalGames);
       impact *= (1 - fatigue * 0.5);
@@ -210,6 +244,10 @@ function calculateTeamRating(
   for (let i = 0; i < impacts.length; i++) {
     totalImpact += impacts[i]! * (STAR_USAGE_BONUS[i] ?? 1);
   }
+  // Normalize 10-man rotations back to the 5-man scale.
+  if (players.length > 5) {
+    totalImpact = totalImpact / rotationDivisor(players, sixthManId) * 5;
+  }
   totalImpact *= collisionMultiplier(usages);
   if (!hasFloorBalance(primaries)) totalImpact *= 0.94;
 
@@ -224,6 +262,11 @@ function calculateTeamRating(
   // force the other side to play soft — shaves their total 2.5%.
   if (opponentPlayers && teamFTr(opponentPlayers) > LEAGUE_AVG_FTR * 1.15) {
     totalImpact *= 0.975;
+  }
+
+  // Sixth Man creation boost: a tagged bench spark lifts the second unit.
+  if (hasSixthMan(players, sixthManId)) {
+    totalImpact *= SIXTH_TEAM_BOOST;
   }
 
   // Scale short lineups down instead of silently treating missing players as 0-rated.
@@ -306,6 +349,36 @@ function assignMinutes(player: Player, otPeriods = 0): number {
   const base = Math.min(48, Math.round(42 + (player.overall / 100) * 4 + randomFloat() * 2));
   if (otPeriods <= 0) return base;
   return Math.min(55, base + otPeriods * 4 + (randomFloat() < 0.5 ? 1 : 0));
+}
+
+/**
+ * 10-man rotation minutes (starters ~30-33, Sixth Man ~22-24, bench ~14-17).
+ * Scales to 240 team minutes (+25 per OT) so box scores stay realistic.
+ * 5-man lineups keep legacy ironman minutes.
+ */
+function assignRotationMinutes(team: Player[], sixthManId: string | null | undefined, otPeriods = 0): Record<string, number> {
+  const minutes: Record<string, number> = {};
+  if (team.length <= 5) {
+    for (const player of team) {
+      if (!player) continue;
+      minutes[player.id] = assignMinutes(player, otPeriods);
+    }
+    return minutes;
+  }
+  const raw: number[] = team.map((player, i) => {
+    if (!player) return 0;
+    if (i < 5) return 30 + (player.overall / 100) * 3 + randomFloat();
+    if (sixthManId && player.id === sixthManId) return 22 + (player.overall / 100) * 2;
+    return 14 + (player.overall / 100) * 3 + randomFloat();
+  });
+  const rawSum = raw.reduce((t, v) => t + v, 0) || 1;
+  const target = 240 + otPeriods * 25;
+  team.forEach((player, i) => {
+    if (!player) return;
+    const scaled = raw[i]! / rawSum * target;
+    minutes[player.id] = Math.max(8, Math.min(38, Math.round(scaled)));
+  });
+  return minutes;
 }
 
 /**
@@ -453,14 +526,14 @@ function generateGameEvents(homePlayers: Player[], awayPlayers: Player[], homeSc
 }
 
 export function simulateSingleGame(input: GameSimulationInput): GameSimulationOutput {
-  const { homeTeam, awayTeam, config, gameIndex = 1, totalGames = 1, seriesGameNumber = 1 } = input;
+  const { homeTeam, awayTeam, config, gameIndex = 1, totalGames = 1, seriesGameNumber = 1, homeSixthManId = null, awaySixthManId = null } = input;
 
   if (!homeTeam || homeTeam.length === 0 || !awayTeam || awayTeam.length === 0) {
     throw new Error('Both teams must have at least one player');
   }
 
-  let homeRating = calculateTeamRating(homeTeam, config, true, gameIndex, totalGames, awayTeam);
-  let awayRating = calculateTeamRating(awayTeam, config, false, gameIndex, totalGames, homeTeam);
+  let homeRating = calculateTeamRating(homeTeam, config, true, gameIndex, totalGames, awayTeam, false, homeSixthManId);
+  let awayRating = calculateTeamRating(awayTeam, config, false, gameIndex, totalGames, homeTeam, false, awaySixthManId);
 
   // Series adaptation: past Game 1 the higher-rated side's adjustments compound.
   if (seriesGameNumber > 1) {
@@ -475,8 +548,8 @@ export function simulateSingleGame(input: GameSimulationInput): GameSimulationOu
   // handcuffed (>70 proneness) defenders play it safe at 0.90 impact here.
   let spread = (homeRating - awayRating) * SCORE_SPREAD_FACTOR;
   if (Math.abs(spread) <= 5) {
-    homeRating = calculateTeamRating(homeTeam, config, true, gameIndex, totalGames, awayTeam, true);
-    awayRating = calculateTeamRating(awayTeam, config, false, gameIndex, totalGames, homeTeam, true);
+    homeRating = calculateTeamRating(homeTeam, config, true, gameIndex, totalGames, awayTeam, true, homeSixthManId);
+    awayRating = calculateTeamRating(awayTeam, config, false, gameIndex, totalGames, homeTeam, true, awaySixthManId);
     if (seriesGameNumber > 1) {
       const boost = 1 + 0.0075 * (seriesGameNumber - 1);
       if (homeRating >= awayRating) homeRating *= boost;
@@ -496,16 +569,19 @@ export function simulateSingleGame(input: GameSimulationInput): GameSimulationOu
   const homeMinutes: Record<string, number> = {};
   const awayMinutes: Record<string, number> = {};
 
+  const homeRotation = assignRotationMinutes(homeTeam, homeSixthManId ?? null, otPeriods);
+  const awayRotation = assignRotationMinutes(awayTeam, awaySixthManId ?? null, otPeriods);
+
   for (const player of homeTeam) {
     if (!player) continue;
-    const minutes = assignMinutes(player, otPeriods);
+    const minutes = homeRotation[player.id] ?? assignMinutes(player, otPeriods);
     homeMinutes[player.id] = minutes;
     homePlayerStats[player.id] = generatePlayerGameStats(player, homeRating, awayRating, minutes, config);
   }
 
   for (const player of awayTeam) {
     if (!player) continue;
-    const minutes = assignMinutes(player, otPeriods);
+    const minutes = awayRotation[player.id] ?? assignMinutes(player, otPeriods);
     awayMinutes[player.id] = minutes;
     awayPlayerStats[player.id] = generatePlayerGameStats(player, awayRating, homeRating, minutes, config);
   }
@@ -529,10 +605,11 @@ export function simulateSeason(
   userLineup: Player[],
   opponentPool: Player[][],
   config: SimulationConfig = DEFAULT_SIMULATION_CONFIG,
-  opponentNames: string[] = []
+  opponentNames: string[] = [],
+  userSixthManId?: string | null
 ): SeasonSimulationResult {
-  if (userLineup.length !== 5) {
-    throw new Error('User lineup must have exactly 5 players');
+  if (userLineup.length !== 5 && userLineup.length !== 10) {
+    throw new Error('User lineup must have exactly 5 or 10 players');
   }
   if (opponentPool.length === 0) {
     throw new Error('Opponent pool must not be empty');
@@ -599,6 +676,8 @@ export function simulateSeason(
       // Fatigue now actually flows into ratings (was previously dropped).
       gameIndex: gameNum,
       totalGames,
+      homeSixthManId: isHome ? (userSixthManId ?? null) : null,
+      awaySixthManId: isHome ? null : (userSixthManId ?? null),
     };
 
     const gameResult = simulateSingleGame(gameInput);
@@ -997,10 +1076,10 @@ export function calculateNonLinearWinCurve(teamStrength: number): number {
  * Deterministic base impact of a lineup: same weights as live ratings but
  * neutral venue, no variance, no fatigue, no matchup suppression, no clutch.
  * Used for strength/projection so the estimate and the sim can never disagree
- * structurally. Partial lineups are prorated (n/5) so draft previews read low
- * until filled. Primary slots are assumed (flex penalty needs assignments).
+ * structurally. Partial lineups are prorated (n/10 for 10-man) so draft previews
+ * read low until filled. Primary slots are assumed (flex penalty needs assignments).
  */
-export function getBaseTeamImpact(lineup: Player[]): number {
+export function getBaseTeamImpact(lineup: Player[], sixthManId?: string | null): number {
   const slots = assignSlots(lineup);
   const items: Array<{ impact: number; usage: number }> = [];
   const primaries = new Set<Position>();
@@ -1010,6 +1089,7 @@ export function getBaseTeamImpact(lineup: Player[]): number {
     let impact = pts + defense + rest;
     const slot = slots[index];
     if (slot && slot !== player.position) impact *= 0.95;
+    impact *= rotationWeight(index, player.id, sixthManId, lineup.length);
     items.push({ impact, usage: usageRateOf(player) });
     primaries.add(player.position);
   }
@@ -1019,6 +1099,9 @@ export function getBaseTeamImpact(lineup: Player[]): number {
   for (let i = 0; i < items.length; i++) {
     total += items[i]!.impact * (STAR_USAGE_BONUS[i] ?? 1);
   }
+  if (lineup.length > 5) {
+    total = total / rotationDivisor(lineup, sixthManId) * 5;
+  }
   total *= collisionMultiplier(items.map((it) => it.usage));
   if (!hasFloorBalance(primaries)) total *= 0.94;
   const present = lineup.filter(Boolean) as Player[];
@@ -1026,16 +1109,20 @@ export function getBaseTeamImpact(lineup: Player[]): number {
   if (spacingExcess > 0) {
     total *= 1 + Math.min(0.04, 0.01 + spacingExcess * 0.15);
   }
+  if (hasSixthMan(lineup, sixthManId)) {
+    total *= SIXTH_TEAM_BOOST;
+  }
   const counted = items.length;
-  return total * (counted / 5);
+  const fullSize = lineup.length > 5 ? 10 : 5;
+  return total * (counted / fullSize);
 }
 
-export function getTeamStrength(lineup: Player[]): number {
+export function getTeamStrength(lineup: Player[], sixthManId?: string | null): number {
   if (lineup.length === 0) return 0;
   // Strength is just the base-impact differential vs a league-average
-  // opponent, scaled to 0-100. Full 5-man coverage is enforced by
+  // opponent, scaled to 0-100. Full coverage is enforced by
   // validation, so no separate coverage bonus is needed.
-  return strengthVsLeague(getBaseTeamImpact(lineup), LEAGUE_AVG_IMPACT);
+  return strengthVsLeague(getBaseTeamImpact(lineup, sixthManId), LEAGUE_AVG_IMPACT);
 }
 
 /**

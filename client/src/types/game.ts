@@ -67,6 +67,10 @@ export interface DraftPool {
 export interface LineupSlot {
   position: Position;
   player: Player | null;
+  /** Starters (indices 0-4) vs bench (indices 5-9). */
+  role: 'starter' | 'bench';
+  /** Exactly one bench slot should carry this once the roster is full. */
+  isSixthMan?: boolean;
 }
 
 export interface Lineup {
@@ -116,6 +120,8 @@ export interface SimulationResult {
   winPct: number;
   projectedWins?: number;
   teamStrength?: number;
+  /** Player ID of the Sixth Man (bench) if the season was simulated with a 10-man rotation. */
+  sixthManId?: string | null;
   /** Null = default mixed modern league. */
   era: { id: string; label: string } | null;
   games: GameResult[];

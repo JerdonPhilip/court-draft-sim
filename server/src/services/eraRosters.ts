@@ -32,7 +32,8 @@ function bestCoveringFive(pool: Player[]): Player[] | null {
   let best: Player[] | null = null;
   let bestScore = -Infinity;
   const n = pool.length;
-  // C(n,5) is tiny (max C(8,5)=56); exhaustive search is cheapest to verify.
+  if (n < 5) return null;
+  // C(n,5) is tiny (max C(10,5)=252); exhaustive search is cheapest to verify.
   const idx = [0, 1, 2, 3, 4];
   const total = (lineup: Player[]) => lineup.reduce((s, p) => s + p.overall, 0);
   const combo = (): Player[] => idx.map(i => pool[i]!);
@@ -43,6 +44,41 @@ function bestCoveringFive(pool: Player[]): Player[] | null {
       if (score > bestScore) {
         bestScore = score;
         best = [...five];
+      }
+    }
+    let p = 4;
+    while (p >= 0 && idx[p] === n - 5 + p) p--;
+    if (p < 0) break;
+    idx[p]++;
+    for (let q = p + 1; q < 5; q++) idx[q] = idx[q - 1] + 1;
+  }
+  return best;
+}
+
+/**
+ * Best covering 10-man rotation (starters + bench) out of a pool:
+ * tries every C(n,5) starters split and pairs it with the best covering
+ * five from the remainder, maximizing starters + 0.4 * bench (mirrors the
+ * rotation weighting). Falls back to best-five + next-best-five.
+ */
+function bestCoveringTen(pool: Player[]): Player[] | null {
+  const n = pool.length;
+  if (n < 10) return null;
+  let best: Player[] | null = null;
+  let bestScore = -Infinity;
+  const idx = [0, 1, 2, 3, 4];
+  for (;;) {
+    const starters = idx.map(i => pool[i]!);
+    if (coversAll(starters)) {
+      const rest = pool.filter((_, i) => !idx.includes(i));
+      const bench = bestCoveringFive(rest);
+      if (bench) {
+        const score = starters.reduce((s, p) => s + p.overall, 0)
+          + bench.reduce((s, p) => s + p.overall, 0) * 0.4;
+        if (score > bestScore) {
+          bestScore = score;
+          best = [...starters, ...bench];
+        }
       }
     }
     let p = 4;
@@ -75,9 +111,9 @@ function coversAll(lineup: Player[]): boolean {
 }
 
 /**
- * Build one 5-man lineup per franchise present in the decade, strongest
- * available five that still covers every position. Franchises that can't
- * field a legal five are skipped (verified: none currently exist).
+ * Build one 10-man rotation per franchise present in the decade (starters +
+ * bench). Prefers a ten covering every position in both units; falls back to
+ * covering starters + next-best bench for imbalanced pools.
  */
 export function getEraLeague(decadeId: string): EraLeague | null {
   const decade = DECADES.find(d => d.id === decadeId);
@@ -86,9 +122,21 @@ export function getEraLeague(decadeId: string): EraLeague | null {
   const opponents: EraOpponent[] = [];
   for (const franchise of FRANCHISES) {
     const pool = getPlayersByFranchiseAndDecade(franchise.id, decadeId);
-    if (pool.length < 5) continue;
-    const best = bestCoveringFive(pool);
-    if (!best) continue;
+    if (pool.length < 10) continue;
+    let best = bestCoveringTen(pool);
+    if (!best) {
+      // Imbalanced pool (e.g. a single true SF): starters cover, bench is
+      // next-best-five. The sim's slot assignment + flex penalties absorb it.
+      const starters = bestCoveringFive(pool);
+      if (!starters) continue;
+      const starterIds = new Set(starters.map(p => p.id));
+      const bench = pool
+        .filter(p => !starterIds.has(p.id))
+        .sort((a, b) => b.overall - a.overall)
+        .slice(0, 5);
+      if (bench.length < 5) continue;
+      best = [...starters, ...bench];
+    }
     // Namespace ids + display team: the same historical player can be both
     // your draft pick (original id) and a CPU opponent. Without namespacing,
     // client joins by playerId collapse the two into one row / wrong hover.

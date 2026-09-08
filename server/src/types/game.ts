@@ -91,6 +91,10 @@ export interface GameSimulationInput {
   totalGames?: number;
   /** 1-based game number within a best-of-7 (coaching adaptation past Game 1). */
   seriesGameNumber?: number;
+  /** 10-man rotation: player ID of the home Sixth Man (must be bench index 5-9). */
+  homeSixthManId?: string | null;
+  /** 10-man rotation: player ID of the away Sixth Man (must be bench index 5-9). */
+  awaySixthManId?: string | null;
 }
 
 export interface GameSimulationOutput {

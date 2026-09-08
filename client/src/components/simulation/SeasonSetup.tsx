@@ -56,7 +56,7 @@ export function SeasonSetup({ onBack }: SeasonSetupProps) {
           </motion.button>
           <div>
             <h1 className="font-display text-2xl font-bold gradient-text">CHOOSE YOUR SEASON</h1>
-            <p className="text-xs text-broadcast-text-secondary">YOUR LOCKED 5 TAKE ON AN 82-GAME SCHEDULE AGAINST…</p>
+            <p className="text-xs text-broadcast-text-secondary">YOUR LOCKED 10 TAKE ON AN 82-GAME SCHEDULE AGAINST…</p>
           </div>
         </div>
 

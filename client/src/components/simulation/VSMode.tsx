@@ -27,7 +27,8 @@ export function VSModeScreen({ onBack }: VSModeScreenProps) {
   const [isLoading, setIsLoading] = useState(false);
 
   const lineup = draftState.lineup.slots.map(s => s.player).filter((p): p is Player => p !== null);
-  const teamStrength = calculateTeamStrength(lineup);
+  const sixthManId = draftState.lineup.slots.find(s => s.isSixthMan && s.player)?.player?.id;
+  const teamStrength = calculateTeamStrength(lineup, sixthManId);
   const projectedWins = getWinProjection(teamStrength);
 
   useEffect(() => {
@@ -161,7 +162,7 @@ export function VSModeScreen({ onBack }: VSModeScreenProps) {
             </div>
 
             <div className="card-elevated p-6">
-              <h3 className="section-title font-display text-lg mb-4">YOUR LINEUP</h3>
+              <h3 className="section-title font-display text-lg mb-4">YOUR LINEUP ({lineup.length})</h3>
               <div className="space-y-2">
                 {lineup.map((player) => (
                   <div key={player.id} className="flex items-center gap-3 p-3 bg-broadcast-darker rounded-lg">
@@ -170,7 +171,12 @@ export function VSModeScreen({ onBack }: VSModeScreenProps) {
                       {player.position}
                     </div>
                     <div className="flex-1">
-                      <div className="font-medium text-white">{player.name}</div>
+                      <div className="font-medium text-white">
+                        {player.name}
+                        {sixthManId === player.id && (
+                          <span className="ml-2 rounded-full border border-broadcast-gold/50 bg-broadcast-gold/15 px-1.5 py-0.5 text-[10px] font-bold text-broadcast-gold">6TH MAN</span>
+                        )}
+                      </div>
                       <div className="text-xs text-broadcast-text-secondary">{player.team.toUpperCase()} • {player.decade} • {player.overall} OVR</div>
                     </div>
                     <div className="text-right">
