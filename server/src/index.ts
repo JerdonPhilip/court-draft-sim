@@ -40,14 +40,6 @@ app.use(compression());
 app.use(morgan('dev'));
 app.use(express.json({ limit: '100kb' }));
 
-// CPU-heavy sim endpoints get a tighter budget.
-const simLimiter = rateLimit({
-  windowMs: 60_000,
-  max: 60,
-  standardHeaders: true,
-  legacyHeaders: false,
-  message: { error: 'Too many simulation requests, slow down' },
-});
 const generalLimiter = rateLimit({
   windowMs: 60_000,
   max: 300,
@@ -56,7 +48,6 @@ const generalLimiter = rateLimit({
 });
 
 app.use('/api/', generalLimiter);
-app.use('/api/simulation/', simLimiter);
 
 app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });

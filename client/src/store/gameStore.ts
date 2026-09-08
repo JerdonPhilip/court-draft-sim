@@ -3,6 +3,7 @@ import { persist } from 'zustand/middleware';
 import {
   DraftState,
   Player,
+  PlayoffGameResult,
   Position,
   SimulationResult,
   VSModeMatchup,
@@ -17,6 +18,14 @@ function getEmptyPositions(slots: DraftState['lineup']['slots']): Position[] {
   return slots.filter(s => !s.player).map(s => s.position);
 }
 
+export interface PlayoffProgress {
+  /** Season fingerprint — progress only restores onto the same season. */
+  seasonKey: string;
+  winners: Record<string, string>;
+  hasStarted: boolean;
+  seriesGames: Record<string, PlayoffGameResult[]>;
+}
+
 interface GameStore {
   phase: 'draft' | 'season-setup' | 'simulation' | 'results' | 'vs-mode';
   draftState: DraftState;
@@ -25,6 +34,8 @@ interface GameStore {
   historicalTeams: HistoricalTeam[];
   /** Era decade id for the season, or null for the default mixed league. */
   selectedEra: string | null;
+  /** Playoff bracket progress (persisted so a reload resumes mid-playoffs). */
+  playoffProgress: PlayoffProgress | null;
   isLoading: boolean;
   error: string | null;
 
@@ -34,6 +45,7 @@ interface GameStore {
   setVSMatchup: (matchup: VSModeMatchup | null) => void;
   setHistoricalTeams: (teams: HistoricalTeam[]) => void;
   setSelectedEra: (era: string | null) => void;
+  setPlayoffProgress: (progress: PlayoffProgress | null) => void;
   setLoading: (loading: boolean) => void;
   setError: (error: string | null) => void;
 
@@ -80,6 +92,7 @@ export const useGameStore = create<GameStore>()(
       vsMatchup: null,
       historicalTeams: [],
       selectedEra: null,
+      playoffProgress: null,
       isLoading: false,
       error: null,
 
@@ -89,6 +102,7 @@ export const useGameStore = create<GameStore>()(
       setVSMatchup: (matchup) => set({ vsMatchup: matchup }),
       setHistoricalTeams: (teams) => set({ historicalTeams: teams }),
       setSelectedEra: (era) => set({ selectedEra: era }),
+      setPlayoffProgress: (progress) => set({ playoffProgress: progress }),
       setLoading: (loading) => set({ isLoading: loading }),
       setError: (error) => set({ error }),
 
@@ -100,6 +114,7 @@ export const useGameStore = create<GameStore>()(
           simulationResult: null,
           vsMatchup: null,
           selectedEra: null,
+          playoffProgress: null,
           error: null,
         });
       },
@@ -370,13 +385,14 @@ export const useGameStore = create<GameStore>()(
           simulationResult: null,
           vsMatchup: null,
           selectedEra: null,
+          playoffProgress: null,
           error: null,
         });
       },
     }),
     {
       name: 'court-draft-sim-store',
-      version: 5,
+      version: 6,
       partialize: (state) => ({
         phase: state.phase === 'simulation' || state.phase === 'season-setup' ? 'draft' : state.phase,
         draftState: {
@@ -388,6 +404,7 @@ export const useGameStore = create<GameStore>()(
         simulationResult: state.simulationResult,
         vsMatchup: state.vsMatchup,
         selectedEra: (state as { selectedEra?: string | null }).selectedEra ?? null,
+        playoffProgress: (state as { playoffProgress?: PlayoffProgress | null }).playoffProgress ?? null,
       } as unknown as GameStore),
       migrate: (persisted: unknown, version: number) => {
         if (typeof persisted !== 'object' || persisted === null) {

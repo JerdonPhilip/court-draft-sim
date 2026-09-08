@@ -2,6 +2,60 @@ import type { DraftPool, EraInfo, HistoricalTeam, Player, Position, SimulationRe
 
 const API_BASE = (import.meta.env.VITE_API_URL as string | undefined)?.replace(/\/$/, '') || '/api';
 
+/** Error carrying HTTP status + server Retry-After so callers can back off. */
+export class ApiError extends Error {
+  status: number;
+  retryAfterMs: number | null;
+  constructor(message: string, status: number, retryAfterMs: number | null = null) {
+    super(message);
+    this.name = 'ApiError';
+    this.status = status;
+    this.retryAfterMs = retryAfterMs;
+  }
+}
+
+function retryAfterMs(response: Response): number | null {
+  const raw = response.headers.get('Retry-After');
+  if (!raw) return null;
+  const seconds = Number(raw);
+  if (Number.isFinite(seconds)) return Math.max(0, seconds * 1000);
+  const date = Date.parse(raw);
+  if (!Number.isNaN(date)) return Math.max(0, date - Date.now());
+  return null;
+}
+
+/** Retry throttled/transient failures with backoff (honors Retry-After). */
+async function withRetry<T>(fn: () => Promise<T>, retries = 4): Promise<T> {
+  let last: unknown = null;
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    try {
+      return await fn();
+    } catch (err) {
+      last = err;
+      const retryable = err instanceof ApiError && (err.status === 429 || err.status >= 500);
+      if (!retryable || attempt === retries) throw err;
+      const backoff =
+        err instanceof ApiError && err.retryAfterMs != null
+          ? Math.min(15000, err.retryAfterMs)
+          : Math.min(8000, 500 * 2 ** attempt);
+      await new Promise((resolve) => setTimeout(resolve, backoff + Math.random() * 250));
+    }
+  }
+  throw last;
+}
+
+/** Flatten zod-style `{ fieldErrors, formErrors }` so toasts show WHY a request was rejected. */
+function withValidationDetails(msg: string, details: unknown): string {
+  if (!details || typeof details !== 'object') return msg;
+  const parts: string[] = [];
+  const d = details as { fieldErrors?: Record<string, string[]>; formErrors?: string[] };
+  for (const errs of Object.values(d.fieldErrors ?? {})) {
+    for (const e of errs ?? []) if (e && !parts.includes(e)) parts.push(e);
+  }
+  for (const e of d.formErrors ?? []) if (e && !parts.includes(e)) parts.push(e);
+  return parts.length > 0 ? `${msg} — ${parts.join('; ')}` : msg;
+}
+
 async function fetchAPI<T>(endpoint: string, options: RequestInit = {}, timeoutMs = 15000): Promise<T> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
@@ -29,7 +83,11 @@ async function fetchAPI<T>(endpoint: string, options: RequestInit = {}, timeoutM
 
     if (!response.ok) {
       const msg = typeof data.error === 'string' ? data.error : `API error: ${response.status}`;
-      throw new Error(msg);
+      throw new ApiError(
+        withValidationDetails(msg, (data as { details?: unknown }).details),
+        response.status,
+        retryAfterMs(response),
+      );
     }
 
     return data as T;
@@ -94,10 +152,12 @@ export const api = {
         body: JSON.stringify({ lineup, config, ...(era ? { era } : {}) }),
       }, 30000),
     runGame: (homeTeam: Player[], awayTeam: Player[]) =>
-      fetchAPI<{ result: PlayoffGameResult }>('/simulation/game', {
-        method: 'POST',
-        body: JSON.stringify({ homeTeam, awayTeam }),
-      }),
+      withRetry(() =>
+        fetchAPI<{ result: PlayoffGameResult }>('/simulation/game', {
+          method: 'POST',
+          body: JSON.stringify({ homeTeam, awayTeam }),
+        }),
+      ),
     runVSMode: (userLineup: Player[], historicalTeamId: string, seriesLength: 1 | 7) =>
       fetchAPI<{ result: VSModeMatchup }>('/simulation/vs-mode', {
         method: 'POST',

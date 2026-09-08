@@ -145,7 +145,9 @@ export interface PlayerGamePerformance {
   minutes: number;
   /** Base card info (present on fresh sims, absent on old saves). */
   position?: Position;
+  secondaryPositions?: Position[];
   overall?: number;
+  heightIn?: number;
   team?: string;
   baseStats?: PlayerStats;
 }
@@ -159,7 +161,9 @@ export interface SimulatedPlayerStats {
   totals: PlayerStats;
   highGames?: { pts: number; reb: number; ast: number; stl: number; blk: number };
   position?: Position;
+  secondaryPositions?: Position[];
   overall?: number;
+  heightIn?: number;
   team?: string;
   baseStats?: PlayerStats;
 }

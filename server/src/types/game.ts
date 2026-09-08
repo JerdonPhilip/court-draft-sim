@@ -62,6 +62,9 @@ export interface GameSimulationInput {
   homeTeam: Player[];
   awayTeam: Player[];
   config: SimulationConfig;
+  /** 1-based season game number for fatigue; default 1 (no fatigue for one-off/playoff games). */
+  gameIndex?: number;
+  totalGames?: number;
 }
 
 export interface GameSimulationOutput {
@@ -127,7 +130,9 @@ export interface SeasonGameResult {
     playerId: string;
     playerName: string;
     position?: Position;
+    secondaryPositions?: Position[];
     overall?: number;
+    heightIn?: number;
     team?: string;
     baseStats?: PlayerStats;
   }>;

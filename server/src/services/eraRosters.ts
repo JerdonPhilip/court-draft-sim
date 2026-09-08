@@ -87,10 +87,19 @@ export function getEraLeague(decadeId: string): EraLeague | null {
   for (const franchise of FRANCHISES) {
     const pool = getPlayersByFranchiseAndDecade(franchise.id, decadeId);
     if (pool.length < 5) continue;
-    const lineup = bestCoveringFive(pool);
-    if (!lineup) continue;
+    const best = bestCoveringFive(pool);
+    if (!best) continue;
+    // Namespace ids + display team: the same historical player can be both
+    // your draft pick (original id) and a CPU opponent. Without namespacing,
+    // client joins by playerId collapse the two into one row / wrong hover.
+    const displayName = `${decade.label} ${franchise.name}`;
+    const lineup = best.map((p) => ({
+      ...p,
+      id: `${p.id}--${decadeId}-${franchise.id}`,
+      team: displayName,
+    }));
     opponents.push({
-      name: `${decade.label} ${franchise.name}`,
+      name: displayName,
       franchise: franchise.id,
       franchiseName: franchise.name,
       decade: decadeId,

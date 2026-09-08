@@ -69,8 +69,11 @@ interface StrengthInput {
 // + services/constants.ts). Strength is the deterministic base-impact
 // differential vs a league-average opponent (LEAGUE_AVG_IMPACT), so the
 // draft-screen projection and the sim can never disagree structurally.
-const LEAGUE_AVG_IMPACT = 39.4;
+const LEAGUE_AVG_IMPACT = 37.6;
 const IMPACT_TO_STRENGTH = 1.2;
+// Must match server services/constants.ts.
+const OVERALL_CURVE_EXPONENT = 1.5;
+const STAR_USAGE_BONUS = [1.18, 1.07, 1.0, 0.95, 0.9] as const;
 const WIN_CURVE_DIVISOR = 22;
 
 // Must match server services/constants.ts.
@@ -139,8 +142,7 @@ const IMPACT_WEIGHTS: Record<string, { pts: number; reb: number; ast: number; st
 const STAT_SHARE = { pts: 0.35, reb: 0.20, ast: 0.20, stl: 0.12, blk: 0.13 };
 
 export function getBaseTeamImpact(players: StrengthInput[]): number {
-  let total = 0;
-  let counted = 0;
+  const impacts: number[] = [];
   for (const p of players) {
     const w = IMPACT_WEIGHTS[p.position] ?? IMPACT_WEIGHTS.C!;
     const baseline = POSITION_HEIGHT_BASELINE[p.position] ?? 79;
@@ -148,16 +150,21 @@ export function getBaseTeamImpact(players: StrengthInput[]): number {
     const clamp = (v: number) => Math.max(HEIGHT_FACTOR_MIN, Math.min(HEIGHT_FACTOR_MAX, v));
     const rebF = clamp(1 + HEIGHT_REB_PER_INCH * (h - baseline));
     const blkF = clamp(1 + HEIGHT_BLK_PER_INCH * (h - baseline));
-    total += (
+    impacts.push((
       p.stats.pts * w.pts * STAT_SHARE.pts +
       p.stats.reb * w.reb * STAT_SHARE.reb * rebF +
       p.stats.ast * w.ast * STAT_SHARE.ast +
       p.stats.stl * w.stl * STAT_SHARE.stl +
       p.stats.blk * w.blk * STAT_SHARE.blk * blkF
-    ) * (p.overall / 100);
-    counted++;
+    ) * Math.pow(p.overall / 100, OVERALL_CURVE_EXPONENT));
   }
-  if (counted === 0) return 0;
+  if (impacts.length === 0) return 0;
+  impacts.sort((a, b) => b - a);
+  let total = 0;
+  for (let i = 0; i < impacts.length; i++) {
+    total += impacts[i]! * (STAR_USAGE_BONUS[i] ?? 1);
+  }
+  const counted = impacts.length;
   return total * (counted / 5);
 }
 

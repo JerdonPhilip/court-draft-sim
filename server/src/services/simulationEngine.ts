@@ -9,7 +9,7 @@ import {
   PlayerSeasonStats,
   TeamSeasonStats,
 } from '../types/game.js';
-import { DEFAULT_SIMULATION_CONFIG, SIMULATION_CONSTANTS, LEAGUE_AVG_IMPACT, IMPACT_TO_STRENGTH, WIN_CURVE_DIVISOR, POSITION_HEIGHT_BASELINE, HEIGHT_REB_PER_INCH, HEIGHT_BLK_PER_INCH, HEIGHT_FACTOR_MIN, HEIGHT_FACTOR_MAX } from './constants.js';
+import { DEFAULT_SIMULATION_CONFIG, SIMULATION_CONSTANTS, LEAGUE_AVG_IMPACT, IMPACT_TO_STRENGTH, WIN_CURVE_DIVISOR, OVERALL_CURVE_EXPONENT, STAR_USAGE_BONUS, POSITION_HEIGHT_BASELINE, HEIGHT_REB_PER_INCH, HEIGHT_BLK_PER_INCH, HEIGHT_FACTOR_MIN, HEIGHT_FACTOR_MAX } from './constants.js';
 import { randomInt } from 'node:crypto';
 
 // --- Tunable simulation knobs (see services/constants.ts) ---
@@ -72,7 +72,7 @@ function calculatePlayerImpact(player: Player, config: SimulationConfig, gameInd
   impact += stats.stl * weights.stl * STAT_IMPORTANCE.stl;
   impact += stats.blk * weights.blk * STAT_IMPORTANCE.blk * height.blk;
 
-  impact = impact * (overall / 100);
+  impact = impact * Math.pow(overall / 100, OVERALL_CURVE_EXPONENT);
 
   // Fatigue: late-season games slightly reduce impact.
   if (config.fatigueFactor > 0 && totalGames > 1) {
@@ -87,13 +87,19 @@ function calculatePlayerImpact(player: Player, config: SimulationConfig, gameInd
 }
 
 function calculateTeamRating(players: Player[], config: SimulationConfig, isHome: boolean, gameIndex = 0, totalGames = 82): number {
-  let totalImpact = 0;
-  let counted = 0;
+  const impacts: number[] = [];
   for (const player of players) {
     if (player) {
-      totalImpact += calculatePlayerImpact(player, config, gameIndex, totalGames);
-      counted++;
+      impacts.push(calculatePlayerImpact(player, config, gameIndex, totalGames));
     }
+  }
+  const counted = impacts.length;
+
+  // Usage concentration: sort best-first so the alpha carries the offense.
+  impacts.sort((a, b) => b - a);
+  let totalImpact = 0;
+  for (let i = 0; i < impacts.length; i++) {
+    totalImpact += impacts[i]! * (STAR_USAGE_BONUS[i] ?? 1);
   }
 
   // Scale short lineups down instead of silently treating missing players as 0-rated.
@@ -279,14 +285,14 @@ function generateGameEvents(homePlayers: Player[], awayPlayers: Player[], homeSc
 }
 
 export function simulateSingleGame(input: GameSimulationInput): GameSimulationOutput {
-  const { homeTeam, awayTeam, config } = input;
+  const { homeTeam, awayTeam, config, gameIndex = 1, totalGames = 1 } = input;
 
   if (!homeTeam || homeTeam.length === 0 || !awayTeam || awayTeam.length === 0) {
     throw new Error('Both teams must have at least one player');
   }
 
-  const homeRating = calculateTeamRating(homeTeam, config, true);
-  const awayRating = calculateTeamRating(awayTeam, config, false);
+  const homeRating = calculateTeamRating(homeTeam, config, true, gameIndex, totalGames);
+  const awayRating = calculateTeamRating(awayTeam, config, false, gameIndex, totalGames);
 
   const { home: homeScore, away: awayScore, otPeriods } = simulateGameScore(homeRating, awayRating, config);
 
@@ -394,15 +400,12 @@ export function simulateSeason(
       homeTeam: isHome ? userLineup : opponent,
       awayTeam: isHome ? opponent : userLineup,
       config,
+      // Fatigue now actually flows into ratings (was previously dropped).
+      gameIndex: gameNum,
+      totalGames,
     };
 
-    const gameResult = simulateSingleGame({
-      ...gameInput,
-      // Recompute ratings with fatigue context for season games
-      homeTeam: gameInput.homeTeam,
-      awayTeam: gameInput.awayTeam,
-      config,
-    });
+    const gameResult = simulateSingleGame(gameInput);
     const userScore = isHome ? gameResult.homeScore : gameResult.awayScore;
     const oppScore = isHome ? gameResult.awayScore : gameResult.homeScore;
     // Overtime in simulateGameScore guarantees no ties, but guard anyway.
@@ -480,8 +483,11 @@ export function simulateSeason(
         playerId: p.id,
         playerName: p.name,
         position: p.position,
+        secondaryPositions: p.secondaryPositions,
         overall: p.overall,
-        team: p.team,
+        heightIn: p.heightIn,
+        // Display schedule name so client joins (standings/bracket/awards) always match.
+        team: opponentName,
         baseStats: { ...p.stats },
       })),
     });
@@ -711,20 +717,23 @@ function simulateLeagueStandings(
 }
 
 function calculateTeamSeasonStats(
-  lineup: Player[],
+  _lineup: Player[],
   playerSeasonStats: Record<string, PlayerSeasonStats>,
   games: SeasonSimulationResult['games']
 ): TeamSeasonStats {
   let totalPts = 0;
+  let totalAllowed = 0;
   let totalPossessions = 0;
 
   for (const game of games) {
     totalPts += game.score.us;
+    totalAllowed += game.score.them;
     totalPossessions += AVG_POSSESSIONS + randomFloat() * POSSESSION_SPREAD;
   }
 
   const numGames = games.length || 1;
   const avgPts = totalPts / numGames;
+  const avgAllowed = totalAllowed / numGames;
   const pace = totalPossessions / numGames;
 
   let totalReb = 0, totalAst = 0, totalStl = 0, totalBlk = 0;
@@ -735,12 +744,9 @@ function calculateTeamSeasonStats(
     totalBlk += stats.averages.blk;
   }
 
+  // Both ratings derive from actual simulated scoring per 100 possessions.
   const offensiveRating = (avgPts / pace) * 100;
-  // Better-than-average rosters suppress opponent scoring.
-  const avgOverall = lineup.length > 0
-    ? lineup.reduce((sum, p) => sum + p.overall, 0) / lineup.length
-    : 75;
-  const defensiveRating = offensiveRating - (avgOverall - 75) * 0.5;
+  const defensiveRating = (avgAllowed / pace) * 100;
 
   return {
     offensiveRating: Number(offensiveRating.toFixed(1)),
@@ -774,23 +780,27 @@ export function calculateNonLinearWinCurve(teamStrength: number): number {
  * Partial lineups are prorated (n/5) so draft previews read low until filled.
  */
 export function getBaseTeamImpact(lineup: Player[]): number {
-  let total = 0;
-  let counted = 0;
+  const impacts: number[] = [];
   for (const player of lineup) {
     if (!player) continue;
     const weights = POSITION_WEIGHTS[player.position];
     const { stats, overall } = player;
     const height = heightFactors(player);
-    total += (
+    impacts.push((
       stats.pts * weights.pts * STAT_IMPORTANCE.pts +
       stats.reb * weights.reb * STAT_IMPORTANCE.reb * height.reb +
       stats.ast * weights.ast * STAT_IMPORTANCE.ast +
       stats.stl * weights.stl * STAT_IMPORTANCE.stl +
       stats.blk * weights.blk * STAT_IMPORTANCE.blk * height.blk
-    ) * (overall / 100);
-    counted++;
+    ) * Math.pow(overall / 100, OVERALL_CURVE_EXPONENT));
   }
-  if (counted === 0) return 0;
+  if (impacts.length === 0) return 0;
+  impacts.sort((a, b) => b - a);
+  let total = 0;
+  for (let i = 0; i < impacts.length; i++) {
+    total += impacts[i]! * (STAR_USAGE_BONUS[i] ?? 1);
+  }
+  const counted = impacts.length;
   return total * (counted / 5);
 }
 

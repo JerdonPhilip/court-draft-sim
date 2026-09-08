@@ -1,5 +1,6 @@
 import { Router, Request, Response } from 'express';
 import { z } from 'zod';
+import rateLimit from 'express-rate-limit';
 import { simulateSeason, getTeamStrength, getBaseTeamImpact, strengthVsLeague, calculateNonLinearWinCurve, simulateSingleGame } from '../services/simulationEngine.js';
 import { DEFAULT_SIMULATION_CONFIG, SIMULATION_CONSTANTS, LEAGUE_AVG_IMPACT } from '../services/constants.js';
 import { getEraLeague, getAllEraLeagues } from '../services/eraRosters.js';
@@ -9,6 +10,31 @@ import { getAllHistoricalTeams } from '../data/historicalTeams.js';
 import { randomInt } from 'node:crypto';
 
 const router = Router();
+
+// Per-endpoint budgets: a full 82-game season is the expensive call, while a
+// playoff bracket legitimately plays dozens of cheap single games (every
+// background CPU series is real games now), so /game gets real headroom.
+const seasonLimiter = rateLimit({
+  windowMs: 60_000,
+  max: 30,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many season simulations, slow down' },
+});
+const gameLimiter = rateLimit({
+  windowMs: 60_000,
+  max: 600,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many game requests, slow down' },
+});
+const vsLimiter = rateLimit({
+  windowMs: 60_000,
+  max: 60,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many VS-mode requests, slow down' },
+});
 
 const playerStatsSchema = z.object({
   pts: z.number().finite().min(0).max(50),
@@ -105,7 +131,7 @@ router.get('/eras', (req: Request, res: Response) => {
   res.json({ eras: leagues });
 });
 
-router.post('/season', (req: Request, res: Response) => {
+router.post('/season', seasonLimiter, (req: Request, res: Response) => {
   const result = simulateSeasonSchema.safeParse(req.body);
   if (!result.success) {
     return res.status(400).json({ error: 'Invalid request', details: result.error.flatten() });
@@ -168,8 +194,10 @@ router.post('/season', (req: Request, res: Response) => {
           stats,
           minutes: g.userMinutes[playerId] ?? 40,
           position: player?.position,
+          secondaryPositions: player?.secondaryPositions,
           overall: player?.overall,
-          team: player?.team ?? 'Your Team',
+          heightIn: player?.heightIn,
+          team: 'Your Team',
           baseStats: player?.stats,
         };
       }),
@@ -181,8 +209,10 @@ router.post('/season', (req: Request, res: Response) => {
           stats,
           minutes: g.opponentMinutes?.[playerId] ?? 40,
           position: player?.position,
+          secondaryPositions: player?.secondaryPositions,
           overall: player?.overall,
-          team: player?.team ?? g.opponent,
+          heightIn: player?.heightIn,
+          team: g.opponent,
           baseStats: player?.baseStats,
         };
       }),
@@ -198,8 +228,10 @@ router.post('/season', (req: Request, res: Response) => {
         totals: s.totals,
         highGames: s.highGames,
         position: base?.position,
+        secondaryPositions: base?.secondaryPositions,
         overall: base?.overall,
-        team: base?.team ?? 'Your Team',
+        heightIn: base?.heightIn,
+        team: 'Your Team',
         baseStats: base?.stats,
       };
     }),
@@ -216,8 +248,10 @@ router.post('/season', (req: Request, res: Response) => {
         totals: s.totals,
         highGames: s.highGames,
         position: player?.position,
+        secondaryPositions: player?.secondaryPositions,
         overall: player?.overall,
-        team: player?.team,
+        heightIn: player?.heightIn,
+        team: player?.team ?? 'Opponent',
         baseStats: player?.stats,
       };
     }),
@@ -226,7 +260,7 @@ router.post('/season', (req: Request, res: Response) => {
   res.json({ result: formattedResult });
 });
 
-router.post('/game', (req: Request, res: Response) => {
+router.post('/game', gameLimiter, (req: Request, res: Response) => {
   const result = simulateGameSchema.safeParse(req.body);
   if (!result.success) {
     return res.status(400).json({ error: 'Invalid request', details: result.error.flatten() });
@@ -237,7 +271,10 @@ router.post('/game', (req: Request, res: Response) => {
     const gameResult = simulateSingleGame({
       homeTeam: homeTeam as Player[],
       awayTeam: awayTeam as Player[],
-      config: DEFAULT_SIMULATION_CONFIG,
+      // Neutral court: the playoff modal always passes you as homeTeam, so any
+      // home edge would inflate your win odds every game. Background sims keep
+      // their alternating 2-2-1-1-1 edge; this series stays fair.
+      config: { ...DEFAULT_SIMULATION_CONFIG, homeCourtAdvantage: 0 },
     });
 
     res.json({
@@ -257,7 +294,7 @@ router.post('/game', (req: Request, res: Response) => {
   }
 });
 
-router.post('/vs-mode', (req: Request, res: Response) => {
+router.post('/vs-mode', vsLimiter, (req: Request, res: Response) => {
   const result = vsModeSchema.safeParse(req.body);
   if (!result.success) {
     return res.status(400).json({ error: 'Invalid request', details: result.error.flatten() });
@@ -384,16 +421,16 @@ function randomStat(min: number, max: number): number {
   return min + (randomInt(1_000_000) / 1_000_000) * (max - min);
 }
 
-function generateOpponentPools(): { pools: Player[][]; names: string[] } {
+/** Exported for calibration scripts (recompute LEAGUE_AVG_IMPACT if the model changes). */
+export function generateOpponentPools(): { pools: Player[][]; names: string[] } {
   const pools: Player[][] = [];
 
   // 30 distinct 5-man opponents (150 unique players).
   // A top-heavy league like the real NBA: 24 regular starter-quality
   // pools plus 6 contender pools that can actually beat elite user teams,
   // so 82-0 stays possible but never automatic.
-  // Expected base impact ~= LEAGUE_AVG_IMPACT (services/constants.ts):
-  // (24 x ~35.9 regular + 6 x ~53.3 contender) / 30 ~= 39.4.
-  // Keep them in sync if these ranges change.
+  // Mean base impact ~= LEAGUE_AVG_IMPACT (services/constants.ts), measured
+  // empirically over generated pools. Keep them in sync if these ranges change.
   // Heights sit near positional averages so size is neutral for the league.
   const HEIGHT_RANGE: Record<Position, [number, number]> = {
     PG: [71, 75],
@@ -416,7 +453,9 @@ function generateOpponentPools(): { pools: Player[][]; names: string[] } {
         name: `${OPPONENT_NAMES[i]} Player ${j + 1}`,
         position: pos,
         heightIn: Math.round(randomStat(HEIGHT_RANGE[pos][0], HEIGHT_RANGE[pos][1])),
-        team: 'opponent',
+        // Display schedule name (not a generic tag) so standings, bracket,
+        // awards and playoff rosters can join on team.
+        team: OPPONENT_NAMES[i]!,
         decade: '2020s',
         era: 'Current',
         stats: contender
