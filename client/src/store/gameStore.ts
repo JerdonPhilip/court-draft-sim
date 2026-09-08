@@ -9,6 +9,7 @@ import {
   VSModeMatchup,
   HistoricalTeam,
   canPlayPosition,
+  personKeyOf,
 } from '../types/game';
 import { POSITIONS, MAX_REROLLS_PER_AXIS, MAX_MANUAL_SPINS, ROSTER_SLOTS, MAX_ROSTER_SIZE } from '../data/constants';
 import { api } from '../utils/api';
@@ -58,6 +59,7 @@ interface GameStore {
   draftPlayer: (player: Player, slotIndex: number) => void;
   removePlayerFromSlot: (slotIndex: number) => void;
   setSixthMan: (slotIndex: number) => void;
+  setOptionRank: (slotIndex: number, rank: 1 | 2 | 3 | null) => void;
   clearLineup: () => void;
   finalizeDraft: () => Promise<void>;
   runSimulation: () => Promise<void>;
@@ -77,10 +79,35 @@ const createInitialDraftState = (): DraftState => ({
   decadeSkip: { used: false, remaining: MAX_REROLLS_PER_AXIS },
   spinsLeft: MAX_MANUAL_SPINS,
   draftedPlayers: [],
+  draftedPersonKeys: [],
   availablePools: [],
   isSpinning: false,
   spinResult: null,
 });
+
+function getOptionsFromSlots(slots: DraftState['lineup']['slots']): { first?: string | null; second?: string | null; third?: string | null } {
+  const rankOf = (r: 1 | 2 | 3) => slots.find(s => s.optionRank === r && s.player)?.player?.id ?? null;
+  return { first: rankOf(1), second: rankOf(2), third: rankOf(3) };
+}
+
+function ensureOptions(slots: DraftState['lineup']['slots']): DraftState['lineup']['slots'] {
+  const has = (r: 1 | 2 | 3) => slots.some(s => s.optionRank === r && s.player);
+  if (has(1) && has(2) && has(3)) return slots;
+  // Default 1st/2nd/3rd to the best overall filled players.
+  const byOverall = slots
+    .map((s, i) => ({ s, i }))
+    .filter(({ s }) => s.player)
+    .sort((a, b) => (b.s.player?.overall ?? 0) - (a.s.player?.overall ?? 0));
+  const result = slots.map(s => ({ ...s }));
+  // Assign missing ranks in order to top overall players without a rank.
+  const missing = ([1, 2, 3] as const).filter(r => !has(r));
+  const unranked = byOverall.filter(({ i }) => !result[i]!.optionRank);
+  missing.forEach((rank, k) => {
+    const target = unranked[k];
+    if (target) result[target.i] = { ...result[target.i]!, optionRank: rank };
+  });
+  return result;
+}
 
 let spinRequestId = 0;
 
@@ -245,9 +272,17 @@ export const useGameStore = create<GameStore>()(
           return;
         }
 
-        if (slot.player || draftState.draftedPlayers.includes(player.id)) {
+        if (slot.player || (draftState.draftedPlayers ?? []).includes(player.id)) {
           set({ draftState: { ...draftState, error: 'Player already drafted' } });
           notify.warning(`${player.name} is already on your roster.`);
+          return;
+        }
+        // Same person, different era (e.g. Lillard 10s vs 20s) counts as drafted.
+        const key = personKeyOf(player);
+        if ((draftState.draftedPersonKeys ?? []).includes(key)) {
+          const msg = `${player.name} is already on your roster (different era).`;
+          set({ draftState: { ...draftState, error: msg } });
+          notify.warning(msg);
           return;
         }
         if (!canPlayPosition(player, slot.position)) {
@@ -268,7 +303,8 @@ export const useGameStore = create<GameStore>()(
           draftState: {
             ...draftState,
             lineup: { slots: newSlots },
-            draftedPlayers: [...draftState.draftedPlayers, player.id],
+            draftedPlayers: [...(draftState.draftedPlayers ?? []), player.id],
+            draftedPersonKeys: [...(draftState.draftedPersonKeys ?? []), personKeyOf(player)],
             currentRound: nextRound,
             pool: null,
             spinResult: null,
@@ -289,8 +325,9 @@ export const useGameStore = create<GameStore>()(
         if (!slot?.player) return;
 
         const removedId = slot.player.id;
+        const removedKey = personKeyOf(slot.player);
         const newSlots = [...draftState.lineup.slots];
-        newSlots[slotIndex] = { ...slot, player: null, isSixthMan: false };
+        newSlots[slotIndex] = { ...slot, player: null, isSixthMan: false, optionRank: undefined };
 
         const filledCount = newSlots.filter(s => s.player).length;
 
@@ -298,7 +335,8 @@ export const useGameStore = create<GameStore>()(
           draftState: {
             ...draftState,
             lineup: { slots: newSlots },
-            draftedPlayers: draftState.draftedPlayers.filter(id => id !== removedId),
+            draftedPlayers: (draftState.draftedPlayers ?? []).filter(id => id !== removedId),
+            draftedPersonKeys: (draftState.draftedPersonKeys ?? []).filter(k => k !== removedKey),
             currentRound: Math.min(draftState.maxRounds, filledCount + 1),
             error: null,
           },
@@ -323,6 +361,28 @@ export const useGameStore = create<GameStore>()(
         notify.success(`${slot.player.name} is your Sixth Man.`);
       },
 
+      setOptionRank: (slotIndex, rank) => {
+        const { draftState } = get();
+        const slot = draftState.lineup.slots[slotIndex];
+        if (!slot || !slot.player) return;
+        // Toggle off when clicking the active rank; ranks stay unique.
+        const newSlots = draftState.lineup.slots.map((s, i) => {
+          if (i === slotIndex) return { ...s, optionRank: s.optionRank === rank ? undefined : (rank ?? undefined) };
+          if (rank != null && s.optionRank === rank) return { ...s, optionRank: undefined };
+          return s;
+        });
+        set({
+          draftState: {
+            ...draftState,
+            lineup: { slots: newSlots },
+            error: null,
+          },
+        });
+        if (rank != null && slot.optionRank !== rank && slot.player) {
+          notify.success(`${slot.player.name} is your ${rank === 1 ? '1st' : rank === 2 ? '2nd' : '3rd'} option.`);
+        }
+      },
+
       clearLineup: () => {
         spinRequestId++;
         const { draftState } = get();
@@ -331,6 +391,7 @@ export const useGameStore = create<GameStore>()(
             ...draftState,
             lineup: { slots: ROSTER_SLOTS.map(s => ({ position: s.position, player: null, role: s.role })) },
             draftedPlayers: [],
+            draftedPersonKeys: [],
             currentRound: 1,
             pool: null,
             spinResult: null,
@@ -362,6 +423,8 @@ export const useGameStore = create<GameStore>()(
             slots = slots.map((s, i) => ({ ...s, isSixthMan: i === sixthIdx }));
           }
         }
+        // Default 1st/2nd/3rd options to the best overall players if skipped.
+        slots = ensureOptions(slots);
         // Lineup locked — next stop is the season setup (era pick).
         set({ phase: 'season-setup', error: null, draftState: { ...draftState, lineup: { slots } } });
       },
@@ -375,13 +438,14 @@ export const useGameStore = create<GameStore>()(
         }
         const sixthSlot = draftState.lineup.slots.find(s => s.isSixthMan && s.player);
         const sixthManId = sixthSlot?.player?.id;
+        const options = getOptionsFromSlots(draftState.lineup.slots);
         set({ isLoading: true, error: null });
 
         try {
           const era = get().selectedEra ?? null;
-          const data = await api.simulation.runSeason(players, undefined, era, sixthManId);
+          const data = await api.simulation.runSeason(players, undefined, era, sixthManId, options);
 
-          set({ simulationResult: { ...(data.result as SimulationResult), sixthManId: sixthManId ?? null }, phase: 'results', isLoading: false });
+          set({ simulationResult: { ...(data.result as SimulationResult), sixthManId: sixthManId ?? null, optionIds: options }, phase: 'results', isLoading: false });
         } catch (error) {
           set({ error: error instanceof Error ? error.message : String(error), isLoading: false, phase: 'results' });
         }
@@ -398,10 +462,11 @@ export const useGameStore = create<GameStore>()(
         }
         const sixthSlot = draftState.lineup.slots.find(s => s.isSixthMan && s.player);
         const sixthManId = sixthSlot?.player?.id;
+        const options = getOptionsFromSlots(draftState.lineup.slots);
         set({ isLoading: true, error: null });
 
         try {
-          const data = await api.simulation.runVSMode(players, historicalTeamId, seriesLength, sixthManId);
+          const data = await api.simulation.runVSMode(players, historicalTeamId, seriesLength, sixthManId, options);
 
           set({
             vsMatchup: data.result as VSModeMatchup,
@@ -430,7 +495,7 @@ export const useGameStore = create<GameStore>()(
     }),
     {
       name: 'court-draft-sim-store',
-      version: 7,
+      version: 8,
       partialize: (state) => ({
         phase: state.phase === 'simulation' || state.phase === 'season-setup' ? 'draft' : state.phase,
         draftState: {
@@ -477,6 +542,15 @@ export const useGameStore = create<GameStore>()(
             const starters = lineup.slots.map(s => ({ ...s, role: 'starter' as const }));
             const bench = (['PG', 'SG', 'SF', 'PF', 'C'] as const).map(pos => ({ position: pos, player: null, role: 'bench' as const }));
             lineup.slots = [...starters, ...bench] as typeof lineup.slots;
+          }
+          // v7 -> v8: track same-person keys so other-era versions can't be drafted.
+          if (!Array.isArray(p.draftState.draftedPersonKeys)) {
+            const rawSlots = p.draftState.lineup as unknown as { slots?: Array<{ player?: { id: string; name: string } | null }> };
+            const slots = Array.isArray(rawSlots?.slots) ? rawSlots.slots : [];
+            p.draftState.draftedPersonKeys = slots
+              .map(s => s.player)
+              .filter((pl): pl is { id: string; name: string } => !!pl)
+              .map(pl => personKeyOf(pl));
           }
           if (typeof p.draftState.maxRounds !== 'number' || (p.draftState.maxRounds as number) < MAX_ROSTER_SIZE) {
             p.draftState.maxRounds = MAX_ROSTER_SIZE;

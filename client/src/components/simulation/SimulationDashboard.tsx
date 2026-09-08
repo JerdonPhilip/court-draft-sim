@@ -5,12 +5,14 @@ import {
   Award,
   BarChart2,
   Calendar,
+  ChevronLeft,
   ChevronRight,
   Flame,
   ListOrdered,
   RefreshCw,
   Search,
   Shield,
+  Sparkles,
   Target,
   TrendingDown,
   TrendingUp,
@@ -41,6 +43,7 @@ import {
   buildPlayoffTeams,
   buildSeasonAverageById,
   buildUserPlayoffLineup,
+  fullTeamName,
   getClutchPlayer,
   getPlayoffParticipants,
   getSeedLabel,
@@ -98,13 +101,14 @@ const STAT_COLORS: Record<keyof PlayerStats, string> = {
   pf: '#ff9f0a',
 };
 
-type SeasonView = 'overview' | 'games' | 'standings' | 'players' | 'league' | 'awards' | 'playoffs';
+type SeasonView = 'overview' | 'games' | 'standings' | 'players' | 'teams' | 'league' | 'awards' | 'playoffs';
 
 const SEASON_VIEWS: Array<{ id: SeasonView; label: string; Icon: typeof Trophy }> = [
   { id: 'overview', label: 'OVERVIEW', Icon: BarChart2 },
   { id: 'games', label: 'GAMES', Icon: Calendar },
   { id: 'standings', label: 'STANDINGS', Icon: ListOrdered },
   { id: 'players', label: 'MY TEAM', Icon: Target },
+  { id: 'teams', label: 'TEAMS', Icon: Shield },
   { id: 'league', label: 'LEAGUE STATS', Icon: Users },
   { id: 'awards', label: 'AWARDS', Icon: Award },
   { id: 'playoffs', label: 'PLAYOFFS', Icon: Trophy },
@@ -309,6 +313,7 @@ export function SimulationDashboard({ result, onNewDraft, onVSMode }: Simulation
           {view === 'games' && <GamesView result={result} onSelectGame={setSelectedGame} />}
           {view === 'standings' && <StandingsView result={result} />}
           {view === 'players' && <PlayersView result={result} />}
+          {view === 'teams' && <TeamsView result={result} />}
           {view === 'league' && <LeagueView result={result} />}
           {view === 'awards' && <AwardsView result={result} />}
           {/* Keep the bracket mounted (hidden) so tab switches never wipe winners or kill the background sim. */}
@@ -631,47 +636,196 @@ function GamesView({ result, onSelectGame }: { result: SimulationResult; onSelec
 // My team
 // ---------------------------------------------------------------------------
 
+interface RosterBadge {
+  label: string;
+  className: string;
+}
+
+function RosterTable({
+  groups,
+  badgeFor,
+}: {
+  groups: Array<{ label: string; rows: SimulatedPlayerStats[] }>;
+  badgeFor: (playerId: string) => RosterBadge[];
+}) {
+  const statKeys = Object.keys(STAT_LABELS) as Array<keyof PlayerStats>;
+  const total = groups.reduce((t, g) => t + g.rows.length, 0);
+  return (
+    <div className="card overflow-hidden">
+      <div className="overflow-x-auto">
+        <table className="w-full min-w-[560px] border-collapse text-sm">
+          <thead>
+            <tr className="text-left text-[10px] uppercase tracking-[0.14em] text-broadcast-text-muted">
+              <th scope="col" className="px-4 py-2.5 font-semibold">Player</th>
+              {statKeys.map((stat) => (
+                <th key={stat} scope="col" className="px-2 py-2.5 text-right font-semibold">
+                  {STAT_LABELS[stat]}
+                </th>
+              ))}
+              <th scope="col" className="px-4 py-2.5 text-right font-semibold">MPG</th>
+            </tr>
+          </thead>
+          {groups.map((group) => (
+            group.rows.length > 0 && (
+              <tbody key={group.label}>
+                <tr>
+                  <td colSpan={statKeys.length + 2} className="bg-white/[0.02] px-4 py-1.5 text-[10px] font-bold uppercase tracking-[0.18em] text-broadcast-text-muted">
+                    {group.label} • {total > 0 ? group.rows.length : 0}
+                  </td>
+                </tr>
+                {group.rows.map((player) => (
+                  <tr key={player.playerId} className="border-t border-white/5 transition-colors hover:bg-white/[0.03]">
+                    <td className="px-4 py-2.5">
+                      <div className="flex min-w-0 items-center gap-2">
+                        <span className="shrink-0 text-[10px] font-bold text-broadcast-text-muted">{player.position ?? ''}</span>
+                        <span className="truncate font-medium text-white" title={player.playerName}>
+                          {toCompactName(player.playerName)}
+                        </span>
+                        {badgeFor(player.playerId).map((b) => (
+                          <span key={b.label} className={`shrink-0 rounded-full border px-1.5 py-px text-[10px] font-bold ${b.className}`}>
+                            {b.label}
+                          </span>
+                        ))}
+                      </div>
+                      <div className="mt-0.5 text-[11px] text-broadcast-text-muted">
+                        {player.gamesPlayed} GP{typeof player.overall === 'number' ? ` • ${player.overall} OVR` : ''}
+                      </div>
+                    </td>
+                    {statKeys.map((stat) => (
+                      <td
+                        key={stat}
+                        className={`px-2 py-2.5 text-right font-mono tabular-nums ${stat === 'pts' ? 'font-bold text-broadcast-accent' : 'text-white'}`}
+                      >
+                        {player.averages[stat].toFixed(1)}
+                      </td>
+                    ))}
+                    <td className="px-4 py-2.5 text-right font-mono tabular-nums text-broadcast-text-secondary">
+                      {typeof player.minutesPerGame === 'number' ? player.minutesPerGame.toFixed(1) : '—'}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            )
+          ))}
+        </table>
+      </div>
+    </div>
+  );
+}
+
 function PlayersView({ result }: { result: SimulationResult }) {
+  const badgeFor = (playerId: string): RosterBadge[] => {
+    const badges: RosterBadge[] = [];
+    if (result.sixthManId === playerId) {
+      badges.push({ label: '6TH', className: 'border-broadcast-gold/50 bg-broadcast-gold/15 text-broadcast-gold' });
+    }
+    const opts = result.optionIds;
+    if (opts?.first === playerId) badges.push({ label: '1ST', className: 'border-broadcast-purple/50 bg-broadcast-purple/15 text-broadcast-purple' });
+    else if (opts?.second === playerId) badges.push({ label: '2ND', className: 'border-broadcast-purple/50 bg-broadcast-purple/15 text-broadcast-purple' });
+    else if (opts?.third === playerId) badges.push({ label: '3RD', className: 'border-broadcast-purple/50 bg-broadcast-purple/15 text-broadcast-purple' });
+    return badges;
+  };
   return (
     <div className="space-y-4">
-      {result.playerStats.map((player, index) => (
-        <div key={player.playerId} className="card p-4">
-          <div className="flex items-center gap-4">
-            <div className="w-14 h-14 rounded-xl bg-broadcast-accent/20 flex items-center justify-center font-bold text-broadcast-accent">
-              #{index + 1}
-            </div>
-            <div className="flex-1">
-              <h4 className="font-semibold text-white">
-                {player.playerName}
-                {player.position && (
-                  <span className="ml-2 text-xs font-bold text-broadcast-text-secondary">
-                    {player.position}
-                    {typeof player.overall === 'number' ? ` • ${player.overall} OVR` : ''}
+      <div className="flex items-center justify-between px-1">
+        <h3 className="text-xs font-bold uppercase tracking-[0.18em] text-broadcast-text-secondary">Rotation</h3>
+        <span className="text-xs text-broadcast-text-muted">{result.playerStats.length} players • {result.games.length} games</span>
+      </div>
+      <RosterTable
+        groups={[
+          { label: 'Starters', rows: result.playerStats.slice(0, 5) },
+          { label: 'Bench', rows: result.playerStats.slice(5, 10) },
+        ]}
+        badgeFor={badgeFor}
+      />
+    </div>
+  );
+}
+
+function TeamsView({ result }: { result: SimulationResult }) {
+  const teams = useMemo(() => {
+    const standings = result.standings ?? [];
+    const seen = new Set<string>();
+    const list: Array<{ name: string; wins?: number; losses?: number; pointDiff?: number }> = [];
+    for (const t of standings) {
+      if (t.isUser || seen.has(normalizeTeamName(t.team))) continue;
+      seen.add(normalizeTeamName(t.team));
+      list.push({ name: t.team, wins: t.wins, losses: t.losses, pointDiff: t.pointDiff });
+    }
+    if (list.length === 0) {
+      for (const p of result.opponentPlayerStats ?? []) {
+        const norm = normalizeTeamName(p.team);
+        if (!norm || seen.has(norm)) continue;
+        seen.add(norm);
+        list.push({ name: p.team ?? 'Opponent' });
+      }
+    }
+    return list;
+  }, [result]);
+  const [selected, setSelected] = useState<string | null>(null);
+  const active = teams.find((t) => t.name === selected) ?? teams[0] ?? null;
+  const activeIndex = active ? teams.findIndex((t) => t.name === active.name) : -1;
+  const goTeam = (dir: 1 | -1) => {
+    if (teams.length === 0) return;
+    const next = ((activeIndex < 0 ? 0 : activeIndex) + dir + teams.length) % teams.length;
+    setSelected(teams[next]!.name);
+  };
+  const roster = useMemo(() => {
+    if (!active) return [];
+    const norm = normalizeTeamName(active.name);
+    return (result.opponentPlayerStats ?? []).filter((p) => normalizeTeamName(p.team) === norm);
+  }, [result, active]);
+  return (
+    <div className="space-y-4">
+      <div className="card-elevated flex items-center gap-1 p-2">
+        <button
+          type="button"
+          onClick={() => goTeam(-1)}
+          disabled={teams.length < 2}
+          aria-label="Previous team"
+          className="shrink-0 rounded-lg p-2 text-broadcast-text-secondary transition-colors hover:bg-white/5 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-broadcast-accent disabled:cursor-not-allowed disabled:opacity-30"
+        >
+          <ChevronLeft className="h-5 w-5" aria-hidden="true" />
+        </button>
+        <div className="min-w-0 flex-1 text-center">
+          <div className="truncate font-display text-base font-bold text-white" title={active ? fullTeamName(active.name) : ''}>
+            {active ? fullTeamName(active.name) : 'Opponent'}
+          </div>
+          <div className="mt-0.5 text-xs text-broadcast-text-muted">
+            {active && active.wins !== undefined ? (
+              <>
+                {active.wins}-{active.losses}
+                {typeof active.pointDiff === 'number' && (
+                  <span className={`ml-2 font-semibold ${active.pointDiff >= 0 ? 'text-broadcast-green' : 'text-broadcast-red'}`}>
+                    {active.pointDiff >= 0 ? '+' : ''}{active.pointDiff.toFixed(1)}
                   </span>
                 )}
-              </h4>
-              <div className="text-sm text-broadcast-text-secondary">
-                {player.gamesPlayed} GP{typeof player.minutesPerGame === 'number' ? ` • ${player.minutesPerGame.toFixed(1)} MPG` : ''} •{' '}
-                {player.averages.pts.toFixed(1)} PPG • {player.averages.reb.toFixed(1)} RPG • {player.averages.ast.toFixed(1)} APG
-              </div>
-            </div>
-            <div className="text-right">
-              <div className="font-bold font-display text-broadcast-gold">{player.averages.pts.toFixed(1)}</div>
-              <div className="text-xs text-broadcast-text-muted">PPG</div>
-            </div>
-          </div>
-          <div className="mt-4 grid grid-cols-5 gap-4">
-            {(Object.keys(STAT_LABELS) as Array<keyof PlayerStats>).map((stat) => (
-              <div key={stat} className="text-center">
-                <div className="font-bold font-mono text-lg" style={{ color: STAT_COLORS[stat] }}>
-                  {player.averages[stat].toFixed(1)}
-                </div>
-                <div className="text-[10px] text-broadcast-text-muted uppercase">{STAT_LABELS[stat]}</div>
-              </div>
-            ))}
+                <span className="ml-2" aria-hidden="true">•</span>
+              </>
+            ) : null}
+            <span className="tabular-nums">{teams.length > 0 ? `${activeIndex + 1}/${teams.length}` : '0/0'}</span>
           </div>
         </div>
-      ))}
+        <button
+          type="button"
+          onClick={() => goTeam(1)}
+          disabled={teams.length < 2}
+          aria-label="Next team"
+          className="shrink-0 rounded-lg p-2 text-broadcast-text-secondary transition-colors hover:bg-white/5 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-broadcast-accent disabled:cursor-not-allowed disabled:opacity-30"
+        >
+          <ChevronRight className="h-5 w-5" aria-hidden="true" />
+        </button>
+      </div>
+      {active && (
+        <RosterTable
+          groups={[
+            { label: 'Starters', rows: roster.slice(0, 5) },
+            { label: 'Bench', rows: roster.slice(5, 10) },
+          ]}
+          badgeFor={() => []}
+        />
+      )}
+      {!active && <div className="card p-6 text-center text-sm text-broadcast-text-muted">No opponent data</div>}
     </div>
   );
 }
@@ -684,7 +838,7 @@ function AwardsView({ result }: { result: SimulationResult }) {
   const rows = useMemo(() => buildLeagueRows(result), [result]);
   const standings = useMemo(() => result.standings ?? [], [result.standings]);
 
-  const { mvp, clutch, dpoy, defensiveFirst, defensiveSecond, allNbaFirst, allNbaSecond, allNbaThird } = useMemo(() => {
+  const { mvp, clutch, dpoy, sixth, defensiveFirst, defensiveSecond, allNbaFirst, allNbaSecond, allNbaThird } = useMemo(() => {
     // Normalized join: standings carry display names ("1990s Chicago Bulls"),
     // rows may carry ids ("bulls") on old saves — compare normalized.
     const winPctByNorm = new Map(standings.map((t) => [normalizeTeamName(t.team), t.winPct ?? 0]));
@@ -700,6 +854,15 @@ function AwardsView({ result }: { result: SimulationResult }) {
       awardPool.slice().sort((a, b) => awardScore(b) + teamWinPct(b) * 10 - awardScore(a) - teamWinPct(a) * 10)[0] ?? null;
     const clutchRow = getClutchPlayer(result, rows);
     const dpoyRow = awardPool.slice().sort((a, b) => awardScore(b, true) - awardScore(a, true))[0] ?? null;
+    // Sixth Man: bench-minute players only (starters log ~30+, sixth ~22-24,
+    // bench ~14-17; legacy 5-man saves log 42-48). Same team-success weighting as MVP.
+    let sixthEligible = awardPool.filter((r) => r.mpg < 26);
+    if (sixthEligible.length === 0) {
+      const byMpg = awardPool.slice().sort((a, b) => a.mpg - b.mpg);
+      sixthEligible = byMpg.slice(0, Math.max(1, Math.floor(byMpg.length / 2)));
+    }
+    const sixthRow =
+      sixthEligible.slice().sort((a, b) => awardScore(b) + teamWinPct(b) * 10 - awardScore(a) - teamWinPct(a) * 10)[0] ?? null;
     const defFirst = selectTeam(rows, true);
     const defFirstKeys = new Set(defFirst.map((p) => p.rowKey));
     const defSecond = selectTeam(rows.filter((r) => !defFirstKeys.has(r.rowKey)), true);
@@ -712,6 +875,7 @@ function AwardsView({ result }: { result: SimulationResult }) {
       mvp: mvpRow,
       clutch: clutchRow,
       dpoy: dpoyRow,
+      sixth: sixthRow,
       defensiveFirst: defFirst,
       defensiveSecond: defSecond,
       allNbaFirst: first,
@@ -722,10 +886,17 @@ function AwardsView({ result }: { result: SimulationResult }) {
 
   return (
     <div className="space-y-4">
-      <div className="grid gap-3 md:grid-cols-3">
+      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
         <AwardCard title="MOST VALUABLE PLAYER" icon={Trophy} player={mvp} accent="text-broadcast-gold" />
         <AwardCard title="CLUTCH PLAYER OF THE YEAR" icon={Flame} player={clutch} accent="text-orange-400" />
         <AwardCard title="DEFENSIVE PLAYER OF THE YEAR" icon={Shield} player={dpoy} accent="text-blue-400" />
+        <AwardCard
+          title="SIXTH MAN OF THE YEAR"
+          icon={Sparkles}
+          player={sixth}
+          accent="text-broadcast-purple"
+          badge={sixth && result.sixthManId === sixth.playerId && sixth.isUser ? 'YOUR 6TH MAN' : null}
+        />
       </div>
       <div className="grid gap-3 lg:grid-cols-2">
         <AwardTeamCard title="ALL-DEFENSIVE FIRST TEAM" players={defensiveFirst} />
@@ -743,11 +914,13 @@ const AwardCard = memo(function AwardCard({
   icon: Icon,
   player,
   accent,
+  badge,
 }: {
   title: string;
   icon: typeof Trophy;
   player: LeagueRow | null;
   accent: string;
+  badge?: string | null;
 }) {
   return (
     <div className="card-elevated p-4">
@@ -759,6 +932,11 @@ const AwardCard = memo(function AwardCard({
         <div className="font-display text-xl font-bold text-white">{player?.playerName ?? '—'}</div>
         <div className="mt-1 text-xs text-broadcast-text-secondary">
           {player ? `${player.position ?? '—'} • ${player.isUser ? 'YOUR TEAM' : formatTeamName(player.team)}` : 'No eligible player'}
+          {badge && (
+            <span className="ml-2 rounded-full border border-broadcast-gold/50 bg-broadcast-gold/15 px-1.5 py-0.5 text-[10px] font-bold text-broadcast-gold">
+              {badge}
+            </span>
+          )}
         </div>
         {player && (
           <div className="mt-3 flex gap-4 text-xs text-broadcast-text-muted">
@@ -831,6 +1009,8 @@ async function simulateRealSeries(
   gameDelayMs = 250,
   homeSixthManId?: string | null,
   awaySixthManId?: string | null,
+  homeOptions?: { first?: string | null; second?: string | null; third?: string | null } | null,
+  awayOptions?: { first?: string | null; second?: string | null; third?: string | null } | null,
 ): Promise<{ homeWins: number; awayWins: number; games: PlayoffGameResult[] }> {
   // Higher seed hosts games 1, 2, 5, 7 — the bracket-home side.
   const hostsBracketHome = (n: number) => n === 1 || n === 2 || n === 5 || n === 7;
@@ -840,7 +1020,7 @@ async function simulateRealSeries(
   for (let n = 1; n <= 7; n++) {
     if (shouldAbort?.()) break;
     const hostsHome = hostsBracketHome(n);
-    const response = await api.simulation.runGame(hostsHome ? homeRoster : awayRoster, hostsHome ? awayRoster : homeRoster, n, hostsHome ? (homeSixthManId ?? null) : (awaySixthManId ?? null), hostsHome ? (awaySixthManId ?? null) : (homeSixthManId ?? null));
+    const response = await api.simulation.runGame(hostsHome ? homeRoster : awayRoster, hostsHome ? awayRoster : homeRoster, n, hostsHome ? (homeSixthManId ?? null) : (awaySixthManId ?? null), hostsHome ? (awaySixthManId ?? null) : (homeSixthManId ?? null), hostsHome ? (homeOptions ?? null) : (awayOptions ?? null), hostsHome ? (awayOptions ?? null) : (homeOptions ?? null));
     if (shouldAbort?.()) break;
     const game = alignGameToBracketSides(response.result, hostsHome);
     games.push(game);
@@ -964,6 +1144,11 @@ function PlayoffsView({
       team === userTeamName ? (result.sixthManId ?? null) : null,
     [result, userTeamName],
   );
+  const optionsFor = useCallback(
+    (team: string): { first?: string | null; second?: string | null; third?: string | null } | null =>
+      team === userTeamName ? (result.optionIds ?? null) : null,
+    [result, userTeamName],
+  );
   const drainRoundRef = useRef(-1);
 
   // BYE auto-advance: a real team vs BYE never needs a simulated game.
@@ -1020,7 +1205,7 @@ function PlayoffsView({
             try {
               const series = await simulateRealSeries(homeRoster, awayRoster, (gameNumber) => {
                 if (!simulationAborted.current) setBackgroundSimulation({ seriesKey: next, game: gameNumber });
-              }, undefined, 250, sixthFor(p.home), sixthFor(p.away));
+              }, undefined, 250, sixthFor(p.home), sixthFor(p.away), optionsFor(p.home), optionsFor(p.away));
               if (simulationAborted.current) break;
               games = series.games;
               winner =
@@ -1068,7 +1253,7 @@ function PlayoffsView({
       }
     };
     void drain();
-  }, [winners, hasStarted, allSeriesKeys, participantsFor, result, userTeamName, setWinner, roundReleased, rosterFor, sixthFor, onSeriesGames]);
+  }, [winners, hasStarted, allSeriesKeys, participantsFor, result, userTeamName, setWinner, roundReleased, rosterFor, sixthFor, optionsFor, onSeriesGames]);
 
   const runBackgroundPlayoffs = useCallback(async () => {
     // Initial sweep is now handled by the drain loop; this just kicks it and
@@ -1545,8 +1730,11 @@ function PlayoffsModal({
     [result, userTeamName, awayName],
   );
   const userSixthManId = result.sixthManId ?? null;
+  const userOptions = result.optionIds ?? null;
   const homeSixth = homeName === userTeamName ? userSixthManId : null;
   const awaySixth = awayName === userTeamName ? userSixthManId : null;
+  const homeOptions = homeName === userTeamName ? userOptions : null;
+  const awayOptions = awayName === userTeamName ? userOptions : null;
   const validPlayoffRoster = (r: Player[]) => r.length === 5 || r.length === 10;
   const lineupIssue = !validPlayoffRoster(lineup) || !validPlayoffRoster(opponent);
 
@@ -1595,7 +1783,7 @@ function PlayoffsModal({
       let runningAwayWins = awayWins;
       for (let index = startIndex; index < MAX_GAMES; index++) {
         if (abortRef.current) break;
-        const response = await api.simulation.runGame(lineup, opponent, index + 1, homeSixth, awaySixth);
+        const response = await api.simulation.runGame(lineup, opponent, index + 1, homeSixth, awaySixth, homeOptions, awayOptions);
         if (abortRef.current) break;
         const nextGame = response.result;
         // Live from 0-0: animate first, record only on the final buzzer.
@@ -1655,7 +1843,7 @@ function PlayoffsModal({
       setRunning(false);
       setLiveGame(null);
     }
-  }, [readOnly, lineup, opponent, running, completedGames.length, seriesDecided, homeWins, awayWins, lineupIssue, homeName, awayName, onSeriesComplete, homeSixth, awaySixth]);
+  }, [readOnly, lineup, opponent, running, completedGames.length, seriesDecided, homeWins, awayWins, lineupIssue, homeName, awayName, onSeriesComplete, homeSixth, awaySixth, homeOptions, awayOptions]);
 
   useLockBodyScroll(true);
 

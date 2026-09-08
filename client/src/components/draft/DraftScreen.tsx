@@ -18,12 +18,13 @@ export function DraftScreen() {
     rerollDecade,
     draftPlayer,
     setSixthMan,
+    setOptionRank,
     finalizeDraft,
     initializeDraft,
     isLoading,
   } = useGameStore();
 
-  const { pool, lineup, currentRound, maxRounds, teamSkip, decadeSkip, spinsLeft, draftedPlayers, isSpinning, spinResult } = draftState;
+  const { pool, lineup, currentRound, maxRounds, teamSkip, decadeSkip, spinsLeft, draftedPlayers, draftedPersonKeys, isSpinning, spinResult } = draftState;
   void spinResult;
 
   const filledPlayers = useMemo(
@@ -34,7 +35,11 @@ export function DraftScreen() {
     () => lineup.slots.find(s => s.isSixthMan && s.player)?.player?.id,
     [lineup]
   );
-  const teamStrength = calculateTeamStrength(filledPlayers, sixthManId);
+  const options = useMemo(() => {
+    const rankOf = (r: 1 | 2 | 3) => lineup.slots.find(s => s.optionRank === r && s.player)?.player?.id ?? null;
+    return { first: rankOf(1), second: rankOf(2), third: rankOf(3) };
+  }, [lineup]);
+  const teamStrength = calculateTeamStrength(filledPlayers, sixthManId, options);
   const projectedWins = getWinProjection(teamStrength);
 
   const emptyPositions = useMemo(
@@ -196,7 +201,8 @@ export function DraftScreen() {
             {pool ? (
               <PlayerPool
                 pool={pool}
-                draftedPlayerIds={draftedPlayers}
+                draftedPlayerIds={draftedPlayers ?? []}
+                draftedPersonKeys={draftedPersonKeys ?? []}
                 onDraftPlayer={(player) => handleDraftPlayer(player)}
                 onDragStartPlayer={setDraggedPlayer}
                 onDragEndPlayer={() => setDraggedPlayer(null)}
@@ -251,6 +257,7 @@ export function DraftScreen() {
               onSelectSlot={handleSelectSlot}
               onDropPlayer={handleDropToSlot}
               onSetSixthMan={setSixthMan}
+              onSetOption={setOptionRank}
             />
             </div>
           </div>

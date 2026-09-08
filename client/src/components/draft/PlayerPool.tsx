@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { cn, getPositionColor, formatHeight, splitPlayerName, fitNameSize } from '../../utils/helpers';
 import { FRANCHISES, DECADES } from '../../data/constants';
-import { canPlayPosition, getPlayerPositions } from '../../types/game';
+import { canPlayPosition, getPlayerPositions, personKeyOf } from '../../types/game';
 import type { LineupSlot, Player, Position } from '../../types/game';
 
 interface PlayerPoolProps {
@@ -12,6 +12,8 @@ interface PlayerPoolProps {
     decade: string;
   } | null;
   draftedPlayerIds: string[];
+  /** Same-person keys of drafted players — hides other-era versions. */
+  draftedPersonKeys?: string[];
   onDraftPlayer: (player: Player) => void;
   onDragStartPlayer: (player: Player) => void;
   onDragEndPlayer: () => void;
@@ -32,7 +34,7 @@ const POSITION_ORDER: Position[] = ['PG', 'SG', 'SF', 'PF', 'C'];
 
 type SortKey = 'overall' | 'pts' | 'name';
 
-export function PlayerPool({ pool, draftedPlayerIds, onDraftPlayer, onDragStartPlayer, onDragEndPlayer, emptyPositions, lineupSlots, selectedSlotPosition }: PlayerPoolProps) {
+export function PlayerPool({ pool, draftedPlayerIds, draftedPersonKeys, onDraftPlayer, onDragStartPlayer, onDragEndPlayer, emptyPositions, lineupSlots, selectedSlotPosition }: PlayerPoolProps) {
   const [posFilter, setPosFilter] = useState<Position | 'ALL'>('ALL');
   const [sortKey, setSortKey] = useState<SortKey>('overall');
 
@@ -42,8 +44,8 @@ export function PlayerPool({ pool, draftedPlayerIds, onDraftPlayer, onDragStartP
   }, [pool?.franchise, pool?.decade]);
 
   const availablePlayers = useMemo(
-    () => (pool ? pool.players.filter((p: Player) => !draftedPlayerIds.includes(p.id)) : []),
-    [pool, draftedPlayerIds]
+    () => (pool ? pool.players.filter((p: Player) => !draftedPlayerIds.includes(p.id) && !(draftedPersonKeys ?? []).includes(personKeyOf(p))) : []),
+    [pool, draftedPlayerIds, draftedPersonKeys]
   );
 
   const presentPositions = useMemo(

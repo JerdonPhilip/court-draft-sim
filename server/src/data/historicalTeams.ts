@@ -202,7 +202,7 @@ export const HISTORICAL_TEAMS: HistoricalTeam[] = [
       'shawn-marion-10s',
       'dirk-nowitzki-10s',
       'tyson-chandler-10s',
-      'jason-kidd-10s',
+      'deshawn-stevenson-00s',
       'brendan-haywood-10s',
       'peja-stojakovic-10s',
       'ian-mahinmi-10s',

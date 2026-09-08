@@ -59,6 +59,21 @@ export function canPlayPosition(player: Pick<Player, 'position' | 'secondaryPosi
   return getPlayerPositions(player).includes(slot);
 }
 
+/**
+ * Same-person key across eras: cards sharing a name (e.g. LeBron 00s/10s/20s)
+ * are the same player and can't share a roster. Known namesakes — same name,
+ * different people — resolve to their own id so they stay draftable together.
+ */
+const NAMESAKE_IDS = new Set([
+  'johnny-davis-20s', // Johnny Davis (b.2002), not the 1970s/80s guard
+  'gerald-henderson-10s', // Gerald Henderson Jr., not his father (1980s)
+]);
+
+export function personKeyOf(player: Pick<Player, 'id' | 'name'>): string {
+  if (NAMESAKE_IDS.has(player.id)) return `id:${player.id}`;
+  return `name:${player.name.trim().toLowerCase().replace(/\s+/g, ' ')}`;
+}
+
 export interface HistoricalTeam {
   id: string;
   name: string;
@@ -95,6 +110,17 @@ export interface GameSimulationInput {
   homeSixthManId?: string | null;
   /** 10-man rotation: player ID of the away Sixth Man (must be bench index 5-9). */
   awaySixthManId?: string | null;
+  /** Offensive pecking order — 1st/2nd/3rd options get usage priority + scoring bumps. */
+  homeOptions?: OffensiveOptions | null;
+  /** Offensive pecking order for the away side. */
+  awayOptions?: OffensiveOptions | null;
+}
+
+/** 1st/2nd/3rd offensive options by player ID. IDs must be unique roster members. */
+export interface OffensiveOptions {
+  first?: string | null;
+  second?: string | null;
+  third?: string | null;
 }
 
 export interface GameSimulationOutput {

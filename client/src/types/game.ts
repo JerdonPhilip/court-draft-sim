@@ -48,6 +48,22 @@ export function canPlayPosition(player: Pick<Player, 'position' | 'secondaryPosi
   return getPlayerPositions(player).includes(slot);
 }
 
+/**
+ * Same-person key across eras: cards sharing a name (e.g. Lillard 10s/20s)
+ * are the same player and can't share a roster. Known namesakes — same name,
+ * different people — resolve to their own id so they stay draftable together.
+ * Must stay in sync with the server copy in server/src/types/game.ts.
+ */
+const NAMESAKE_IDS = new Set([
+  'johnny-davis-20s', // Johnny Davis (b.2002), not the 1970s/80s guard
+  'gerald-henderson-10s', // Gerald Henderson Jr., not his father (1980s)
+]);
+
+export function personKeyOf(player: Pick<Player, 'id' | 'name'>): string {
+  if (NAMESAKE_IDS.has(player.id)) return `id:${player.id}`;
+  return `name:${player.name.trim().toLowerCase().replace(/\s+/g, ' ')}`;
+}
+
 export interface HistoricalTeam {
   id: string;
   name: string;
@@ -71,6 +87,15 @@ export interface LineupSlot {
   role: 'starter' | 'bench';
   /** Exactly one bench slot should carry this once the roster is full. */
   isSixthMan?: boolean;
+  /** 1st/2nd/3rd offensive option. Ranks must be unique across the roster. */
+  optionRank?: 1 | 2 | 3;
+}
+
+/** 1st/2nd/3rd offensive options by player ID. */
+export interface OffensiveOptions {
+  first?: string | null;
+  second?: string | null;
+  third?: string | null;
 }
 
 export interface Lineup {
@@ -98,6 +123,8 @@ export interface DraftState {
   decadeSkip: DecadeSkip;
   spinsLeft: number;
   draftedPlayers: string[];
+  /** Same-person keys of drafted players — blocks other-era versions of the same player. */
+  draftedPersonKeys: string[];
   availablePools: DraftPool[];
   isSpinning: boolean;
   spinResult: { franchise: string; decade: string } | null;
@@ -122,6 +149,8 @@ export interface SimulationResult {
   teamStrength?: number;
   /** Player ID of the Sixth Man (bench) if the season was simulated with a 10-man rotation. */
   sixthManId?: string | null;
+  /** 1st/2nd/3rd offensive options used for the season sim. */
+  optionIds?: OffensiveOptions | null;
   /** Null = default mixed modern league. */
   era: { id: string; label: string } | null;
   games: GameResult[];

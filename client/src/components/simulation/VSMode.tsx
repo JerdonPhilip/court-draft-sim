@@ -28,7 +28,12 @@ export function VSModeScreen({ onBack }: VSModeScreenProps) {
 
   const lineup = draftState.lineup.slots.map(s => s.player).filter((p): p is Player => p !== null);
   const sixthManId = draftState.lineup.slots.find(s => s.isSixthMan && s.player)?.player?.id;
-  const teamStrength = calculateTeamStrength(lineup, sixthManId);
+  const rankOf = (id: string) => draftState.lineup.slots.find(s => s.player?.id === id)?.optionRank;
+  const options = (() => {
+    const r = (rank: 1 | 2 | 3) => draftState.lineup.slots.find(s => s.optionRank === rank && s.player)?.player?.id ?? null;
+    return { first: r(1), second: r(2), third: r(3) };
+  })();
+  const teamStrength = calculateTeamStrength(lineup, sixthManId, options);
   const projectedWins = getWinProjection(teamStrength);
 
   useEffect(() => {
@@ -175,6 +180,15 @@ export function VSModeScreen({ onBack }: VSModeScreenProps) {
                         {player.name}
                         {sixthManId === player.id && (
                           <span className="ml-2 rounded-full border border-broadcast-gold/50 bg-broadcast-gold/15 px-1.5 py-0.5 text-[10px] font-bold text-broadcast-gold">6TH MAN</span>
+                        )}
+                        {rankOf(player.id) === 1 && (
+                          <span className="ml-2 rounded-full border border-broadcast-purple/50 bg-broadcast-purple/15 px-1.5 py-0.5 text-[10px] font-bold text-broadcast-purple">1ST OPT</span>
+                        )}
+                        {rankOf(player.id) === 2 && (
+                          <span className="ml-2 rounded-full border border-broadcast-purple/50 bg-broadcast-purple/15 px-1.5 py-0.5 text-[10px] font-bold text-broadcast-purple">2ND OPT</span>
+                        )}
+                        {rankOf(player.id) === 3 && (
+                          <span className="ml-2 rounded-full border border-broadcast-purple/50 bg-broadcast-purple/15 px-1.5 py-0.5 text-[10px] font-bold text-broadcast-purple">3RD OPT</span>
                         )}
                       </div>
                       <div className="text-xs text-broadcast-text-secondary">{player.team.toUpperCase()} • {player.decade} • {player.overall} OVR</div>

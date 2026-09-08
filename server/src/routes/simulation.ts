@@ -5,7 +5,7 @@ import { simulateSeason, getTeamStrength, getBaseTeamImpact, strengthVsLeague, c
 import { DEFAULT_SIMULATION_CONFIG, SIMULATION_CONSTANTS, LEAGUE_AVG_IMPACT } from '../services/constants.js';
 import { getEraLeague, getAllEraLeagues } from '../services/eraRosters.js';
 import { DECADES } from '../data/constants.js';
-import { Player, Position, getPlayerPositions } from '../types/game.js';
+import { Player, Position, getPlayerPositions, personKeyOf } from '../types/game.js';
 import { getAllHistoricalTeams } from '../data/historicalTeams.js';
 import { randomInt } from 'node:crypto';
 
@@ -100,6 +100,27 @@ function lineupCoversAllPositions(lineup: Array<{ position: Position; secondaryP
 
 const sixthManSchema = z.string().min(1).max(100).nullable().optional();
 
+const optionsSchema = z.object({
+  first: z.string().min(1).max(100).nullable().optional(),
+  second: z.string().min(1).max(100).nullable().optional(),
+  third: z.string().min(1).max(100).nullable().optional(),
+}).optional();
+
+/** Options must reference unique roster members. */
+function validateOptions(
+  options: { first?: string | null; second?: string | null; third?: string | null } | null | undefined,
+  players: Player[]
+): string | null {
+  if (!options) return null;
+  const ids = [options.first, options.second, options.third].filter((id): id is string => !!id);
+  if (new Set(ids).size !== ids.length) return 'Options must be unique players';
+  const roster = new Set(players.map(p => p.id));
+  for (const id of ids) {
+    if (!roster.has(id)) return 'Options must be roster members';
+  }
+  return null;
+}
+
 const lineupSchema = z.array(playerSchema).min(5).max(10)
   .refine(
     (lineup) => lineup.length === 5 || lineup.length === 10,
@@ -108,6 +129,10 @@ const lineupSchema = z.array(playerSchema).min(5).max(10)
   .refine(
     (lineup) => new Set(lineup.map(p => p.id)).size === lineup.length,
     { message: 'Lineup must have unique players' }
+  )
+  .refine(
+    (lineup) => new Set(lineup.map(p => personKeyOf(p))).size === lineup.length,
+    { message: 'Lineup must not contain the same player twice (different eras count as the same player)' }
   )
   .refine(
     (lineup) => lineupCoversAllPositions(lineup),
@@ -120,6 +145,8 @@ const simulateSeasonSchema = z.object({
   era: z.enum(DECADES.map(d => d.id) as unknown as [string, ...string[]]).optional(),
   // 10-man rotation Sixth Man (must be a bench player ID when provided).
   sixthManId: sixthManSchema,
+  // 1st/2nd/3rd offensive options (must be unique roster members).
+  options: optionsSchema,
   config: z.object({
     variance: z.number().finite().min(0).max(1).optional(),
     homeCourtAdvantage: z.number().finite().min(0).max(0.2).optional(),
@@ -133,6 +160,8 @@ const simulateGameSchema = z.object({
   awayTeam: lineupSchema,
   homeSixthManId: sixthManSchema,
   awaySixthManId: sixthManSchema,
+  homeOptions: optionsSchema,
+  awayOptions: optionsSchema,
   // 1-based game number within a best-of-7 (coaching adaptation past Game 1).
   seriesGameNumber: z.number().int().min(1).max(7).optional(),
 });
@@ -140,6 +169,7 @@ const simulateGameSchema = z.object({
 const vsModeSchema = z.object({
   userLineup: lineupSchema,
   sixthManId: sixthManSchema,
+  options: optionsSchema,
   historicalTeamId: z.string().min(1).max(50),
   seriesLength: z.union([z.literal(1), z.literal(7)]),
 });
@@ -166,12 +196,16 @@ router.post('/season', seasonLimiter, (req: Request, res: Response) => {
     return res.status(400).json({ error: 'Invalid request', details: result.error.flatten() });
   }
 
-  const { lineup, era, config, sixthManId } = result.data;
+  const { lineup, era, config, sixthManId, options } = result.data;
   const players = lineup as Player[];
 
   // Sixth Man must be a bench player (indices 5-9) in 10-man rotations.
   if (sixthManId && players.length === 10 && !players.slice(5, 10).some(p => p.id === sixthManId)) {
     return res.status(400).json({ error: 'sixthManId must be a bench player (roster spots 6-10)' });
+  }
+  const optionsError = validateOptions(options, players);
+  if (optionsError) {
+    return res.status(400).json({ error: optionsError });
   }
 
   // Era season: real historical lineups from that decade. Default: the
@@ -196,14 +230,14 @@ router.post('/season', seasonLimiter, (req: Request, res: Response) => {
   }
   const simulationConfig = { ...DEFAULT_SIMULATION_CONFIG, ...config };
 
-  const seasonResult = simulateSeason(players, opponentPool, simulationConfig, opponentNames, sixthManId ?? null);
-  const teamStrength = getTeamStrength(players, sixthManId ?? null);
+  const seasonResult = simulateSeason(players, opponentPool, simulationConfig, opponentNames, sixthManId ?? null, options ?? null);
+  const teamStrength = getTeamStrength(players, sixthManId ?? null, options ?? null);
   // Project against the league actually played: era leagues differ in
   // strength (a 60s season is easier than a modern one), so the same
   // roster projects differently per era.
   const effectiveStrength = eraAvgImpact === undefined
     ? teamStrength
-    : strengthVsLeague(getBaseTeamImpact(players, sixthManId ?? null), eraAvgImpact);
+    : strengthVsLeague(getBaseTeamImpact(players, sixthManId ?? null, options ?? null), eraAvgImpact);
   const projectedWins = calculateNonLinearWinCurve(effectiveStrength);
 
   const formattedResult = {
@@ -300,11 +334,21 @@ router.post('/game', gameLimiter, (req: Request, res: Response) => {
     return res.status(400).json({ error: 'Invalid request', details: result.error.flatten() });
   }
 
-  const { homeTeam, awayTeam, seriesGameNumber, homeSixthManId, awaySixthManId } = result.data;
+  const { homeTeam, awayTeam, seriesGameNumber, homeSixthManId, awaySixthManId, homeOptions, awayOptions } = result.data;
+  const homePlayers = homeTeam as Player[];
+  const awayPlayers = awayTeam as Player[];
+  const homeOptionsError = validateOptions(homeOptions, homePlayers);
+  if (homeOptionsError) {
+    return res.status(400).json({ error: homeOptionsError });
+  }
+  const awayOptionsError = validateOptions(awayOptions, awayPlayers);
+  if (awayOptionsError) {
+    return res.status(400).json({ error: awayOptionsError });
+  }
   try {
     const gameResult = simulateSingleGame({
-      homeTeam: homeTeam as Player[],
-      awayTeam: awayTeam as Player[],
+      homeTeam: homePlayers,
+      awayTeam: awayPlayers,
       // Neutral court: the playoff modal always passes you as homeTeam, so any
       // home edge would inflate your win odds every game. Venue alternation is
       // handled caller-side; this series stays fair.
@@ -312,6 +356,8 @@ router.post('/game', gameLimiter, (req: Request, res: Response) => {
       seriesGameNumber,
       homeSixthManId: homeSixthManId ?? null,
       awaySixthManId: awaySixthManId ?? null,
+      homeOptions: homeOptions ?? null,
+      awayOptions: awayOptions ?? null,
     });
 
     res.json({
@@ -337,7 +383,7 @@ router.post('/vs-mode', vsLimiter, (req: Request, res: Response) => {
     return res.status(400).json({ error: 'Invalid request', details: result.error.flatten() });
   }
 
-  const { userLineup, historicalTeamId, seriesLength, sixthManId } = result.data;
+  const { userLineup, historicalTeamId, seriesLength, sixthManId, options } = result.data;
   const historicalTeam = getAllHistoricalTeams().find(t => t.id === historicalTeamId);
 
   if (!historicalTeam) {
@@ -350,8 +396,13 @@ router.post('/vs-mode', vsLimiter, (req: Request, res: Response) => {
 
   const historicalLineup = historicalTeam.players.slice(0, 10) as Player[];
   const userSixth = sixthManId ?? null;
+  const userOptions = options ?? null;
   if (userSixth && (userLineup as Player[]).length === 10 && !(userLineup as Player[]).slice(5, 10).some(p => p.id === userSixth)) {
     return res.status(400).json({ error: 'sixthManId must be a bench player (roster spots 6-10)' });
+  }
+  const userOptionsError = validateOptions(userOptions, userLineup as Player[]);
+  if (userOptionsError) {
+    return res.status(400).json({ error: userOptionsError });
   }
 
   const seriesResults = [];
@@ -369,6 +420,8 @@ router.post('/vs-mode', vsLimiter, (req: Request, res: Response) => {
       seriesGameNumber: seriesLength === 7 ? gameNum : undefined,
       homeSixthManId: isHome ? userSixth : null,
       awaySixthManId: isHome ? null : userSixth,
+      homeOptions: isHome ? userOptions : null,
+      awayOptions: isHome ? null : userOptions,
     });
 
     const userScore = isHome ? gameResult.homeScore : gameResult.awayScore;
@@ -408,7 +461,7 @@ router.post('/vs-mode', vsLimiter, (req: Request, res: Response) => {
 
   res.json({
     result: {
-      userLineup: { slots: (userLineup as Player[]).map((p, i) => ({ position: p.position, player: p, role: i < 5 ? 'starter' : 'bench', ...(userSixth && p.id === userSixth ? { isSixthMan: true } : {}) })) },
+      userLineup: { slots: (userLineup as Player[]).map((p, i) => ({ position: p.position, player: p, role: i < 5 ? 'starter' : 'bench', ...(userSixth && p.id === userSixth ? { isSixthMan: true } : {}), ...(userOptions?.first === p.id ? { optionRank: 1 as const } : userOptions?.second === p.id ? { optionRank: 2 as const } : userOptions?.third === p.id ? { optionRank: 3 as const } : {}) })) },
       historicalTeam: {
         id: historicalTeam.id,
         name: historicalTeam.name,

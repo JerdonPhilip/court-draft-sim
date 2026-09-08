@@ -205,6 +205,23 @@ export const BENCH_WEIGHT = 0.35;
 export const SIXTH_WEIGHT = 0.65;
 export const SIXTH_TEAM_BOOST = 1.015;
 
+/** 1st/2nd/3rd-option scoring bumps (applied to the PTS component). */
+export const OPTION_PTS_BOOST: Record<number, number> = { 1: 1.08, 2: 1.04, 3: 1.02 };
+
+export interface OptionRanks {
+  first?: string | null;
+  second?: string | null;
+  third?: string | null;
+}
+
+function optionRankOf(playerId: string, options: OptionRanks | null | undefined): 1 | 2 | 3 | undefined {
+  if (!options) return undefined;
+  if (options.first && playerId === options.first) return 1;
+  if (options.second && playerId === options.second) return 2;
+  if (options.third && playerId === options.third) return 3;
+  return undefined;
+}
+
 function rotationWeight(index: number, playerId: string, sixthManId: string | null | undefined, totalLen: number): number {
   if (totalLen <= 5) return 1;
   if (index < 5) return 1;
@@ -221,8 +238,8 @@ function rotationDivisor(players: StrengthInput[], sixthManId: string | null | u
   return div > 0 ? div : 5;
 }
 
-export function getBaseTeamImpact(players: StrengthInput[], sixthManId?: string | null): number {
-  const impacts: Array<{ impact: number; usage: number }> = [];
+export function getBaseTeamImpact(players: StrengthInput[], sixthManId?: string | null, options?: OptionRanks | null): number {
+  const impacts: Array<{ impact: number; usage: number; rank?: 1 | 2 | 3 }> = [];
   const primaries = new Set<string>();
   const assigned = new Array<string | undefined>(players.length).fill(undefined);
   const taken = new Set<string>();
@@ -260,7 +277,8 @@ export function getBaseTeamImpact(players: StrengthInput[], sixthManId?: string 
     const eff = traitEfficiency(p);
     const proneness = traitFoulProneness(p);
     const discMod = proneness < 40 ? 1.02 : proneness > 65 ? 1.05 : 1;
-    const pts = norm(p.stats.pts) * w.pts * STAT_SHARE.pts * curve * eff;
+    const rank = optionRankOf((p as { id?: string }).id ?? String(i), options);
+    const pts = norm(p.stats.pts) * w.pts * STAT_SHARE.pts * curve * eff * (rank ? (OPTION_PTS_BOOST[rank] ?? 1) : 1);
     const defense =
       (norm(p.stats.stl) * w.stl * STAT_SHARE.stl + norm(p.stats.blk) * w.blk * STAT_SHARE.blk * blkF) * curve * eff * discMod;
     const rest =
@@ -269,11 +287,11 @@ export function getBaseTeamImpact(players: StrengthInput[], sixthManId?: string 
     const slot = assigned[i];
     if (slot && slot !== p.position) impact *= 0.95;
     impact *= rotationWeight(i, (p as { id?: string }).id ?? String(i), sixthManId, players.length);
-    impacts.push({ impact, usage: traitUsage(p) });
+    impacts.push({ impact, usage: traitUsage(p), rank });
     primaries.add(p.position);
   });
   if (impacts.length === 0) return 0;
-  impacts.sort((a, b) => b.impact - a.impact);
+  impacts.sort((a, b) => (a.rank ?? 99) - (b.rank ?? 99) || b.impact - a.impact);
   let total = 0;
   for (let i = 0; i < impacts.length; i++) {
     total += impacts[i]!.impact * (STAR_USAGE_BONUS[i] ?? 1);
@@ -300,9 +318,9 @@ export function getBaseTeamImpact(players: StrengthInput[], sixthManId?: string 
   return total * (counted / fullSize);
 }
 
-export function calculateTeamStrength(players: StrengthInput[], sixthManId?: string | null): number {
+export function calculateTeamStrength(players: StrengthInput[], sixthManId?: string | null, options?: OptionRanks | null): number {
   if (players.length === 0) return 0;
-  const base = getBaseTeamImpact(players, sixthManId);
+  const base = getBaseTeamImpact(players, sixthManId, options);
   return Math.max(0, Math.min(100, Math.round(50 + (base - LEAGUE_AVG_IMPACT) * IMPACT_TO_STRENGTH)));
 }
 

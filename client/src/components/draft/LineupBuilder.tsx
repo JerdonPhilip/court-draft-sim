@@ -13,9 +13,10 @@ interface SlotProps {
   onSelect: (index: number) => void;
   onDropPlayer: (player: Player, slotIndex: number) => void;
   onSetSixthMan: (index: number) => void;
+  onSetOption: (index: number, rank: 1 | 2 | 3 | null) => void;
 }
 
-function Slot({ slot, index, isSelected, draggedPlayer, onSelect, onDropPlayer, onSetSixthMan }: SlotProps) {
+function Slot({ slot, index, isSelected, draggedPlayer, onSelect, onDropPlayer, onSetSixthMan, onSetOption }: SlotProps) {
   const hasPlayer = !!slot.player;
   const expectedPos = slot.position;
   const roleLabel = slot.role === 'bench' ? 'Bench' : 'Starter';
@@ -135,6 +136,9 @@ function Slot({ slot, index, isSelected, draggedPlayer, onSelect, onDropPlayer, 
                 {slot.isSixthMan && (
                   <><span aria-hidden="true"> • </span><span className="font-bold text-broadcast-gold">6TH MAN</span></>
                 )}
+                {slot.optionRank && (
+                  <><span aria-hidden="true"> • </span><span className="font-bold text-broadcast-purple">{slot.optionRank === 1 ? '1ST OPT' : slot.optionRank === 2 ? '2ND OPT' : '3RD OPT'}</span></>
+                )}
               </p>
               <p className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-broadcast-text-secondary">
                 <span className="whitespace-nowrap font-semibold text-broadcast-text-primary">{slot.player.team.toUpperCase()}</span>
@@ -173,6 +177,28 @@ function Slot({ slot, index, isSelected, draggedPlayer, onSelect, onDropPlayer, 
                 </button>
               </div>
             )}
+            <div className="px-6 pb-4">
+              <div className="flex items-center gap-2" role="group" aria-label={`Offensive option for ${slot.player.name}`}>
+                <span className="text-[11px] font-bold uppercase tracking-wider text-broadcast-text-muted">Option</span>
+                {([1, 2, 3] as const).map(rank => (
+                  <button
+                    key={rank}
+                    type="button"
+                    onClick={() => onSetOption(index, slot.optionRank === rank ? null : rank)}
+                    aria-pressed={slot.optionRank === rank}
+                    title={rank === 1 ? '1st option — carries the offense (+8% scoring, top usage)' : rank === 2 ? '2nd option (+4% scoring)' : '3rd option (+2% scoring)'}
+                    className={cn(
+                      'h-7 w-7 rounded-lg border text-xs font-bold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-broadcast-purple',
+                      slot.optionRank === rank
+                        ? 'border-broadcast-purple/60 bg-broadcast-purple/20 text-broadcast-purple'
+                        : 'border-white/10 bg-white/5 text-broadcast-text-secondary hover:border-broadcast-purple/50 hover:text-broadcast-purple'
+                    )}
+                  >
+                    {rank}
+                  </button>
+                ))}
+              </div>
+            </div>
           </div>
         ) : (
           <button
@@ -218,14 +244,16 @@ interface LineupBuilderProps {
   onSelectSlot: (index: number) => void;
   onDropPlayer: (player: Player, slotIndex: number) => void;
   onSetSixthMan: (index: number) => void;
+  onSetOption: (index: number, rank: 1 | 2 | 3 | null) => void;
 }
 
-export function LineupBuilder({ lineup, selectedSlot, draggedPlayer, onSelectSlot, onDropPlayer, onSetSixthMan }: LineupBuilderProps) {
+export function LineupBuilder({ lineup, selectedSlot, draggedPlayer, onSelectSlot, onDropPlayer, onSetSixthMan, onSetOption }: LineupBuilderProps) {
   const filled = lineup.filter(s => s.player).length;
   const total = lineup.length || 10;
   const starters = lineup.slice(0, 5);
   const bench = lineup.slice(5, 10);
   const sixthSet = lineup.some(s => s.isSixthMan && s.player);
+  const optionsSet = [1, 2, 3].every(r => lineup.some(s => s.optionRank === r && s.player));
   const renderSlot = (slot: LineupSlot, index: number) => (
     <Slot
       key={`${slot.position}-${slot.role ?? (index < 5 ? 'starter' : 'bench')}-${index}`}
@@ -236,14 +264,17 @@ export function LineupBuilder({ lineup, selectedSlot, draggedPlayer, onSelectSlo
       onSelect={onSelectSlot}
       onDropPlayer={onDropPlayer}
       onSetSixthMan={onSetSixthMan}
+      onSetOption={onSetOption}
     />
   );
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between gap-3">
         <h2 className="section-title font-display text-xl">YOUR LINEUP ({filled}/{total})</h2>
-        {filled >= 5 && !sixthSet && (
-          <span className="text-xs font-bold text-broadcast-gold">PICK A 6TH MAN ↓</span>
+        {filled >= 5 && (!sixthSet || !optionsSet) && (
+          <span className="text-xs font-bold text-broadcast-gold">
+            {!sixthSet && !optionsSet ? 'PICK A 6TH MAN + OPTIONS ↓' : !sixthSet ? 'PICK A 6TH MAN ↓' : 'PICK OPTIONS 1-3 ↓'}
+          </span>
         )}
       </div>
 

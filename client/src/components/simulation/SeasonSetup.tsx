@@ -37,6 +37,17 @@ export function SeasonSetup({ onBack }: SeasonSetupProps) {
     .map(s => s.player)
     .filter((p): p is Player => p !== null);
 
+  const badgeFor = (id: string): string | null => {
+    const slot = draftState.lineup.slots.find(s => s.player?.id === id);
+    if (!slot) return null;
+    const tags: string[] = [];
+    if (slot.isSixthMan) tags.push('6TH');
+    if (slot.optionRank === 1) tags.push('1ST');
+    else if (slot.optionRank === 2) tags.push('2ND');
+    else if (slot.optionRank === 3) tags.push('3RD');
+    return tags.length > 0 ? tags.join(' • ') : null;
+  };
+
   const selectedLabel = selectedEra === null
     ? 'Mixed League'
     : eras.find(e => e.id === selectedEra)?.label ?? selectedEra;
@@ -74,6 +85,11 @@ export function SeasonSetup({ onBack }: SeasonSetupProps) {
                 {p.position}
               </span>
               {p.name}
+              {badgeFor(p.id) && (
+                <span className="rounded-full border border-broadcast-gold/50 bg-broadcast-gold/15 px-1.5 py-0.5 text-[10px] font-bold text-broadcast-gold">
+                  {badgeFor(p.id)}
+                </span>
+              )}
             </span>
           ))}
         </div>

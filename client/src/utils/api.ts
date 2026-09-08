@@ -146,22 +146,22 @@ export const api = {
   },
 
   simulation: {
-    runSeason: (lineup: Player[], config?: Record<string, number>, era?: string | null, sixthManId?: string | null) =>
+    runSeason: (lineup: Player[], config?: Record<string, number>, era?: string | null, sixthManId?: string | null, options?: { first?: string | null; second?: string | null; third?: string | null } | null) =>
       fetchAPI<{ result: SimulationResult }>('/simulation/season', {
         method: 'POST',
-        body: JSON.stringify({ lineup, config, ...(era ? { era } : {}), ...(sixthManId ? { sixthManId } : {}) }),
+        body: JSON.stringify({ lineup, config, ...(era ? { era } : {}), ...(sixthManId ? { sixthManId } : {}), ...(options ? { options } : {}) }),
       }, 30000),
-    runGame: (homeTeam: Player[], awayTeam: Player[], seriesGameNumber?: number, homeSixthManId?: string | null, awaySixthManId?: string | null) =>
+    runGame: (homeTeam: Player[], awayTeam: Player[], seriesGameNumber?: number, homeSixthManId?: string | null, awaySixthManId?: string | null, homeOptions?: { first?: string | null; second?: string | null; third?: string | null } | null, awayOptions?: { first?: string | null; second?: string | null; third?: string | null } | null) =>
       withRetry(() =>
         fetchAPI<{ result: PlayoffGameResult }>('/simulation/game', {
           method: 'POST',
-          body: JSON.stringify({ homeTeam, awayTeam, ...(seriesGameNumber !== undefined ? { seriesGameNumber } : {}), ...(homeSixthManId ? { homeSixthManId } : {}), ...(awaySixthManId ? { awaySixthManId } : {}) }),
+          body: JSON.stringify({ homeTeam, awayTeam, ...(seriesGameNumber !== undefined ? { seriesGameNumber } : {}), ...(homeSixthManId ? { homeSixthManId } : {}), ...(awaySixthManId ? { awaySixthManId } : {}), ...(homeOptions ? { homeOptions } : {}), ...(awayOptions ? { awayOptions } : {}) }),
         }),
       ),
-    runVSMode: (userLineup: Player[], historicalTeamId: string, seriesLength: 1 | 7, sixthManId?: string | null) =>
+    runVSMode: (userLineup: Player[], historicalTeamId: string, seriesLength: 1 | 7, sixthManId?: string | null, options?: { first?: string | null; second?: string | null; third?: string | null } | null) =>
       fetchAPI<{ result: VSModeMatchup }>('/simulation/vs-mode', {
         method: 'POST',
-        body: JSON.stringify({ userLineup, historicalTeamId, seriesLength, ...(sixthManId ? { sixthManId } : {}) }),
+        body: JSON.stringify({ userLineup, historicalTeamId, seriesLength, ...(sixthManId ? { sixthManId } : {}), ...(options ? { options } : {}) }),
       }, 30000),
     getHistoricalTeams: () =>
       fetchAPI<{ teams: HistoricalTeam[] }>('/simulation/historical-teams'),
