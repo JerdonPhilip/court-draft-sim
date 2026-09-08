@@ -56,6 +56,16 @@ const playerSchema = z.object({
   stats: playerStatsSchema,
   overall: z.number().finite().min(0).max(100),
   archetype: z.string().min(1).max(50),
+  pace: z.number().finite().min(80).max(115).optional(),
+  tsPct: z.number().finite().min(0.3).max(0.75).optional(),
+  tov: z.number().finite().min(0).max(8).optional(),
+  usageRate: z.number().finite().min(0).max(45).optional(),
+  defRating: z.number().finite().min(40).max(100).optional(),
+  clutch: z.number().finite().min(40).max(100).optional(),
+  ftr: z.number().finite().min(0).max(0.8).optional(),
+  ftPct: z.number().finite().min(0.3).max(1).optional(),
+  threePar: z.number().finite().min(0).max(0.7).optional(),
+  foulProneness: z.number().finite().min(1).max(100).optional(),
 });
 
 // A legal lineup covers all 5 slots counting versatility (bipartite match),
@@ -107,6 +117,8 @@ const simulateSeasonSchema = z.object({
 const simulateGameSchema = z.object({
   homeTeam: lineupSchema,
   awayTeam: lineupSchema,
+  // 1-based game number within a best-of-7 (coaching adaptation past Game 1).
+  seriesGameNumber: z.number().int().min(1).max(7).optional(),
 });
 
 const vsModeSchema = z.object({
@@ -266,15 +278,16 @@ router.post('/game', gameLimiter, (req: Request, res: Response) => {
     return res.status(400).json({ error: 'Invalid request', details: result.error.flatten() });
   }
 
-  const { homeTeam, awayTeam } = result.data;
+  const { homeTeam, awayTeam, seriesGameNumber } = result.data;
   try {
     const gameResult = simulateSingleGame({
       homeTeam: homeTeam as Player[],
       awayTeam: awayTeam as Player[],
       // Neutral court: the playoff modal always passes you as homeTeam, so any
-      // home edge would inflate your win odds every game. Background sims keep
-      // their alternating 2-2-1-1-1 edge; this series stays fair.
+      // home edge would inflate your win odds every game. Venue alternation is
+      // handled caller-side; this series stays fair.
       config: { ...DEFAULT_SIMULATION_CONFIG, homeCourtAdvantage: 0 },
+      seriesGameNumber,
     });
 
     res.json({
@@ -325,6 +338,7 @@ router.post('/vs-mode', vsLimiter, (req: Request, res: Response) => {
       homeTeam: (isHome ? userLineup : historicalLineup) as Player[],
       awayTeam: (isHome ? historicalLineup : userLineup) as Player[],
       config: DEFAULT_SIMULATION_CONFIG,
+      seriesGameNumber: seriesLength === 7 ? gameNum : undefined,
     });
 
     const userScore = isHome ? gameResult.homeScore : gameResult.awayScore;
@@ -465,6 +479,7 @@ export function generateOpponentPools(): { pools: Player[][]; names: string[] } 
               ast: randomStat(4 + star * 2, 6 + star * 3),
               stl: randomStat(0.8, 1.2 + star * 0.8),
               blk: randomStat(0.4, 0.8 + star * 0.8),
+              pf: 0, // cards carry no fouls; per-game fouls generate live
             }
           : {
               pts: randomStat(12 + star * 6, 16 + star * 6),
@@ -472,6 +487,7 @@ export function generateOpponentPools(): { pools: Player[][]; names: string[] } 
               ast: randomStat(3 + star * 2, 5 + star * 3),
               stl: randomStat(0.6, 1.0 + star * 0.8),
               blk: randomStat(0.3, 0.6 + star * 0.8),
+              pf: 0,
             },
         overall,
         archetype: contender ? 'Star' : 'Role Player',

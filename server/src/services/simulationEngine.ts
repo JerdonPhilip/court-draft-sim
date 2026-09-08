@@ -7,9 +7,24 @@ import {
   SimulationConfig,
   GameEvent,
   PlayerSeasonStats,
+  Position,
   TeamSeasonStats,
+  getPlayerPositions,
 } from '../types/game.js';
 import { DEFAULT_SIMULATION_CONFIG, SIMULATION_CONSTANTS, LEAGUE_AVG_IMPACT, IMPACT_TO_STRENGTH, WIN_CURVE_DIVISOR, OVERALL_CURVE_EXPONENT, STAR_USAGE_BONUS, POSITION_HEIGHT_BASELINE, HEIGHT_REB_PER_INCH, HEIGHT_BLK_PER_INCH, HEIGHT_FACTOR_MIN, HEIGHT_FACTOR_MAX } from './constants.js';
+import {
+  normalizeStat,
+  efficiencyFactor,
+  usageRateOf,
+  defRatingOf,
+  foulPronenessOf,
+  paceRatingOf,
+  clutchOf,
+  teamFTr,
+  team3PAR,
+  rosterEra3PAR,
+  LEAGUE_AVG_FTR,
+} from './playerTraits.js';
 import { randomInt } from 'node:crypto';
 
 // --- Tunable simulation knobs (see services/constants.ts) ---
@@ -19,7 +34,6 @@ const SCORE_SPREAD_FACTOR = SIMULATION_CONSTANTS.SCORE_SPREAD_FACTOR;
 const SCORE_NOISE = SIMULATION_CONSTANTS.SCORE_NOISE;
 const THREE_POINT_RATE = 0.38;
 const AVG_POSSESSIONS = SIMULATION_CONSTANTS.BASE_PACE;
-const POSSESSION_SPREAD = 15;
 
 function randomFloat(): number {
   // Uniform [0, 1) via crypto for auditable fairness (draft + sim).
@@ -27,9 +41,9 @@ function randomFloat(): number {
 }
 
 const POSITION_WEIGHTS = {
-  PG: { pts: 1.0, reb: 0.3, ast: 1.5, stl: 1.3, blk: 0.2 },
+  PG: { pts: 1.1, reb: 0.4, ast: 1.5, stl: 1.3, blk: 0.2 },
   SG: { pts: 1.3, reb: 0.4, ast: 0.8, stl: 1.2, blk: 0.3 },
-  SF: { pts: 1.2, reb: 0.8, ast: 0.9, stl: 1.1, blk: 0.6 },
+  SF: { pts: 1.2, reb: 0.7, ast: 0.8, stl: 1.1, blk: 0.6 },
   PF: { pts: 1.1, reb: 1.2, ast: 0.6, stl: 0.8, blk: 1.0 },
   C: { pts: 1.0, reb: 1.5, ast: 0.4, stl: 0.5, blk: 1.5 },
 };
@@ -60,39 +74,134 @@ function heightFactors(player: Player): { reb: number; blk: number } {
   };
 }
 
-function calculatePlayerImpact(player: Player, config: SimulationConfig, gameIndex = 0, totalGames = 82): number {
+/**
+ * Deterministic per-player building blocks: era-normalized stat terms run
+ * through the overall curve and the efficiency modifier. Split three ways so
+ * matchup logic can bite precisely: suppression hits PTS, discipline and the
+ * handcuffed debuff hit the defensive (STL/BLK) components.
+ */
+function playerBaseParts(player: Player, handcuffed: boolean): { pts: number; defense: number; rest: number } {
   const weights = POSITION_WEIGHTS[player.position];
   const { stats, overall } = player;
   const height = heightFactors(player);
-
-  let impact = 0;
-  impact += stats.pts * weights.pts * STAT_IMPORTANCE.pts;
-  impact += stats.reb * weights.reb * STAT_IMPORTANCE.reb * height.reb;
-  impact += stats.ast * weights.ast * STAT_IMPORTANCE.ast;
-  impact += stats.stl * weights.stl * STAT_IMPORTANCE.stl;
-  impact += stats.blk * weights.blk * STAT_IMPORTANCE.blk * height.blk;
-
-  impact = impact * Math.pow(overall / 100, OVERALL_CURVE_EXPONENT);
-
-  // Fatigue: late-season games slightly reduce impact.
-  if (config.fatigueFactor > 0 && totalGames > 1) {
-    const fatigue = config.fatigueFactor * (gameIndex / totalGames);
-    impact *= (1 - fatigue * 0.5);
-  }
-
-  const variance = (randomFloat() - 0.5) * 2 * config.variance * impact;
-  impact += variance;
-
-  return Math.max(0, impact);
+  const curve = Math.pow(overall / 100, OVERALL_CURVE_EXPONENT);
+  const eff = efficiencyFactor(player);
+  const proneness = foulPronenessOf(player);
+  // Defensive discipline trade-off: lockdown technicians keep 102% of their
+  // stocks impact; gamblers juice theirs to 105% (their matchup pays at the
+  // stripe instead — see the grant below).
+  const discMod = proneness < 40 ? 1.02 : proneness > 65 ? 1.05 : 1;
+  const handcuffMod = handcuffed && proneness > 70 ? 0.9 : 1;
+  const pts = normalizeStat(stats.pts, player.decade) * weights.pts * STAT_IMPORTANCE.pts * curve * eff;
+  const defense =
+    (normalizeStat(stats.stl, player.decade) * weights.stl * STAT_IMPORTANCE.stl +
+      normalizeStat(stats.blk, player.decade) * weights.blk * STAT_IMPORTANCE.blk * height.blk) *
+    curve *
+    eff *
+    discMod *
+    handcuffMod;
+  const rest =
+    (normalizeStat(stats.reb, player.decade) * weights.reb * STAT_IMPORTANCE.reb * height.reb +
+      normalizeStat(stats.ast, player.decade) * weights.ast * STAT_IMPORTANCE.ast) *
+    curve *
+    eff;
+  return { pts, defense, rest };
 }
 
-function calculateTeamRating(players: Player[], config: SimulationConfig, isHome: boolean, gameIndex = 0, totalGames = 82): number {
-  const impacts: number[] = [];
-  for (const player of players) {
-    if (player) {
-      impacts.push(calculatePlayerImpact(player, config, gameIndex, totalGames));
+/**
+ * Assign each rostered player a distinct lineup slot (primary first, flex
+ * second). Deterministic; mirrors the draft-validation spirit.
+ */
+function assignSlots(lineup: Array<Player | null | undefined>): Array<Position | undefined> {
+  const slots: Position[] = ['PG', 'SG', 'SF', 'PF', 'C'];
+  const assigned: Array<Position | undefined> = new Array(lineup.length).fill(undefined);
+  const taken = new Set<Position>();
+  lineup.forEach((player, i) => {
+    if (!player || taken.has(player.position)) return;
+    assigned[i] = player.position;
+    taken.add(player.position);
+  });
+  lineup.forEach((player, i) => {
+    if (!player || assigned[i]) return;
+    const alt = (player.secondaryPositions ?? []).find((s) => !taken.has(s));
+    if (alt) {
+      assigned[i] = alt;
+      taken.add(alt);
+    }
+  });
+  lineup.forEach((player, i) => {
+    if (!player || assigned[i]) return;
+    const free = slots.find((s) => !taken.has(s));
+    if (free) {
+      assigned[i] = free;
+      taken.add(free);
+    }
+  });
+  return assigned;
+}
+
+/** Floor-synergy roles from primary positions: a guard, a wing and a big. */
+function hasFloorBalance(primaries: Set<Position>): boolean {
+  const hasGuard = primaries.has('PG') || primaries.has('SG');
+  const hasWing = primaries.has('SG') || primaries.has('SF') || primaries.has('PF');
+  const hasBig = primaries.has('PF') || primaries.has('C');
+  return hasGuard && hasWing && hasBig;
+}
+
+/** Ball-dominance collision: multiple >30% usage mouths, one ball. */
+function collisionMultiplier(usages: number[]): number {
+  const mouths = usages.filter((u) => u > 30).length;
+  return mouths > 1 ? 1.0 - 0.035 * (mouths - 1) : 1.0;
+}
+
+function calculateTeamRating(
+  players: Player[],
+  config: SimulationConfig,
+  isHome: boolean,
+  gameIndex = 0,
+  totalGames = 82,
+  opponentPlayers?: Player[],
+  handcuffed = false,
+): number {
+  // Direct positional suppression received: an opposing stopper (defRating
+  // 88+) at your primary slot shaves 4-8% off your scoring impact, while a
+  // gambler (>65 proneness) on you grants ~3% back at the stripe.
+  const suppression = new Map<Position, number>();
+  const grant = new Map<Position, number>();
+  if (opponentPlayers) {
+    for (const opp of opponentPlayers) {
+      if (!opp) continue;
+      const d = defRatingOf(opp);
+      if (d >= 88) {
+        const factor = 1 - Math.min(0.08, 0.04 + (d - 88) * 0.005);
+        suppression.set(opp.position, Math.min(suppression.get(opp.position) ?? 1, factor));
+      }
+      if (foulPronenessOf(opp) > 65) {
+        grant.set(opp.position, Math.max(grant.get(opp.position) ?? 1, 1.03));
+      }
     }
   }
+
+  const slots = assignSlots(players);
+  const impacts: number[] = [];
+  const usages: number[] = [];
+  const primaries = new Set<Position>();
+  players.forEach((player, i) => {
+    if (!player) return;
+    const { pts, defense, rest } = playerBaseParts(player, handcuffed && foulPronenessOf(player) > 70);
+    let impact = pts * (suppression.get(player.position) ?? 1) * (grant.get(player.position) ?? 1) + defense + rest;
+    // Flex-slot adaptation: playing off-primary retains 95%.
+    const slot = slots[i];
+    if (slot && slot !== player.position) impact *= 0.95;
+    if (config.fatigueFactor > 0 && totalGames > 1) {
+      const fatigue = config.fatigueFactor * (gameIndex / totalGames);
+      impact *= (1 - fatigue * 0.5);
+    }
+    impact += (randomFloat() - 0.5) * 2 * config.variance * impact;
+    impacts.push(Math.max(0, impact));
+    usages.push(usageRateOf(player));
+    primaries.add(player.position);
+  });
   const counted = impacts.length;
 
   // Usage concentration: sort best-first so the alpha carries the offense.
@@ -100,6 +209,21 @@ function calculateTeamRating(players: Player[], config: SimulationConfig, isHome
   let totalImpact = 0;
   for (let i = 0; i < impacts.length; i++) {
     totalImpact += impacts[i]! * (STAR_USAGE_BONUS[i] ?? 1);
+  }
+  totalImpact *= collisionMultiplier(usages);
+  if (!hasFloorBalance(primaries)) totalImpact *= 0.94;
+
+  // Spacing boost: a roster shooting above its own eras' 3PAR average stretches
+  // the floor (+1% to +4%).
+  const spacingExcess = team3PAR(players) - rosterEra3PAR(players);
+  if (spacingExcess > 0) {
+    totalImpact *= 1 + Math.min(0.04, 0.01 + spacingExcess * 0.15);
+  }
+
+  // Soft-defense debuff: foul-drawing outfits (team FTr > 1.15x league average)
+  // force the other side to play soft — shaves their total 2.5%.
+  if (opponentPlayers && teamFTr(opponentPlayers) > LEAGUE_AVG_FTR * 1.15) {
+    totalImpact *= 0.975;
   }
 
   // Scale short lineups down instead of silently treating missing players as 0-rated.
@@ -114,27 +238,58 @@ function calculateTeamRating(players: Player[], config: SimulationConfig, isHome
   return totalImpact;
 }
 
-function simulateGameScore(homeRating: number, awayRating: number, config: SimulationConfig): { home: number; away: number; otPeriods: number } {
+/** Mean pace rating of a 5-man unit. */
+export function teamPace(lineup: Player[]): number {
+  const present = lineup.filter(Boolean);
+  if (present.length === 0) return SIMULATION_CONSTANTS.BASE_PACE;
+  return present.reduce((t, p) => t + paceRatingOf(p!), 0) / present.length;
+}
+
+/** Mean clutch of the two coldest-blooded players available. */
+export function teamClutch(lineup: Player[]): number {
+  const ratings = lineup
+    .filter(Boolean)
+    .map((p) => clutchOf(p!))
+    .sort((a, b) => b - a)
+    .slice(0, 2);
+  if (ratings.length === 0) return 70;
+  return ratings.reduce((t, r) => t + r, 0) / ratings.length;
+}
+
+function simulateGameScore(
+  homeRating: number,
+  awayRating: number,
+  config: SimulationConfig,
+  gamePace: number = AVG_POSSESSIONS,
+  clutchDelta = 0,
+): { home: number; away: number; otPeriods: number } {
   const ratingDiff = homeRating - awayRating;
   const pointSpread = ratingDiff * SCORE_SPREAD_FACTOR;
+  // Pace-scaled base: track meets play in the 120s, grind eras near 100.
+  const base = BASE_SCORE * (gamePace / AVG_POSSESSIONS);
 
-  let homeScore = BASE_SCORE + pointSpread / 2 + (randomFloat() - 0.5) * SCORE_NOISE * (0.5 + config.variance);
-  let awayScore = BASE_SCORE - pointSpread / 2 + (randomFloat() - 0.5) * SCORE_NOISE * (0.5 + config.variance);
+  let homeScore = base + pointSpread / 2 + clutchDelta / 2 + (randomFloat() - 0.5) * SCORE_NOISE * (0.5 + config.variance);
+  let awayScore = base - pointSpread / 2 - clutchDelta / 2 + (randomFloat() - 0.5) * SCORE_NOISE * (0.5 + config.variance);
 
   homeScore = Math.max(MIN_SCORE, Math.round(homeScore));
   awayScore = Math.max(MIN_SCORE, Math.round(awayScore));
 
-  // NBA has no ties: overtime decides drawn games instead of auto-loss for the user.
-  // Close matchups (small spread) tie far more often, so OT naturally
-  // clusters where it should — even contests, up to 5 extra periods.
+  // NBA has no ties: dead-even regulation goes to overtime, and once there,
+  // even matchups extend — but each extra period demands a tighter finish
+  // (up to 5 total), so 2-3OT classics happen while 5OT stays a rarity.
+  // OT scoring runs ~42% of a regulation quarter at game pace.
+  const otQuarter = (base / 4) * 0.42;
+  const OT_WINDOWS = [0, 3, 2, 0, 0];
   let otPeriods = 0;
-  while (homeScore === awayScore && otPeriods < 5) {
+  while (otPeriods < 5 && Math.abs(homeScore - awayScore) <= OT_WINDOWS[otPeriods]!) {
     otPeriods++;
-    homeScore += 4 + Math.floor(randomFloat() * 6);
-    awayScore += 4 + Math.floor(randomFloat() * 6);
+    // Wide swing per period (short-clock chaos) so most OTs end here and only
+    // the truly deadlocked survive deeper — decaying 1OT > 2OT > 3OT > ….
+    homeScore += Math.max(4, Math.round(otQuarter + (randomFloat() - 0.5) * 12));
+    awayScore += Math.max(4, Math.round(otQuarter + (randomFloat() - 0.5) * 12));
   }
   if (homeScore === awayScore) {
-    // Extremely unlikely fallback: home team takes it by a point.
+    // Vanishingly rare fallback: home team takes it by a point.
     homeScore += 1;
   }
 
@@ -142,13 +297,24 @@ function simulateGameScore(homeRating: number, awayRating: number, config: Simul
 }
 
 /**
- * Ironman rotation minutes: a 5-man roster with no bench plays its men
- * heavy minutes in a 48-minute game. Stars play more (up to the full 48),
- * role players catch short breathers. Team total lands ~225-235 of the
- * real 240 player-minutes.
+ * Ironman rotation minutes for the no-sub system: all 5 play every game —
+ * fouls NEVER bench anyone (the 5-foul guardrail caps the box-score line,
+ * never participation). Regulation runs 42-48 by overall; each OT period
+ * adds ~4 minutes (real 50+ minute nights happen in multi-OT games).
  */
-function assignMinutes(player: Player): number {
-  return Math.min(48, Math.round(42 + (player.overall / 100) * 4 + randomFloat() * 2));
+function assignMinutes(player: Player, otPeriods = 0): number {
+  const base = Math.min(48, Math.round(42 + (player.overall / 100) * 4 + randomFloat() * 2));
+  if (otPeriods <= 0) return base;
+  return Math.min(55, base + otPeriods * 4 + (randomFloat() < 0.5 ? 1 : 0));
+}
+
+/**
+ * Personal-foul guardrail: 2.2 base + proneness slope + jitter, HARD-CAPPED
+ * at 5. The cap binds the box score only — participation is unconditional.
+ */
+function rollFouls(player: Player): number {
+  const raw = Math.round(2.2 + (foulPronenessOf(player) / 100) * 2.5 + (randomFloat() * 1.2 - 0.6));
+  return Math.min(5, Math.max(0, raw));
 }
 
 function shuffleInPlace<T>(arr: T[]): T[] {
@@ -218,6 +384,8 @@ function generatePlayerGameStats(player: Player, teamRating: number, opponentRat
     ast: Math.max(0, Math.round(player.stats.ast * factor + (randomFloat() - 0.5) * 3 * variance)),
     stl: Math.max(0, Math.round(player.stats.stl * factor + (randomFloat() - 0.5) * 1.5 * variance)),
     blk: Math.max(0, Math.round(player.stats.blk * factor + (randomFloat() - 0.5) * 1.5 * variance)),
+    // Fouls never bench anyone: every starter logs a line every game.
+    pf: rollFouls(player),
   };
 }
 
@@ -285,16 +453,43 @@ function generateGameEvents(homePlayers: Player[], awayPlayers: Player[], homeSc
 }
 
 export function simulateSingleGame(input: GameSimulationInput): GameSimulationOutput {
-  const { homeTeam, awayTeam, config, gameIndex = 1, totalGames = 1 } = input;
+  const { homeTeam, awayTeam, config, gameIndex = 1, totalGames = 1, seriesGameNumber = 1 } = input;
 
   if (!homeTeam || homeTeam.length === 0 || !awayTeam || awayTeam.length === 0) {
     throw new Error('Both teams must have at least one player');
   }
 
-  const homeRating = calculateTeamRating(homeTeam, config, true, gameIndex, totalGames);
-  const awayRating = calculateTeamRating(awayTeam, config, false, gameIndex, totalGames);
+  let homeRating = calculateTeamRating(homeTeam, config, true, gameIndex, totalGames, awayTeam);
+  let awayRating = calculateTeamRating(awayTeam, config, false, gameIndex, totalGames, homeTeam);
 
-  const { home: homeScore, away: awayScore, otPeriods } = simulateGameScore(homeRating, awayRating, config);
+  // Series adaptation: past Game 1 the higher-rated side's adjustments compound.
+  if (seriesGameNumber > 1) {
+    const boost = 1 + 0.0075 * (seriesGameNumber - 1);
+    if (homeRating >= awayRating) homeRating *= boost;
+    else awayRating *= boost;
+  }
+
+  const gamePace = (teamPace(homeTeam) + teamPace(awayTeam)) / 2;
+  // Clutch decides tight games: top-2 comparison swings it past a 5-pt spread.
+  // No quarter clock exists, so |spread| <= 5 IS the late-game proxy — and
+  // handcuffed (>70 proneness) defenders play it safe at 0.90 impact here.
+  let spread = (homeRating - awayRating) * SCORE_SPREAD_FACTOR;
+  if (Math.abs(spread) <= 5) {
+    homeRating = calculateTeamRating(homeTeam, config, true, gameIndex, totalGames, awayTeam, true);
+    awayRating = calculateTeamRating(awayTeam, config, false, gameIndex, totalGames, homeTeam, true);
+    if (seriesGameNumber > 1) {
+      const boost = 1 + 0.0075 * (seriesGameNumber - 1);
+      if (homeRating >= awayRating) homeRating *= boost;
+      else awayRating *= boost;
+    }
+    spread = (homeRating - awayRating) * SCORE_SPREAD_FACTOR;
+  }
+  const clutchDelta =
+    Math.abs(spread) <= 5
+      ? (teamClutch(homeTeam) - teamClutch(awayTeam)) * 0.15 + (teamFTr(homeTeam) - teamFTr(awayTeam)) * 10
+      : 0;
+
+  const { home: homeScore, away: awayScore, otPeriods } = simulateGameScore(homeRating, awayRating, config, gamePace, clutchDelta);
 
   const homePlayerStats: Record<string, PlayerStats> = {};
   const awayPlayerStats: Record<string, PlayerStats> = {};
@@ -303,14 +498,14 @@ export function simulateSingleGame(input: GameSimulationInput): GameSimulationOu
 
   for (const player of homeTeam) {
     if (!player) continue;
-    const minutes = assignMinutes(player);
+    const minutes = assignMinutes(player, otPeriods);
     homeMinutes[player.id] = minutes;
     homePlayerStats[player.id] = generatePlayerGameStats(player, homeRating, awayRating, minutes, config);
   }
 
   for (const player of awayTeam) {
     if (!player) continue;
-    const minutes = assignMinutes(player);
+    const minutes = assignMinutes(player, otPeriods);
     awayMinutes[player.id] = minutes;
     awayPlayerStats[player.id] = generatePlayerGameStats(player, awayRating, homeRating, minutes, config);
   }
@@ -321,6 +516,7 @@ export function simulateSingleGame(input: GameSimulationInput): GameSimulationOu
     homeScore,
     awayScore,
     otPeriods,
+    pace: Number(gamePace.toFixed(1)),
     homePlayerStats,
     awayPlayerStats,
     homeMinutes,
@@ -354,9 +550,9 @@ export function simulateSeason(
       playerName: player.name,
       gamesPlayed: 0,
       minutesPerGame: 0,
-      averages: { pts: 0, reb: 0, ast: 0, stl: 0, blk: 0 },
-      totals: { pts: 0, reb: 0, ast: 0, stl: 0, blk: 0 },
-      highGames: { pts: 0, reb: 0, ast: 0, stl: 0, blk: 0 },
+      averages: { pts: 0, reb: 0, ast: 0, stl: 0, blk: 0, pf: 0 },
+      totals: { pts: 0, reb: 0, ast: 0, stl: 0, blk: 0, pf: 0 },
+      highGames: { pts: 0, reb: 0, ast: 0, stl: 0, blk: 0, pf: 0 },
     };
     playerMinutes[player.id] = [];
   });
@@ -367,9 +563,9 @@ export function simulateSeason(
         playerName: player.name,
         gamesPlayed: 0,
         minutesPerGame: 0,
-        averages: { pts: 0, reb: 0, ast: 0, stl: 0, blk: 0 },
-        totals: { pts: 0, reb: 0, ast: 0, stl: 0, blk: 0 },
-        highGames: { pts: 0, reb: 0, ast: 0, stl: 0, blk: 0 },
+        averages: { pts: 0, reb: 0, ast: 0, stl: 0, blk: 0, pf: 0 },
+        totals: { pts: 0, reb: 0, ast: 0, stl: 0, blk: 0, pf: 0 },
+        highGames: { pts: 0, reb: 0, ast: 0, stl: 0, blk: 0, pf: 0 },
       };
       opponentPlayerMinutes[player.id] = [];
     }
@@ -440,12 +636,14 @@ export function simulateSeason(
         seasonStat.totals.ast += stats.ast;
         seasonStat.totals.stl += stats.stl;
         seasonStat.totals.blk += stats.blk;
+        seasonStat.totals.pf += stats.pf;
 
         seasonStat.highGames.pts = Math.max(seasonStat.highGames.pts, stats.pts);
         seasonStat.highGames.reb = Math.max(seasonStat.highGames.reb, stats.reb);
         seasonStat.highGames.ast = Math.max(seasonStat.highGames.ast, stats.ast);
         seasonStat.highGames.stl = Math.max(seasonStat.highGames.stl, stats.stl);
         seasonStat.highGames.blk = Math.max(seasonStat.highGames.blk, stats.blk);
+        seasonStat.highGames.pf = Math.max(seasonStat.highGames.pf, stats.pf);
 
         // Track the actual minutes assigned this game.
         playerMinutes[playerId]?.push(userMinutes[playerId] ?? 40);
@@ -460,11 +658,13 @@ export function simulateSeason(
       seasonStat.totals.ast += stats.ast;
       seasonStat.totals.stl += stats.stl;
       seasonStat.totals.blk += stats.blk;
+      seasonStat.totals.pf += stats.pf;
       seasonStat.highGames.pts = Math.max(seasonStat.highGames.pts, stats.pts);
       seasonStat.highGames.reb = Math.max(seasonStat.highGames.reb, stats.reb);
       seasonStat.highGames.ast = Math.max(seasonStat.highGames.ast, stats.ast);
       seasonStat.highGames.stl = Math.max(seasonStat.highGames.stl, stats.stl);
       seasonStat.highGames.blk = Math.max(seasonStat.highGames.blk, stats.blk);
+      seasonStat.highGames.pf = Math.max(seasonStat.highGames.pf, stats.pf);
       opponentPlayerMinutes[playerId]?.push(oppMinutes[playerId] ?? 40);
     }
 
@@ -475,6 +675,7 @@ export function simulateSeason(
       result: result === 'T' ? 'L' : result,
       score: { us: userScore, them: oppScore },
       otPeriods: gameResult.otPeriods,
+      pace: gameResult.pace,
       playerStats: userPlayerStats,
       userMinutes,
       opponentPlayerStats: oppPlayerStats,
@@ -501,6 +702,7 @@ export function simulateSeason(
         ast: Number((stats.totals.ast / stats.gamesPlayed).toFixed(1)),
         stl: Number((stats.totals.stl / stats.gamesPlayed).toFixed(1)),
         blk: Number((stats.totals.blk / stats.gamesPlayed).toFixed(1)),
+        pf: Number((stats.totals.pf / stats.gamesPlayed).toFixed(1)),
       };
       const mins = playerMinutes[stats.playerId] ?? [];
       stats.minutesPerGame = mins.length > 0
@@ -613,8 +815,9 @@ function simulateLeagueStandings(
     if (a === b) {
       // Degenerate fallback (vanishingly rare): intrasquad scrimmage —
       // the team banks one win and one loss, staying at exactly 82 games.
-      const rating = calculateTeamRating(opponentPool[a]!, config, true, midSeason, totalGames);
-      const { home, away } = simulateGameScore(rating, rating, config);
+      const squad = opponentPool[a]!;
+      const rating = calculateTeamRating(squad, config, true, midSeason, totalGames, squad);
+      const { home, away } = simulateGameScore(rating, rating, config, teamPace(squad), 0);
       wins[a]! += 1;
       losses[a]! += 1;
       pf[a]! += home + away;
@@ -624,9 +827,22 @@ function simulateLeagueStandings(
     const teamA = opponentPool[a]!;
     const teamB = opponentPool[b]!;
     const aHome = randomFloat() < 0.5;
-    const homeRating = calculateTeamRating(aHome ? teamA : teamB, config, true, midSeason, totalGames);
-    const awayRating = calculateTeamRating(aHome ? teamB : teamA, config, false, midSeason, totalGames);
-    const { home, away } = simulateGameScore(homeRating, awayRating, config);
+    const homeRoster = aHome ? teamA : teamB;
+    const awayRoster = aHome ? teamB : teamA;
+    let homeRating = calculateTeamRating(homeRoster, config, true, midSeason, totalGames, awayRoster);
+    let awayRating = calculateTeamRating(awayRoster, config, false, midSeason, totalGames, homeRoster);
+    const gamePace = (teamPace(teamA) + teamPace(teamB)) / 2;
+    let spread = (homeRating - awayRating) * SCORE_SPREAD_FACTOR;
+    if (Math.abs(spread) <= 5) {
+      homeRating = calculateTeamRating(homeRoster, config, true, midSeason, totalGames, awayRoster, true);
+      awayRating = calculateTeamRating(awayRoster, config, false, midSeason, totalGames, homeRoster, true);
+      spread = (homeRating - awayRating) * SCORE_SPREAD_FACTOR;
+    }
+    const clutchDelta =
+      Math.abs(spread) <= 5
+        ? (teamClutch(homeRoster) - teamClutch(awayRoster)) * 0.15 + (teamFTr(homeRoster) - teamFTr(awayRoster)) * 10
+        : 0;
+    const { home, away } = simulateGameScore(homeRating, awayRating, config, gamePace, clutchDelta);
     for (const [team, rating, opposingRating] of [[teamA, homeRating, awayRating], [teamB, awayRating, homeRating]] as const) {
       for (const player of team) {
         const seasonStat = opponentPlayerSeasonStats[player.id];
@@ -640,11 +856,13 @@ function simulateLeagueStandings(
         seasonStat.totals.ast += stats.ast;
         seasonStat.totals.stl += stats.stl;
         seasonStat.totals.blk += stats.blk;
+        seasonStat.totals.pf += stats.pf;
         seasonStat.highGames.pts = Math.max(seasonStat.highGames.pts, stats.pts);
         seasonStat.highGames.reb = Math.max(seasonStat.highGames.reb, stats.reb);
         seasonStat.highGames.ast = Math.max(seasonStat.highGames.ast, stats.ast);
         seasonStat.highGames.stl = Math.max(seasonStat.highGames.stl, stats.stl);
         seasonStat.highGames.blk = Math.max(seasonStat.highGames.blk, stats.blk);
+        seasonStat.highGames.pf = Math.max(seasonStat.highGames.pf, stats.pf);
       }
     }
     const aScore = aHome ? home : away;
@@ -669,6 +887,7 @@ function simulateLeagueStandings(
       ast: Number((stats.totals.ast / stats.gamesPlayed).toFixed(1)),
       stl: Number((stats.totals.stl / stats.gamesPlayed).toFixed(1)),
       blk: Number((stats.totals.blk / stats.gamesPlayed).toFixed(1)),
+      pf: Number((stats.totals.pf / stats.gamesPlayed).toFixed(1)),
     };
     const minutes = opponentPlayerMinutes[stats.playerId] ?? [];
     stats.minutesPerGame = minutes.length > 0
@@ -723,18 +942,19 @@ function calculateTeamSeasonStats(
 ): TeamSeasonStats {
   let totalPts = 0;
   let totalAllowed = 0;
-  let totalPossessions = 0;
+  let totalPace = 0;
 
   for (const game of games) {
     totalPts += game.score.us;
     totalAllowed += game.score.them;
-    totalPossessions += AVG_POSSESSIONS + randomFloat() * POSSESSION_SPREAD;
+    totalPace += game.pace;
   }
 
   const numGames = games.length || 1;
   const avgPts = totalPts / numGames;
   const avgAllowed = totalAllowed / numGames;
-  const pace = totalPossessions / numGames;
+  // Real blended pace from the games actually played (era pace flows through).
+  const pace = totalPace / numGames || AVG_POSSESSIONS;
 
   let totalReb = 0, totalAst = 0, totalStl = 0, totalBlk = 0;
   for (const [, stats] of Object.entries(playerSeasonStats)) {
@@ -775,32 +995,38 @@ export function calculateNonLinearWinCurve(teamStrength: number): number {
 
 /**
  * Deterministic base impact of a lineup: same weights as live ratings but
- * neutral venue, no variance, no fatigue. Used for strength/projection so
- * the estimate and the sim can never disagree structurally.
- * Partial lineups are prorated (n/5) so draft previews read low until filled.
+ * neutral venue, no variance, no fatigue, no matchup suppression, no clutch.
+ * Used for strength/projection so the estimate and the sim can never disagree
+ * structurally. Partial lineups are prorated (n/5) so draft previews read low
+ * until filled. Primary slots are assumed (flex penalty needs assignments).
  */
 export function getBaseTeamImpact(lineup: Player[]): number {
-  const impacts: number[] = [];
-  for (const player of lineup) {
+  const slots = assignSlots(lineup);
+  const items: Array<{ impact: number; usage: number }> = [];
+  const primaries = new Set<Position>();
+  for (const [index, player] of lineup.entries()) {
     if (!player) continue;
-    const weights = POSITION_WEIGHTS[player.position];
-    const { stats, overall } = player;
-    const height = heightFactors(player);
-    impacts.push((
-      stats.pts * weights.pts * STAT_IMPORTANCE.pts +
-      stats.reb * weights.reb * STAT_IMPORTANCE.reb * height.reb +
-      stats.ast * weights.ast * STAT_IMPORTANCE.ast +
-      stats.stl * weights.stl * STAT_IMPORTANCE.stl +
-      stats.blk * weights.blk * STAT_IMPORTANCE.blk * height.blk
-    ) * Math.pow(overall / 100, OVERALL_CURVE_EXPONENT));
+    const { pts, defense, rest } = playerBaseParts(player, false);
+    let impact = pts + defense + rest;
+    const slot = slots[index];
+    if (slot && slot !== player.position) impact *= 0.95;
+    items.push({ impact, usage: usageRateOf(player) });
+    primaries.add(player.position);
   }
-  if (impacts.length === 0) return 0;
-  impacts.sort((a, b) => b - a);
+  if (items.length === 0) return 0;
+  items.sort((a, b) => b.impact - a.impact);
   let total = 0;
-  for (let i = 0; i < impacts.length; i++) {
-    total += impacts[i]! * (STAR_USAGE_BONUS[i] ?? 1);
+  for (let i = 0; i < items.length; i++) {
+    total += items[i]!.impact * (STAR_USAGE_BONUS[i] ?? 1);
   }
-  const counted = impacts.length;
+  total *= collisionMultiplier(items.map((it) => it.usage));
+  if (!hasFloorBalance(primaries)) total *= 0.94;
+  const present = lineup.filter(Boolean) as Player[];
+  const spacingExcess = team3PAR(present) - rosterEra3PAR(present);
+  if (spacingExcess > 0) {
+    total *= 1 + Math.min(0.04, 0.01 + spacingExcess * 0.15);
+  }
+  const counted = items.length;
   return total * (counted / 5);
 }
 

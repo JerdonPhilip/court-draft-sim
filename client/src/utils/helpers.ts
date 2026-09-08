@@ -62,32 +62,54 @@ interface StrengthInput {
   position: string;
   secondaryPositions?: Position[];
   heightIn?: number;
+  decade?: string;
+  tsPct?: number;
+  tov?: number;
+  usageRate?: number;
+  threePar?: number;
+  foulProneness?: number;
   stats: { pts: number; reb: number; ast: number; stl: number; blk: number };
 }
 
 // --- Strength / projection model (must match server simulationEngine.ts
-// + services/constants.ts). Strength is the deterministic base-impact
-// differential vs a league-average opponent (LEAGUE_AVG_IMPACT), so the
-// draft-screen projection and the sim can never disagree structurally.
-const LEAGUE_AVG_IMPACT = 37.6;
+// + services/constants.ts + services/playerTraits.ts). Strength is the
+// deterministic base-impact differential vs a league-average opponent
+// (LEAGUE_AVG_IMPACT), so the draft-screen projection and the sim can never
+// disagree structurally. Base impact mirrors the live formula minus venue,
+// variance, fatigue, matchup suppression and clutch (neutral-matchup estimate).
+const LEAGUE_AVG_IMPACT = 38.1;
 const IMPACT_TO_STRENGTH = 1.2;
 // Must match server services/constants.ts.
 const OVERALL_CURVE_EXPONENT = 1.5;
 const STAR_USAGE_BONUS = [1.18, 1.07, 1.0, 0.95, 0.9] as const;
+// Must match server services/playerTraits.ts (estimates, not measurements).
+const REFERENCE_PACE = 98;
+const ERA_PACE: Record<string, number> = {
+  '1960s': 118, '1970s': 106, '1980s': 102, '1990s': 92, '2000s': 91, '2010s': 96, '2020s': 99,
+};
+const ERA_TS: Record<string, number> = {
+  '1960s': 0.487, '1970s': 0.5, '1980s': 0.532, '1990s': 0.529, '2000s': 0.531, '2010s': 0.545, '2020s': 0.58,
+};
+const ERA_3PAR: Record<string, number> = {
+  '1960s': 0.02, '1970s': 0.02, '1980s': 0.06, '1990s': 0.1, '2000s': 0.18, '2010s': 0.28, '2020s': 0.35,
+};
+const POSITION_3PAR_BASE: Record<string, number> = {
+  PG: 0.35, SG: 0.38, SF: 0.33, PF: 0.25, C: 0.12,
+};
 const WIN_CURVE_DIVISOR = 22;
 
 // Must match server services/constants.ts.
 const POSITION_HEIGHT_BASELINE: Record<string, number> = {
-  PG: 75,
+  PG: 74,
   SG: 77,
   SF: 79,
   PF: 81,
   C: 83,
 };
-const HEIGHT_REB_PER_INCH = 0.06;
-const HEIGHT_BLK_PER_INCH = 0.08;
-const HEIGHT_FACTOR_MIN = 0.85;
-const HEIGHT_FACTOR_MAX = 1.15;
+const HEIGHT_REB_PER_INCH = 0.05;
+const HEIGHT_BLK_PER_INCH = 0.06;
+const HEIGHT_FACTOR_MIN = 0.88;
+const HEIGHT_FACTOR_MAX = 1.12;
 
 /** "Michael Jordan" -> { first: "Michael", last: "Jordan" }. Suffixes stay on the last line ("Robert Horry III"). */
 export function splitPlayerName(fullName: string): { first: string; last: string } {
@@ -132,38 +154,120 @@ export function heightEdgeLabel(heightIn: number | undefined, position: string):
 }
 
 const IMPACT_WEIGHTS: Record<string, { pts: number; reb: number; ast: number; stl: number; blk: number }> = {
-  PG: { pts: 1.0, reb: 0.3, ast: 1.5, stl: 1.3, blk: 0.2 },
+  PG: { pts: 1.1, reb: 0.4, ast: 1.5, stl: 1.3, blk: 0.2 },
   SG: { pts: 1.3, reb: 0.4, ast: 0.8, stl: 1.2, blk: 0.3 },
-  SF: { pts: 1.2, reb: 0.8, ast: 0.9, stl: 1.1, blk: 0.6 },
+  SF: { pts: 1.2, reb: 0.7, ast: 0.8, stl: 1.1, blk: 0.6 },
   PF: { pts: 1.1, reb: 1.2, ast: 0.6, stl: 0.8, blk: 1.0 },
   C: { pts: 1.0, reb: 1.5, ast: 0.4, stl: 0.5, blk: 1.5 },
 };
 
 const STAT_SHARE = { pts: 0.35, reb: 0.20, ast: 0.20, stl: 0.12, blk: 0.13 };
 
+function traitEraPace(decade: string | undefined): number {
+  return ERA_PACE[decade ?? ''] ?? ERA_PACE['2020s']!;
+}
+
+function traitEraTS(decade: string | undefined): number {
+  return ERA_TS[decade ?? ''] ?? ERA_TS['2010s']!;
+}
+
+function traitTsPct(p: StrengthInput): number {
+  if (typeof p.tsPct === 'number' && Number.isFinite(p.tsPct)) return p.tsPct;
+  return Math.max(0.42, Math.min(0.68, traitEraTS(p.decade) + (p.overall - 82) * 0.0035));
+}
+
+function traitTov(p: StrengthInput): number {
+  if (typeof p.tov === 'number' && Number.isFinite(p.tov)) return p.tov;
+  return Math.max(0.5, Math.min(5, 1.2 + p.stats.ast * 0.18 + (p.stats.pts > 20 ? 0.5 : 0) - (p.overall - 80) * 0.02));
+}
+
+function traitUsage(p: StrengthInput): number {
+  if (typeof p.usageRate === 'number' && Number.isFinite(p.usageRate)) return p.usageRate;
+  return Math.max(10, Math.min(38, 14 + p.stats.pts * 0.55 + p.stats.ast * 0.4));
+}
+
+function traitEfficiency(p: StrengthInput): number {
+  return Math.max(0.5, traitTsPct(p) / traitEraTS(p.decade));
+}
+
+function traitThreePar(p: StrengthInput): number {
+  if (typeof p.threePar === 'number' && Number.isFinite(p.threePar)) return p.threePar;
+  if (p.decade === '1960s' || p.decade === '1970s') return 0.02;
+  return Math.max(0.02, Math.min(0.55, (POSITION_3PAR_BASE[p.position] ?? 0.3) + (p.stats.pts - 15) * 0.008));
+}
+
+function traitFoulProneness(p: StrengthInput): number {
+  if (typeof p.foulProneness === 'number' && Number.isFinite(p.foulProneness)) return p.foulProneness;
+  return Math.max(1, Math.min(100, Math.round(42 + (p.stats.stl + p.stats.blk) * 7 - (p.overall - 80) * 0.3)));
+}
+
 export function getBaseTeamImpact(players: StrengthInput[]): number {
-  const impacts: number[] = [];
-  for (const p of players) {
+  const impacts: Array<{ impact: number; usage: number }> = [];
+  const primaries = new Set<string>();
+  const assigned = new Array<string | undefined>(players.length).fill(undefined);
+  const taken = new Set<string>();
+  players.forEach((p, i) => {
+    if (!taken.has(p.position)) {
+      assigned[i] = p.position;
+      taken.add(p.position);
+    }
+  });
+  players.forEach((p, i) => {
+    if (assigned[i]) return;
+    const alt = (p.secondaryPositions ?? []).find((s) => !taken.has(s));
+    if (alt) {
+      assigned[i] = alt;
+      taken.add(alt);
+    }
+  });
+  players.forEach((p, i) => {
+    if (assigned[i]) return;
+    const free = (['PG', 'SG', 'SF', 'PF', 'C'] as const).find((s) => !taken.has(s));
+    if (free) {
+      assigned[i] = free;
+      taken.add(free);
+    }
+  });
+  players.forEach((p, i) => {
     const w = IMPACT_WEIGHTS[p.position] ?? IMPACT_WEIGHTS.C!;
     const baseline = POSITION_HEIGHT_BASELINE[p.position] ?? 79;
     const h = Number.isFinite(p.heightIn) ? (p.heightIn as number) : baseline;
     const clamp = (v: number) => Math.max(HEIGHT_FACTOR_MIN, Math.min(HEIGHT_FACTOR_MAX, v));
     const rebF = clamp(1 + HEIGHT_REB_PER_INCH * (h - baseline));
     const blkF = clamp(1 + HEIGHT_BLK_PER_INCH * (h - baseline));
-    impacts.push((
-      p.stats.pts * w.pts * STAT_SHARE.pts +
-      p.stats.reb * w.reb * STAT_SHARE.reb * rebF +
-      p.stats.ast * w.ast * STAT_SHARE.ast +
-      p.stats.stl * w.stl * STAT_SHARE.stl +
-      p.stats.blk * w.blk * STAT_SHARE.blk * blkF
-    ) * Math.pow(p.overall / 100, OVERALL_CURVE_EXPONENT));
-  }
+    const norm = (raw: number) => raw * (REFERENCE_PACE / (ERA_PACE[p.decade ?? ''] ?? ERA_PACE['2020s']!));
+    const curve = Math.pow(p.overall / 100, OVERALL_CURVE_EXPONENT);
+    const eff = traitEfficiency(p);
+    const proneness = traitFoulProneness(p);
+    const discMod = proneness < 40 ? 1.02 : proneness > 65 ? 1.05 : 1;
+    const pts = norm(p.stats.pts) * w.pts * STAT_SHARE.pts * curve * eff;
+    const defense =
+      (norm(p.stats.stl) * w.stl * STAT_SHARE.stl + norm(p.stats.blk) * w.blk * STAT_SHARE.blk * blkF) * curve * eff * discMod;
+    const rest =
+      (norm(p.stats.reb) * w.reb * STAT_SHARE.reb * rebF + norm(p.stats.ast) * w.ast * STAT_SHARE.ast) * curve * eff;
+    let impact = pts + defense + rest;
+    const slot = assigned[i];
+    if (slot && slot !== p.position) impact *= 0.95;
+    impacts.push({ impact, usage: traitUsage(p) });
+    primaries.add(p.position);
+  });
   if (impacts.length === 0) return 0;
-  impacts.sort((a, b) => b - a);
+  impacts.sort((a, b) => b.impact - a.impact);
   let total = 0;
   for (let i = 0; i < impacts.length; i++) {
-    total += impacts[i]! * (STAR_USAGE_BONUS[i] ?? 1);
+    total += impacts[i]!.impact * (STAR_USAGE_BONUS[i] ?? 1);
   }
+  const mouths = impacts.filter((it) => it.usage > 30).length;
+  if (mouths > 1) total *= 1.0 - 0.035 * (mouths - 1);
+  const hasGuard = primaries.has('PG') || primaries.has('SG');
+  const hasWing = primaries.has('SG') || primaries.has('SF') || primaries.has('PF');
+  const hasBig = primaries.has('PF') || primaries.has('C');
+  if (!(hasGuard && hasWing && hasBig)) total *= 0.94;
+  const present3PAR = impacts.length > 0 ? players.reduce((t, p) => t + traitThreePar(p), 0) / players.length : 0;
+  const era3PAR =
+    impacts.length > 0 ? players.reduce((t, p) => t + (ERA_3PAR[p.decade ?? ''] ?? 0.2), 0) / players.length : 0.2;
+  const excess = present3PAR - era3PAR;
+  if (excess > 0) total *= 1 + Math.min(0.04, 0.01 + excess * 0.15);
   const counted = impacts.length;
   return total * (counted / 5);
 }

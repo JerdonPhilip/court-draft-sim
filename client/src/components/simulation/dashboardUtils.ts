@@ -222,6 +222,8 @@ export function buildLeagueRows(result: SimulationResult): LeagueRow[] {
         ast: Number((row.totals.ast / gp).toFixed(1)),
         stl: Number((row.totals.stl / gp).toFixed(1)),
         blk: Number((row.totals.blk / gp).toFixed(1)),
+        // Old saves predate foul tracking — treat missing as 0.
+        pf: Number(((row.totals.pf ?? 0) / gp).toFixed(1)),
       },
       totals: { ...row.totals },
     });
@@ -725,7 +727,7 @@ export function getStreak(games: GameResult[]): { count: number; type: 'W' | 'L'
 }
 
 export function teamAvgForDisplay(playerStats: SimulatedPlayerStats[]): PlayerStats {
-  if (playerStats.length === 0) return { pts: 0, reb: 0, ast: 0, stl: 0, blk: 0 };
+  if (playerStats.length === 0) return { pts: 0, reb: 0, ast: 0, stl: 0, blk: 0, pf: 0 };
   const sum = (k: keyof PlayerStats) => playerStats.reduce((t, p) => t + p.averages[k], 0);
   const n = playerStats.length;
   return {
@@ -734,5 +736,6 @@ export function teamAvgForDisplay(playerStats: SimulatedPlayerStats[]): PlayerSt
     ast: sum('ast') / n,
     stl: sum('stl') / n,
     blk: sum('blk') / n,
+    pf: sum('pf') / n,
   };
 }

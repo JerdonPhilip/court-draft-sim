@@ -151,11 +151,11 @@ export const api = {
         method: 'POST',
         body: JSON.stringify({ lineup, config, ...(era ? { era } : {}) }),
       }, 30000),
-    runGame: (homeTeam: Player[], awayTeam: Player[]) =>
+    runGame: (homeTeam: Player[], awayTeam: Player[], seriesGameNumber?: number) =>
       withRetry(() =>
         fetchAPI<{ result: PlayoffGameResult }>('/simulation/game', {
           method: 'POST',
-          body: JSON.stringify({ homeTeam, awayTeam }),
+          body: JSON.stringify({ homeTeam, awayTeam, ...(seriesGameNumber !== undefined ? { seriesGameNumber } : {}) }),
         }),
       ),
     runVSMode: (userLineup: Player[], historicalTeamId: string, seriesLength: 1 | 7) =>

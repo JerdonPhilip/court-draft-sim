@@ -35,13 +35,13 @@ export const STAR_USAGE_BONUS = [1.18, 1.07, 1.0, 0.95, 0.9] as const;
 // (neutral venue, no variance/fatigue), measured empirically: mean over 1200
 // generated pools. Recompute the same way if the model or the generator in
 // routes/simulation.ts changes.
-export const LEAGUE_AVG_IMPACT = 37.6;
+export const LEAGUE_AVG_IMPACT = 38.1;
 
 // --- Height model (mirrored in client/src/utils/helpers.ts) ---
 // Average NBA height per position (inches). Players rebound and protect
 // the rim better than their positional average when taller than it.
 export const POSITION_HEIGHT_BASELINE: Record<string, number> = {
-  PG: 75,
+  PG: 74,
   SG: 77,
   SF: 79,
   PF: 81,
@@ -49,10 +49,10 @@ export const POSITION_HEIGHT_BASELINE: Record<string, number> = {
 };
 
 // Rating multiplier per inch above/below baseline, by category.
-export const HEIGHT_REB_PER_INCH = 0.06;
-export const HEIGHT_BLK_PER_INCH = 0.08;
-export const HEIGHT_FACTOR_MIN = 0.85;
-export const HEIGHT_FACTOR_MAX = 1.15;
+export const HEIGHT_REB_PER_INCH = 0.05;
+export const HEIGHT_BLK_PER_INCH = 0.06;
+export const HEIGHT_FACTOR_MIN = 0.88;
+export const HEIGHT_FACTOR_MAX = 1.12;
 
 // Strength points per unit of base-impact differential vs league average.
 export const IMPACT_TO_STRENGTH = 1.2;

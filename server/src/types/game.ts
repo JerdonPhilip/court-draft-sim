@@ -6,6 +6,9 @@ export interface PlayerStats {
   ast: number;
   stl: number;
   blk: number;
+  /** Personal fouls, hard-capped at 5. NEVER ejects: all 5 play every game
+   * regardless — no bench exists and no engine path benches on fouls. */
+  pf: number;
 }
 
 export interface Player {
@@ -23,6 +26,27 @@ export interface Player {
   overall: number;
   archetype: string;
   imageUrl?: string;
+  // --- Engine trait overrides (all optional; estimated formulaically when absent) ---
+  /** Pace rating (~85-110). Falls back to era pace + positional offset. */
+  pace?: number;
+  /** True shooting 0-1. Falls back to era-average + overall curve. */
+  tsPct?: number;
+  /** Turnovers per game. Falls back to a guard-heavy estimate. */
+  tov?: number;
+  /** Usage rate 0-100. Falls back to a scoring/load estimate. */
+  usageRate?: number;
+  /** Defensive rating 0-100. Falls back to a stocks/boards/overall estimate. */
+  defRating?: number;
+  /** Clutch rating 0-100. Falls back to an overall/scoring estimate. */
+  clutch?: number;
+  /** Free-throw rate (FTA/FGA). Falls back to a slasher/big estimate. */
+  ftr?: number;
+  /** Free-throw percentage 0-1. Falls back to a positional estimate. */
+  ftPct?: number;
+  /** 3PT attempt rate (3PA/FGA). Pre-1980 players ~0 (no line). Estimated otherwise. */
+  threePar?: number;
+  /** Foul proneness 1-100 (gambling vs clean). Estimated from stocks/overall. */
+  foulProneness?: number;
 }
 
 export function getPlayerPositions(player: Pick<Player, 'position' | 'secondaryPositions'>): Position[] {
@@ -65,6 +89,8 @@ export interface GameSimulationInput {
   /** 1-based season game number for fatigue; default 1 (no fatigue for one-off/playoff games). */
   gameIndex?: number;
   totalGames?: number;
+  /** 1-based game number within a best-of-7 (coaching adaptation past Game 1). */
+  seriesGameNumber?: number;
 }
 
 export interface GameSimulationOutput {
@@ -72,6 +98,8 @@ export interface GameSimulationOutput {
   awayScore: number;
   /** Overtime periods played (0 = regulation decision). */
   otPeriods: number;
+  /** Blended possessions-per-48 both teams played at. */
+  pace: number;
   homePlayerStats: Record<string, PlayerStats>;
   awayPlayerStats: Record<string, PlayerStats>;
   homeMinutes: Record<string, number>;
@@ -122,6 +150,8 @@ export interface SeasonGameResult {
   score: { us: number; them: number };
   /** Overtime periods played (0 = regulation decision). */
   otPeriods: number;
+  /** Blended possessions-per-48 both teams played at. */
+  pace: number;
   playerStats: Record<string, PlayerStats>;
   userMinutes: Record<string, number>;
   opponentPlayerStats: Record<string, PlayerStats>;
@@ -145,7 +175,7 @@ export interface PlayerSeasonStats {
   minutesPerGame: number;
   averages: PlayerStats;
   totals: PlayerStats;
-  highGames: { pts: number; reb: number; ast: number; stl: number; blk: number };
+  highGames: { pts: number; reb: number; ast: number; stl: number; blk: number; pf: number };
 }
 
 export interface TeamSeasonStats {

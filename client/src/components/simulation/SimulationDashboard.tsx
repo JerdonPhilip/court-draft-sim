@@ -86,6 +86,7 @@ const STAT_LABELS: Record<keyof PlayerStats, string> = {
   ast: 'ASSISTS',
   stl: 'STEALS',
   blk: 'BLOCKS',
+  pf: 'FOULS',
 };
 
 const STAT_COLORS: Record<keyof PlayerStats, string> = {
@@ -94,6 +95,7 @@ const STAT_COLORS: Record<keyof PlayerStats, string> = {
   ast: '#007aff',
   stl: '#34c759',
   blk: '#af52de',
+  pf: '#ff9f0a',
 };
 
 type SeasonView = 'overview' | 'games' | 'standings' | 'players' | 'league' | 'awards' | 'playoffs';
@@ -689,10 +691,15 @@ function AwardsView({ result }: { result: SimulationResult }) {
     const userWinPct = standings.find((t) => t.isUser)?.winPct ?? 0;
     const teamWinPct = (row: LeagueRow) => (row.isUser ? userWinPct : (winPctByNorm.get(normalizeTeamName(row.team)) ?? 0));
 
+    // MVP/DPOY require half a season (spec §5.3); fall back to the full table
+    // if nobody qualifies so the awards never render empty.
+    const minGP = Math.max(1, Math.ceil(result.games.length * 0.5));
+    const qualified = rows.filter((r) => r.gp >= minGP);
+    const awardPool = qualified.length > 0 ? qualified : rows;
     const mvpRow =
-      rows.slice().sort((a, b) => awardScore(b) + teamWinPct(b) * 10 - awardScore(a) - teamWinPct(a) * 10)[0] ?? null;
+      awardPool.slice().sort((a, b) => awardScore(b) + teamWinPct(b) * 10 - awardScore(a) - teamWinPct(a) * 10)[0] ?? null;
     const clutchRow = getClutchPlayer(result, rows);
-    const dpoyRow = rows.slice().sort((a, b) => awardScore(b, true) - awardScore(a, true))[0] ?? null;
+    const dpoyRow = awardPool.slice().sort((a, b) => awardScore(b, true) - awardScore(a, true))[0] ?? null;
     const defFirst = selectTeam(rows, true);
     const defFirstKeys = new Set(defFirst.map((p) => p.rowKey));
     const defSecond = selectTeam(rows.filter((r) => !defFirstKeys.has(r.rowKey)), true);
@@ -830,7 +837,7 @@ async function simulateRealSeries(
   for (let n = 1; n <= 7; n++) {
     if (shouldAbort?.()) break;
     const hostsHome = hostsBracketHome(n);
-    const response = await api.simulation.runGame(hostsHome ? homeRoster : awayRoster, hostsHome ? awayRoster : homeRoster);
+    const response = await api.simulation.runGame(hostsHome ? homeRoster : awayRoster, hostsHome ? awayRoster : homeRoster, n);
     if (shouldAbort?.()) break;
     const game = alignGameToBracketSides(response.result, hostsHome);
     games.push(game);
@@ -1574,7 +1581,7 @@ function PlayoffsModal({
       let runningAwayWins = awayWins;
       for (let index = startIndex; index < MAX_GAMES; index++) {
         if (abortRef.current) break;
-        const response = await api.simulation.runGame(lineup, opponent);
+        const response = await api.simulation.runGame(lineup, opponent, index + 1);
         if (abortRef.current) break;
         const nextGame = response.result;
         // Live from 0-0: animate first, record only on the final buzzer.
@@ -1821,7 +1828,7 @@ const PlayoffGameSummary = memo(function PlayoffGameSummary({
 
   const renderStats = (team: Player[], stats: Record<string, PlayerStats>, minutes: Record<string, number>) => (
     <div className="overflow-x-auto">
-      <table className="w-full min-w-[520px] text-[13px]">
+      <table className="w-full min-w-[560px] text-[13px]">
         <thead>
           <tr className="border-b border-broadcast-border text-[11px] uppercase tracking-wider text-broadcast-text-muted">
             <th className="py-1.5 text-left font-semibold">Player</th>
@@ -1831,18 +1838,19 @@ const PlayoffGameSummary = memo(function PlayoffGameSummary({
             <th className="py-1.5 text-center font-semibold">Ast</th>
             <th className="py-1.5 text-center font-semibold">Stl</th>
             <th className="py-1.5 text-center font-semibold">Blk</th>
+            <th className="py-1.5 text-center font-semibold" title="Personal fouls (capped at 5 — never benches anyone)">PF</th>
           </tr>
         </thead>
         <tbody>
           {team.map((player) => {
-            const playerStats = stats[player.id] ?? { pts: 0, reb: 0, ast: 0, stl: 0, blk: 0 };
+            const playerStats = stats[player.id] ?? { pts: 0, reb: 0, ast: 0, stl: 0, blk: 0, pf: 0 };
             return (
               <tr key={player.id} className="border-b border-broadcast-border/40 last:border-0">
                 <td className="whitespace-nowrap py-1.5 pr-2 text-left font-medium text-white">{player.name}</td>
                 <td className="py-1.5 text-center tabular-nums text-broadcast-text-secondary">{minutes[player.id] ?? 0}</td>
-                {(['pts', 'reb', 'ast', 'stl', 'blk'] as const).map((stat) => (
+                {(['pts', 'reb', 'ast', 'stl', 'blk', 'pf'] as const).map((stat) => (
                   <td key={stat} className="py-1.5 text-center font-semibold tabular-nums text-white">
-                    {playerStats[stat]}
+                    {playerStats[stat] ?? 0}
                   </td>
                 ))}
               </tr>
@@ -2510,6 +2518,9 @@ const BoxScoreTable = memo(function BoxScoreTable({
               <th scope="col" className="text-center py-2 px-2" style={{ color: STAT_COLORS.blk }}>
                 BLK
               </th>
+              <th scope="col" className="text-center py-2 px-2" style={{ color: STAT_COLORS.pf }} title="Personal fouls (capped at 5 — never benches anyone)">
+                PF
+              </th>
             </tr>
           </thead>
           <tbody>
@@ -2544,6 +2555,9 @@ const BoxScoreTable = memo(function BoxScoreTable({
                 </td>
                 <td className="text-center py-2 px-2 font-bold" style={{ color: STAT_COLORS.blk }}>
                   {perf.stats.blk}
+                </td>
+                <td className="text-center py-2 px-2 font-bold" style={{ color: STAT_COLORS.pf }}>
+                  {perf.stats.pf ?? 0}
                 </td>
               </tr>
             ))}

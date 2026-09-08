@@ -6,6 +6,8 @@ export interface PlayerStats {
   ast: number;
   stl: number;
   blk: number;
+  /** Personal fouls, hard-capped at 5. NEVER ejects: all 5 play every game. */
+  pf: number;
 }
 
 export interface Player {
@@ -23,6 +25,17 @@ export interface Player {
   overall: number;
   archetype: string;
   imageUrl?: string;
+  /** Engine trait overrides (optional; estimated formulaically when absent). */
+  pace?: number;
+  tsPct?: number;
+  tov?: number;
+  usageRate?: number;
+  defRating?: number;
+  clutch?: number;
+  ftr?: number;
+  ftPct?: number;
+  threePar?: number;
+  foulProneness?: number;
 }
 
 export function getPlayerPositions(player: Pick<Player, 'position' | 'secondaryPositions'>): Position[] {
@@ -159,7 +172,7 @@ export interface SimulatedPlayerStats {
   minutesPerGame?: number;
   averages: PlayerStats;
   totals: PlayerStats;
-  highGames?: { pts: number; reb: number; ast: number; stl: number; blk: number };
+  highGames?: { pts: number; reb: number; ast: number; stl: number; blk: number; pf: number };
   position?: Position;
   secondaryPositions?: Position[];
   overall?: number;

@@ -11034,7 +11034,7 @@ const FLEX_MAP: Record<string, Position[]> = {
   'jamal-crawford-00s': ['PG'],
   'kirk-hinrich-00s': ['SG'],
   'brad-miller-00s': ['PF'],
-  'lebron-james-00s': ['PF', 'PG'],
+  'lebron-james-00s': ['PF', 'PG', 'SG', 'C'],
   'ricky-davis-00s': ['PG'],
   'carlos-boozer-00s': ['C'],
   'brevin-knight-00s': ['SG'],
