@@ -1,5 +1,6 @@
 import { Player, Position } from '../types/game.js';
 import { randomInt } from 'node:crypto';
+import { PLAYER_ATTRIBUTES } from './playerAttributes.js';
 
 // NOTE: Steals/blocks were not officially tracked before 1973-74.
 // 1960s players below use era-adjusted estimates (not zeros) so the
@@ -23453,6 +23454,11 @@ for (const player of ALL_PLAYERS) {
     throw new Error(`Missing height for player ${player.id}`);
   }
   player.heightIn = height;
+  const attrs = PLAYER_ATTRIBUTES[player.id];
+  if (attrs === undefined) {
+    throw new Error(`Missing attributes for player ${player.id}`);
+  }
+  player.attributes = attrs;
 }
 
 export function getPlayersByFranchiseAndDecade(franchise: string, decade: string): Player[] {
