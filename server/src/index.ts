@@ -9,6 +9,7 @@ import rateLimit from 'express-rate-limit';
 import draftRoutes from './routes/draft.js';
 import simulationRoutes from './routes/simulation.js';
 import playersRoutes from './routes/players.js';
+import { SERVER_VERSION } from './version.js';
 
 dotenv.config();
 
@@ -50,7 +51,7 @@ const generalLimiter = rateLimit({
 app.use('/api/', generalLimiter);
 
 app.get('/api/health', (req, res) => {
-  res.json({ status: 'ok', timestamp: new Date().toISOString() });
+  res.json({ status: 'ok', version: SERVER_VERSION, timestamp: new Date().toISOString() });
 });
 
 app.use('/api/draft', draftRoutes);
@@ -71,7 +72,7 @@ app.use((err: Error & { status?: number }, req: express.Request, res: express.Re
 const isMain = process.argv[1]?.endsWith('index.js') || process.argv[1]?.endsWith('index.ts');
 if (isMain) {
   app.listen(PORT, () => {
-    console.log(`Server running on http://localhost:${PORT}`);
+    console.log(`Server v${SERVER_VERSION} running on http://localhost:${PORT}`);
   });
 }
 

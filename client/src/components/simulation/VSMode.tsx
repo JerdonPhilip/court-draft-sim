@@ -28,6 +28,8 @@ export function VSModeScreen({ onBack }: VSModeScreenProps) {
 
   const lineup = draftState.lineup.slots.map(s => s.player).filter((p): p is Player => p !== null);
   const sixthManId = draftState.lineup.slots.find(s => s.isSixthMan && s.player)?.player?.id;
+  const sixthAuto = !(draftState.sixthManExplicit ?? false);
+  const optionAuto = (rank: 1 | 2 | 3): boolean => !(draftState.optionsExplicit?.[rank] ?? false);
   const rankOf = (id: string) => draftState.lineup.slots.find(s => s.player?.id === id)?.optionRank;
   const options = (() => {
     const r = (rank: 1 | 2 | 3) => draftState.lineup.slots.find(s => s.optionRank === rank && s.player)?.player?.id ?? null;
@@ -179,16 +181,16 @@ export function VSModeScreen({ onBack }: VSModeScreenProps) {
                       <div className="font-medium text-white">
                         {player.name}
                         {sixthManId === player.id && (
-                          <span className="ml-2 rounded-full border border-broadcast-gold/50 bg-broadcast-gold/15 px-1.5 py-0.5 text-[10px] font-bold text-broadcast-gold">6TH MAN</span>
+                          <span className="ml-2 rounded-full border border-broadcast-gold/50 bg-broadcast-gold/15 px-1.5 py-0.5 text-[10px] font-bold text-broadcast-gold">6TH MAN{sixthAuto ? ' (AUTO)' : ''}</span>
                         )}
                         {rankOf(player.id) === 1 && (
-                          <span className="ml-2 rounded-full border border-broadcast-purple/50 bg-broadcast-purple/15 px-1.5 py-0.5 text-[10px] font-bold text-broadcast-purple">1ST OPT</span>
+                          <span className="ml-2 rounded-full border border-broadcast-purple/50 bg-broadcast-purple/15 px-1.5 py-0.5 text-[10px] font-bold text-broadcast-purple">1ST OPT{optionAuto(1) ? ' (AUTO)' : ''}</span>
                         )}
                         {rankOf(player.id) === 2 && (
-                          <span className="ml-2 rounded-full border border-broadcast-purple/50 bg-broadcast-purple/15 px-1.5 py-0.5 text-[10px] font-bold text-broadcast-purple">2ND OPT</span>
+                          <span className="ml-2 rounded-full border border-broadcast-purple/50 bg-broadcast-purple/15 px-1.5 py-0.5 text-[10px] font-bold text-broadcast-purple">2ND OPT{optionAuto(2) ? ' (AUTO)' : ''}</span>
                         )}
                         {rankOf(player.id) === 3 && (
-                          <span className="ml-2 rounded-full border border-broadcast-purple/50 bg-broadcast-purple/15 px-1.5 py-0.5 text-[10px] font-bold text-broadcast-purple">3RD OPT</span>
+                          <span className="ml-2 rounded-full border border-broadcast-purple/50 bg-broadcast-purple/15 px-1.5 py-0.5 text-[10px] font-bold text-broadcast-purple">3RD OPT{optionAuto(3) ? ' (AUTO)' : ''}</span>
                         )}
                       </div>
                       <div className="text-xs text-broadcast-text-secondary">{player.team.toUpperCase()} • {player.decade} • {player.overall} OVR</div>

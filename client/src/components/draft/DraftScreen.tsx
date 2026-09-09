@@ -7,6 +7,7 @@ import { SlotMachine } from './SlotMachine';
 import { PlayerPool } from './PlayerPool';
 import { LineupBuilder } from './LineupBuilder';
 import { calculateTeamStrength, getWinProjection } from '../../utils/helpers';
+import { APP_VERSION } from '../../version';
 import { canPlayPosition, getPlayerPositions } from '../../types/game';
 import type { Player } from '../../types/game';
 
@@ -19,6 +20,7 @@ export function DraftScreen() {
     draftPlayer,
     setSixthMan,
     setOptionRank,
+    swapPlayers,
     finalizeDraft,
     initializeDraft,
     isLoading,
@@ -132,7 +134,7 @@ export function DraftScreen() {
                 <RotateCcw className="w-5 h-5 text-broadcast-text-secondary" aria-hidden="true" />
               </motion.button>
               <div>
-                <h1 className="font-display text-2xl font-bold gradient-text">COURT DRAFT SIM</h1>
+                <h1 className="font-display text-2xl font-bold gradient-text">COURT DRAFT SIM <span className="ml-1 align-middle rounded-full border border-white/15 bg-white/5 px-1.5 py-0.5 text-[10px] font-bold tracking-wider text-broadcast-text-muted">v{APP_VERSION}</span></h1>
                 <p className="text-xs text-broadcast-text-secondary">
                   {isLineupComplete
                     ? `LINEUP COMPLETE • ${maxRounds} OF ${maxRounds}`
@@ -254,10 +256,13 @@ export function DraftScreen() {
               lineup={lineup.slots}
               selectedSlot={selectedSlot}
               draggedPlayer={draggedPlayer}
+              sixthManExplicit={draftState.sixthManExplicit ?? false}
+              optionsExplicit={draftState.optionsExplicit ?? { 1: false, 2: false, 3: false }}
               onSelectSlot={handleSelectSlot}
               onDropPlayer={handleDropToSlot}
               onSetSixthMan={setSixthMan}
               onSetOption={setOptionRank}
+              onSwapPlayers={(a, b) => { swapPlayers(a, b); }}
             />
             </div>
           </div>

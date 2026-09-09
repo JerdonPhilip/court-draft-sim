@@ -6,10 +6,13 @@ export interface PlayerStats {
   ast: number;
   stl: number;
   blk: number;
-  /** Personal fouls, hard-capped at 5. NEVER ejects: all 5 play every game
-   * regardless — no bench exists and no engine path benches on fouls. */
+  /** Personal fouls. 6 = fouled out (only when a custom minutes plan is in
+   * effect — legacy rotations without minutes still cap at 5, never ejecting). */
   pf: number;
 }
+
+/** Planned regulation minutes per player ID (must sum to ~240; normalized server-side). */
+export type MinutesMap = Record<string, number>;
 
 export interface Player {
   id: string;
@@ -110,6 +113,10 @@ export interface GameSimulationInput {
   homeSixthManId?: string | null;
   /** 10-man rotation: player ID of the away Sixth Man (must be bench index 5-9). */
   awaySixthManId?: string | null;
+  /** Custom minutes plan for the home side (foul-outs + DNP cover enabled). Omit for legacy fixed rotation. */
+  homeMinutes?: MinutesMap | null;
+  /** Custom minutes plan for the away side. */
+  awayMinutes?: MinutesMap | null;
   /** Offensive pecking order — 1st/2nd/3rd options get usage priority + scoring bumps. */
   homeOptions?: OffensiveOptions | null;
   /** Offensive pecking order for the away side. */

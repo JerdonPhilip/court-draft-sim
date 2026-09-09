@@ -6,9 +6,12 @@ export interface PlayerStats {
   ast: number;
   stl: number;
   blk: number;
-  /** Personal fouls, hard-capped at 5. NEVER ejects: all 5 play every game. */
+  /** Personal fouls. 6 = fouled out (custom minutes plans only). */
   pf: number;
 }
+
+/** Planned regulation minutes per player ID (sums to 240). */
+export type MinutesMap = Record<string, number>;
 
 export interface Player {
   id: string;
@@ -129,6 +132,16 @@ export interface DraftState {
   isSpinning: boolean;
   spinResult: { franchise: string; decade: string } | null;
   error: string | null;
+  /** True once the user reviews + confirms 6th man + 1st/2nd/3rd in SeasonSetup. Reset on any roster change. */
+  rotationConfirmed: boolean;
+  /** True only when the 6th man was explicitly picked (false = auto-defaulted). */
+  sixthManExplicit: boolean;
+  /** Per-rank explicit flags (false = auto-defaulted by finalizeDraft). */
+  optionsExplicit: { 1: boolean; 2: boolean; 3: boolean };
+  /** Custom minutes plan (null = not initialized yet). 0 = emergency foul cover only. */
+  minutes: MinutesMap | null;
+  /** True once the user edits minutes or picks a preset (false = auto defaults). */
+  minutesExplicit: boolean;
 }
 
 export interface EraInfo {

@@ -10,13 +10,19 @@ interface SlotProps {
   index: number;
   isSelected: boolean;
   draggedPlayer: Player | null;
+  sixthManAuto: boolean;
+  optionAuto: boolean;
+  swapMode: boolean;
+  isSwapPick: boolean;
+  swapCompatible: boolean | null;
   onSelect: (index: number) => void;
   onDropPlayer: (player: Player, slotIndex: number) => void;
   onSetSixthMan: (index: number) => void;
   onSetOption: (index: number, rank: 1 | 2 | 3 | null) => void;
+  onSwapClick: (index: number) => void;
 }
 
-function Slot({ slot, index, isSelected, draggedPlayer, onSelect, onDropPlayer, onSetSixthMan, onSetOption }: SlotProps) {
+function Slot({ slot, index, isSelected, draggedPlayer, sixthManAuto, optionAuto, swapMode, isSwapPick, swapCompatible, onSelect, onDropPlayer, onSetSixthMan, onSetOption, onSwapClick }: SlotProps) {
   const hasPlayer = !!slot.player;
   const expectedPos = slot.position;
   const roleLabel = slot.role === 'bench' ? 'Bench' : 'Starter';
@@ -75,6 +81,15 @@ function Slot({ slot, index, isSelected, draggedPlayer, onSelect, onDropPlayer, 
   );
 
   const slotColor = getPositionColor(hasPlayer && slot.player ? slot.player.position : expectedPos);
+  const swapRing = swapMode && hasPlayer
+    ? isSwapPick
+      ? 'border-broadcast-gold shadow-glow-gold'
+      : swapCompatible === true
+        ? 'border-broadcast-accent/70 shadow-glow-accent'
+        : swapCompatible === false
+          ? 'border-broadcast-red/40 opacity-60'
+          : 'border-white/10'
+    : null;
 
   return (
     <motion.div
@@ -84,7 +99,8 @@ function Slot({ slot, index, isSelected, draggedPlayer, onSelect, onDropPlayer, 
       <div
         className={cn(
           'flex h-full flex-col overflow-hidden rounded-2xl border bg-broadcast-card/90 shadow-[0_10px_36px_rgb(0,0,0,0.38)] backdrop-blur-sm transition-[transform,border-color,box-shadow] duration-200',
-          hasPlayer
+          swapRing ??
+          (hasPlayer
             ? 'border-broadcast-accent/50 shadow-glow-accent player-card-selected'
             : isSelected
             ? 'border-broadcast-gold shadow-glow-gold'
@@ -92,7 +108,7 @@ function Slot({ slot, index, isSelected, draggedPlayer, onSelect, onDropPlayer, 
             ? 'border-dashed border-broadcast-accent shadow-glow-accent'
             : dropBlocked
             ? 'border-broadcast-red/40 opacity-60'
-            : 'border-white/10'
+            : 'border-white/10')
         )}
       >
         <div
@@ -134,10 +150,10 @@ function Slot({ slot, index, isSelected, draggedPlayer, onSelect, onDropPlayer, 
                   {slot.role === 'bench' ? 'BENCH' : 'STARTER'}
                 </span>
                 {slot.isSixthMan && (
-                  <><span aria-hidden="true"> • </span><span className="font-bold text-broadcast-gold">6TH MAN</span></>
+                  <><span aria-hidden="true"> • </span><span className="font-bold text-broadcast-gold">6TH MAN{sixthManAuto ? ' (AUTO)' : ''}</span></>
                 )}
                 {slot.optionRank && (
-                  <><span aria-hidden="true"> • </span><span className="font-bold text-broadcast-purple">{slot.optionRank === 1 ? '1ST OPT' : slot.optionRank === 2 ? '2ND OPT' : '3RD OPT'}</span></>
+                  <><span aria-hidden="true"> • </span><span className="font-bold text-broadcast-purple">{slot.optionRank === 1 ? '1ST OPT' : slot.optionRank === 2 ? '2ND OPT' : '3RD OPT'}{optionAuto ? ' (AUTO)' : ''}</span></>
                 )}
               </p>
               <p className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-broadcast-text-secondary">
@@ -197,7 +213,26 @@ function Slot({ slot, index, isSelected, draggedPlayer, onSelect, onDropPlayer, 
                     {rank}
                   </button>
                 ))}
+                <button
+                  type="button"
+                  onClick={() => onSwapClick(index)}
+                  aria-pressed={isSwapPick}
+                  title={swapMode ? (isSwapPick ? 'Cancel swap pick' : swapCompatible ? `Swap with selected player` : 'Cannot swap: positions do not fit both slots') : `Swap ${slot.player.name} with another slot (positions must fit both ways)`}
+                  className={cn(
+                    'ml-auto rounded-lg border px-2.5 py-1 text-[11px] font-bold tracking-wide transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-broadcast-accent',
+                    isSwapPick
+                      ? 'border-broadcast-gold/60 bg-broadcast-gold/15 text-broadcast-gold'
+                      : swapMode && swapCompatible === true
+                        ? 'border-broadcast-accent/60 bg-broadcast-accent/10 text-broadcast-accent hover:bg-broadcast-accent/20'
+                        : 'border-white/10 bg-white/5 text-broadcast-text-secondary hover:border-broadcast-accent/50 hover:text-white'
+                  )}
+                >
+                  {isSwapPick ? 'PICKED ⇄' : '⇄ SWAP'}
+                </button>
               </div>
+              {swapMode && isSwapPick && (
+                <p className="mt-1.5 text-[11px] font-medium text-broadcast-gold">Pick another highlighted card to swap — positions must fit both slots.</p>
+              )}
             </div>
           </div>
         ) : (
@@ -241,19 +276,48 @@ interface LineupBuilderProps {
   lineup: LineupSlot[];
   selectedSlot: number | null;
   draggedPlayer: Player | null;
+  sixthManExplicit: boolean;
+  optionsExplicit: { 1: boolean; 2: boolean; 3: boolean };
   onSelectSlot: (index: number) => void;
   onDropPlayer: (player: Player, slotIndex: number) => void;
   onSetSixthMan: (index: number) => void;
   onSetOption: (index: number, rank: 1 | 2 | 3 | null) => void;
+  onSwapPlayers: (indexA: number, indexB: number) => void;
 }
 
-export function LineupBuilder({ lineup, selectedSlot, draggedPlayer, onSelectSlot, onDropPlayer, onSetSixthMan, onSetOption }: LineupBuilderProps) {
+export function LineupBuilder({ lineup, selectedSlot, draggedPlayer, sixthManExplicit, optionsExplicit, onSelectSlot, onDropPlayer, onSetSixthMan, onSetOption, onSwapPlayers }: LineupBuilderProps) {
+  const [swapPick, setSwapPick] = useState<number | null>(null);
   const filled = lineup.filter(s => s.player).length;
   const total = lineup.length || 10;
   const starters = lineup.slice(0, 5);
   const bench = lineup.slice(5, 10);
   const sixthSet = lineup.some(s => s.isSixthMan && s.player);
   const optionsSet = [1, 2, 3].every(r => lineup.some(s => s.optionRank === r && s.player));
+  const swapMode = swapPick !== null;
+
+  const swappableWithPick = (index: number): boolean | null => {
+    if (swapPick === null) return null;
+    if (index === swapPick) return null;
+    const a = lineup[swapPick];
+    const b = lineup[index];
+    if (!a?.player || !b?.player) return false;
+    return canPlayPosition(a.player, b.position) && canPlayPosition(b.player, a.position);
+  };
+
+  const handleSwapClick = (index: number) => {
+    if (!lineup[index]?.player) return;
+    if (swapPick === null) {
+      setSwapPick(index);
+      return;
+    }
+    if (swapPick === index) {
+      setSwapPick(null);
+      return;
+    }
+    onSwapPlayers(swapPick, index);
+    setSwapPick(null);
+  };
+
   const renderSlot = (slot: LineupSlot, index: number) => (
     <Slot
       key={`${slot.position}-${slot.role ?? (index < 5 ? 'starter' : 'bench')}-${index}`}
@@ -261,10 +325,16 @@ export function LineupBuilder({ lineup, selectedSlot, draggedPlayer, onSelectSlo
       index={index}
       isSelected={selectedSlot === index}
       draggedPlayer={draggedPlayer}
+      sixthManAuto={!!slot.isSixthMan && !sixthManExplicit}
+      optionAuto={!!slot.optionRank && !(optionsExplicit?.[slot.optionRank] ?? false)}
+      swapMode={swapMode}
+      isSwapPick={swapPick === index}
+      swapCompatible={swappableWithPick(index)}
       onSelect={onSelectSlot}
       onDropPlayer={onDropPlayer}
       onSetSixthMan={onSetSixthMan}
       onSetOption={onSetOption}
+      onSwapClick={handleSwapClick}
     />
   );
   return (
@@ -277,6 +347,18 @@ export function LineupBuilder({ lineup, selectedSlot, draggedPlayer, onSelectSlo
           </span>
         )}
       </div>
+      {swapMode && (
+        <div className="flex items-center justify-between gap-3 rounded-xl border border-broadcast-gold/40 bg-broadcast-gold/10 px-3 py-2">
+          <span className="text-xs font-bold text-broadcast-gold">SWAP MODE — pick a highlighted card. Positions must fit both slots.</span>
+          <button
+            type="button"
+            onClick={() => setSwapPick(null)}
+            className="rounded-lg border border-broadcast-gold/40 px-2 py-1 text-[11px] font-bold text-broadcast-gold hover:bg-broadcast-gold/20"
+          >
+            CANCEL
+          </button>
+        </div>
+      )}
 
       <div>
         <h3 className="mb-3 text-xs font-bold uppercase tracking-[0.18em] text-broadcast-accent">Starters</h3>

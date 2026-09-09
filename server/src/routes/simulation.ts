@@ -1,7 +1,7 @@
 import { Router, Request, Response } from 'express';
 import { z } from 'zod';
 import rateLimit from 'express-rate-limit';
-import { simulateSeason, getTeamStrength, getBaseTeamImpact, strengthVsLeague, calculateNonLinearWinCurve, simulateSingleGame } from '../services/simulationEngine.js';
+import { simulateSeason, getTeamStrength, getBaseTeamImpact, strengthVsLeague, calculateNonLinearWinCurve, simulateSingleGame, defaultMinutesFor } from '../services/simulationEngine.js';
 import { DEFAULT_SIMULATION_CONFIG, SIMULATION_CONSTANTS, LEAGUE_AVG_IMPACT } from '../services/constants.js';
 import { getEraLeague, getAllEraLeagues } from '../services/eraRosters.js';
 import { DECADES } from '../data/constants.js';
@@ -100,6 +100,10 @@ function lineupCoversAllPositions(lineup: Array<{ position: Position; secondaryP
 
 const sixthManSchema = z.string().min(1).max(100).nullable().optional();
 
+/** Custom minutes plan: player ID -> regulation minutes (0-48). The engine
+ * normalizes the total to 240, so slightly-off clients still simulate. */
+const minutesSchema = z.record(z.string().min(1).max(100), z.number().finite().min(0).max(48)).optional();
+
 const optionsSchema = z.object({
   first: z.string().min(1).max(100).nullable().optional(),
   second: z.string().min(1).max(100).nullable().optional(),
@@ -147,6 +151,8 @@ const simulateSeasonSchema = z.object({
   sixthManId: sixthManSchema,
   // 1st/2nd/3rd offensive options (must be unique roster members).
   options: optionsSchema,
+  // Custom minutes plan (enables 6-foul ejections + DNP cover). Omit for legacy.
+  minutes: minutesSchema,
   config: z.object({
     variance: z.number().finite().min(0).max(1).optional(),
     homeCourtAdvantage: z.number().finite().min(0).max(0.2).optional(),
@@ -162,6 +168,8 @@ const simulateGameSchema = z.object({
   awaySixthManId: sixthManSchema,
   homeOptions: optionsSchema,
   awayOptions: optionsSchema,
+  homeMinutes: minutesSchema,
+  awayMinutes: minutesSchema,
   // 1-based game number within a best-of-7 (coaching adaptation past Game 1).
   seriesGameNumber: z.number().int().min(1).max(7).optional(),
 });
@@ -170,6 +178,7 @@ const vsModeSchema = z.object({
   userLineup: lineupSchema,
   sixthManId: sixthManSchema,
   options: optionsSchema,
+  userMinutes: minutesSchema,
   historicalTeamId: z.string().min(1).max(50),
   seriesLength: z.union([z.literal(1), z.literal(7)]),
 });
@@ -198,6 +207,7 @@ router.post('/season', seasonLimiter, (req: Request, res: Response) => {
 
   const { lineup, era, config, sixthManId, options } = result.data;
   const players = lineup as Player[];
+  const minutes = (result.data as { minutes?: Record<string, number> }).minutes ?? null;
 
   // Sixth Man must be a bench player (indices 5-9) in 10-man rotations.
   if (sixthManId && players.length === 10 && !players.slice(5, 10).some(p => p.id === sixthManId)) {
@@ -230,14 +240,14 @@ router.post('/season', seasonLimiter, (req: Request, res: Response) => {
   }
   const simulationConfig = { ...DEFAULT_SIMULATION_CONFIG, ...config };
 
-  const seasonResult = simulateSeason(players, opponentPool, simulationConfig, opponentNames, sixthManId ?? null, options ?? null);
-  const teamStrength = getTeamStrength(players, sixthManId ?? null, options ?? null);
+  const seasonResult = simulateSeason(players, opponentPool, simulationConfig, opponentNames, sixthManId ?? null, options ?? null, minutes);
+  const teamStrength = getTeamStrength(players, sixthManId ?? null, options ?? null, minutes);
   // Project against the league actually played: era leagues differ in
   // strength (a 60s season is easier than a modern one), so the same
   // roster projects differently per era.
   const effectiveStrength = eraAvgImpact === undefined
     ? teamStrength
-    : strengthVsLeague(getBaseTeamImpact(players, sixthManId ?? null, options ?? null), eraAvgImpact);
+    : strengthVsLeague(getBaseTeamImpact(players, sixthManId ?? null, options ?? null, minutes), eraAvgImpact);
   const projectedWins = calculateNonLinearWinCurve(effectiveStrength);
 
   const formattedResult = {
@@ -337,6 +347,8 @@ router.post('/game', gameLimiter, (req: Request, res: Response) => {
   const { homeTeam, awayTeam, seriesGameNumber, homeSixthManId, awaySixthManId, homeOptions, awayOptions } = result.data;
   const homePlayers = homeTeam as Player[];
   const awayPlayers = awayTeam as Player[];
+  const homeMinutes = (result.data as { homeMinutes?: Record<string, number> }).homeMinutes ?? null;
+  const awayMinutes = (result.data as { awayMinutes?: Record<string, number> }).awayMinutes ?? null;
   const homeOptionsError = validateOptions(homeOptions, homePlayers);
   if (homeOptionsError) {
     return res.status(400).json({ error: homeOptionsError });
@@ -358,6 +370,8 @@ router.post('/game', gameLimiter, (req: Request, res: Response) => {
       awaySixthManId: awaySixthManId ?? null,
       homeOptions: homeOptions ?? null,
       awayOptions: awayOptions ?? null,
+      homeMinutes: homeMinutes ?? null,
+      awayMinutes: awayMinutes ?? null,
     });
 
     res.json({
@@ -384,6 +398,7 @@ router.post('/vs-mode', vsLimiter, (req: Request, res: Response) => {
   }
 
   const { userLineup, historicalTeamId, seriesLength, sixthManId, options } = result.data;
+  const userMinutesPlan = (result.data as { userMinutes?: Record<string, number> }).userMinutes ?? null;
   const historicalTeam = getAllHistoricalTeams().find(t => t.id === historicalTeamId);
 
   if (!historicalTeam) {
@@ -397,6 +412,9 @@ router.post('/vs-mode', vsLimiter, (req: Request, res: Response) => {
   const historicalLineup = historicalTeam.players.slice(0, 10) as Player[];
   const userSixth = sixthManId ?? null;
   const userOptions = options ?? null;
+  // Symmetric ejections: when the user brings a minutes plan, the legends get
+  // role-based defaults; otherwise both sides stay on the legacy rotation.
+  const historicalMinutesPlan = userMinutesPlan ? defaultMinutesFor(historicalLineup, null) : null;
   if (userSixth && (userLineup as Player[]).length === 10 && !(userLineup as Player[]).slice(5, 10).some(p => p.id === userSixth)) {
     return res.status(400).json({ error: 'sixthManId must be a bench player (roster spots 6-10)' });
   }
@@ -422,6 +440,8 @@ router.post('/vs-mode', vsLimiter, (req: Request, res: Response) => {
       awaySixthManId: isHome ? null : userSixth,
       homeOptions: isHome ? userOptions : null,
       awayOptions: isHome ? null : userOptions,
+      homeMinutes: isHome ? userMinutesPlan : historicalMinutesPlan,
+      awayMinutes: isHome ? historicalMinutesPlan : userMinutesPlan,
     });
 
     const userScore = isHome ? gameResult.homeScore : gameResult.awayScore;

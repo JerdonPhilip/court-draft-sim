@@ -21,7 +21,7 @@ import {
   X,
 } from 'lucide-react';
 import { cn } from '../../utils/helpers';
-import { formatTeamName, otLabel } from '../../utils/helpers';
+import { formatTeamName, otLabel, defaultMinutesForOrdered } from '../../utils/helpers';
 import { useLockBodyScroll } from '../../utils/useLockBodyScroll';
 import { api } from '../../utils/api';
 import { notify } from '../../store/toastStore';
@@ -1011,6 +1011,8 @@ async function simulateRealSeries(
   awaySixthManId?: string | null,
   homeOptions?: { first?: string | null; second?: string | null; third?: string | null } | null,
   awayOptions?: { first?: string | null; second?: string | null; third?: string | null } | null,
+  homeMinutes?: Record<string, number> | null,
+  awayMinutes?: Record<string, number> | null,
 ): Promise<{ homeWins: number; awayWins: number; games: PlayoffGameResult[] }> {
   // Higher seed hosts games 1, 2, 5, 7 — the bracket-home side.
   const hostsBracketHome = (n: number) => n === 1 || n === 2 || n === 5 || n === 7;
@@ -1020,7 +1022,7 @@ async function simulateRealSeries(
   for (let n = 1; n <= 7; n++) {
     if (shouldAbort?.()) break;
     const hostsHome = hostsBracketHome(n);
-    const response = await api.simulation.runGame(hostsHome ? homeRoster : awayRoster, hostsHome ? awayRoster : homeRoster, n, hostsHome ? (homeSixthManId ?? null) : (awaySixthManId ?? null), hostsHome ? (awaySixthManId ?? null) : (homeSixthManId ?? null), hostsHome ? (homeOptions ?? null) : (awayOptions ?? null), hostsHome ? (awayOptions ?? null) : (homeOptions ?? null));
+    const response = await api.simulation.runGame(hostsHome ? homeRoster : awayRoster, hostsHome ? awayRoster : homeRoster, n, hostsHome ? (homeSixthManId ?? null) : (awaySixthManId ?? null), hostsHome ? (awaySixthManId ?? null) : (homeSixthManId ?? null), hostsHome ? (homeOptions ?? null) : (awayOptions ?? null), hostsHome ? (awayOptions ?? null) : (homeOptions ?? null), hostsHome ? (homeMinutes ?? null) : (awayMinutes ?? null), hostsHome ? (awayMinutes ?? null) : (homeMinutes ?? null));
     if (shouldAbort?.()) break;
     const game = alignGameToBracketSides(response.result, hostsHome);
     games.push(game);
@@ -1205,7 +1207,7 @@ function PlayoffsView({
             try {
               const series = await simulateRealSeries(homeRoster, awayRoster, (gameNumber) => {
                 if (!simulationAborted.current) setBackgroundSimulation({ seriesKey: next, game: gameNumber });
-              }, undefined, 250, sixthFor(p.home), sixthFor(p.away), optionsFor(p.home), optionsFor(p.away));
+              }, undefined, 250, sixthFor(p.home), sixthFor(p.away), optionsFor(p.home), optionsFor(p.away), defaultMinutesForOrdered(homeRoster.map(pl => pl.id)), defaultMinutesForOrdered(awayRoster.map(pl => pl.id)));
               if (simulationAborted.current) break;
               games = series.games;
               winner =
@@ -1737,6 +1739,22 @@ function PlayoffsModal({
   const awayOptions = awayName === userTeamName ? userOptions : null;
   const validPlayoffRoster = (r: Player[]) => r.length === 5 || r.length === 10;
   const lineupIssue = !validPlayoffRoster(lineup) || !validPlayoffRoster(opponent);
+  // Season minutes carry into your playoff series (subset by playoff IDs).
+  // Stale/missing entries fall back to legacy for BOTH sides (symmetric).
+  const seasonMinutes = useGameStore(s => s.draftState.minutes);
+  const userPlayoffMinutes = useMemo(() => {
+    const userIds = homeName === userTeamName ? lineup.map(p => p.id) : awayName === userTeamName ? opponent.map(p => p.id) : [];
+    if (userIds.length === 0 || !seasonMinutes) return null;
+    const sub: Record<string, number> = {};
+    for (const id of userIds) {
+      const v = seasonMinutes[id];
+      if (typeof v !== 'number' || !Number.isFinite(v)) return null;
+      sub[id] = v;
+    }
+    return sub;
+  }, [homeName, awayName, userTeamName, lineup, opponent, seasonMinutes]);
+  const homeMinutes = homeName === userTeamName ? userPlayoffMinutes : (userPlayoffMinutes ? defaultMinutesForOrdered(lineup.map(p => p.id)) : null);
+  const awayMinutes = awayName === userTeamName ? userPlayoffMinutes : (userPlayoffMinutes ? defaultMinutesForOrdered(opponent.map(p => p.id)) : null);
 
   const MAX_GAMES = 7;
   const { homeWins, awayWins } = useMemo(() => {
@@ -1783,7 +1801,7 @@ function PlayoffsModal({
       let runningAwayWins = awayWins;
       for (let index = startIndex; index < MAX_GAMES; index++) {
         if (abortRef.current) break;
-        const response = await api.simulation.runGame(lineup, opponent, index + 1, homeSixth, awaySixth, homeOptions, awayOptions);
+        const response = await api.simulation.runGame(lineup, opponent, index + 1, homeSixth, awaySixth, homeOptions, awayOptions, homeMinutes, awayMinutes);
         if (abortRef.current) break;
         const nextGame = response.result;
         // Live from 0-0: animate first, record only on the final buzzer.
@@ -1843,7 +1861,7 @@ function PlayoffsModal({
       setRunning(false);
       setLiveGame(null);
     }
-  }, [readOnly, lineup, opponent, running, completedGames.length, seriesDecided, homeWins, awayWins, lineupIssue, homeName, awayName, onSeriesComplete, homeSixth, awaySixth, homeOptions, awayOptions]);
+  }, [readOnly, lineup, opponent, running, completedGames.length, seriesDecided, homeWins, awayWins, lineupIssue, homeName, awayName, onSeriesComplete, homeSixth, awaySixth, homeOptions, awayOptions, homeMinutes, awayMinutes]);
 
   useLockBodyScroll(true);
 
@@ -2720,9 +2738,9 @@ const BoxScoreTable = memo(function BoxScoreTable({
               <th scope="col" className="text-center py-2 px-2" style={{ color: STAT_COLORS.blk }}>
                 BLK
               </th>
-              <th scope="col" className="text-center py-2 px-2" style={{ color: STAT_COLORS.pf }} title="Personal fouls (capped at 5 — never benches anyone)">
-                PF
-              </th>
+                <th scope="col" className="text-center py-2 px-2" style={{ color: STAT_COLORS.pf }} title="Personal fouls (6 = fouled out on minutes-plan sims)">
+                  PF
+                </th>
             </tr>
           </thead>
           <tbody>
@@ -2758,8 +2776,8 @@ const BoxScoreTable = memo(function BoxScoreTable({
                 <td className="text-center py-2 px-2 font-bold" style={{ color: STAT_COLORS.blk }}>
                   {perf.stats.blk}
                 </td>
-                <td className="text-center py-2 px-2 font-bold" style={{ color: STAT_COLORS.pf }}>
-                  {perf.stats.pf ?? 0}
+                <td className="text-center py-2 px-2 font-bold" style={{ color: STAT_COLORS.pf }} title={(perf.stats.pf ?? 0) >= 6 ? 'Fouled out (6th foul)' : undefined}>
+                  {perf.stats.pf ?? 0}{(perf.stats.pf ?? 0) >= 6 ? '*' : ''}
                 </td>
               </tr>
             ))}

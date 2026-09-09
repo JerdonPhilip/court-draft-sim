@@ -1,8 +1,10 @@
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
-import type { Player, Position } from '../types/game';
+import type { Player, Position, MinutesMap } from '../types/game';
 import { canPlayPosition, getPlayerPositions } from '../types/game';
 import { FRANCHISES } from '../data/constants';
+
+export type { MinutesMap };
 
 export { canPlayPosition, getPlayerPositions };
 
@@ -205,6 +207,64 @@ export const BENCH_WEIGHT = 0.35;
 export const SIXTH_WEIGHT = 0.65;
 export const SIXTH_TEAM_BOOST = 1.015;
 
+/** Custom-minutes defaults (mirrors server simulationEngine.ts). */
+export const DEFAULT_STARTER_MINUTES = 34;
+export const DEFAULT_SIXTH_MINUTES = 22;
+export const DEFAULT_BENCH_MINUTES = 12;
+export const TEAM_MINUTES_REGULATION = 240;
+const OVERUSE_THRESHOLD = 32;
+const OVERUSE_PER_MIN = 0.008;
+
+/** Foul proneness 1-100 (mirrors server playerTraits.ts). */
+export function foulPronenessOf(p: StrengthInput): number {
+  return traitFoulProneness(p);
+}
+
+export function foulRiskLabel(p: StrengthInput): 'Low' | 'Medium' | 'High' {
+  const v = traitFoulProneness(p);
+  return v < 40 ? 'Low' : v > 65 ? 'High' : 'Medium';
+}
+
+/** Role-based default plan from lineup slots (sixth-aware, sums to 240). */
+export function buildDefaultMinutes(
+  slots: Array<{ player: { id: string } | null; role?: string; isSixthMan?: boolean }>,
+): MinutesMap {
+  const map: MinutesMap = {};
+  const filled = slots.filter(s => s.player);
+  if (filled.length === 0) return map;
+  if (filled.length <= 5) {
+    const each = TEAM_MINUTES_REGULATION / filled.length;
+    filled.forEach(s => { map[s.player!.id] = each; });
+    return map;
+  }
+  const sixthId = slots.find(s => s.isSixthMan && s.player)?.player?.id ?? null;
+  slots.forEach(s => {
+    if (!s.player) return;
+    if ((s.role ?? 'starter') !== 'bench') map[s.player.id] = DEFAULT_STARTER_MINUTES;
+    else if (sixthId && s.player.id === sixthId) map[s.player.id] = DEFAULT_SIXTH_MINUTES;
+    else map[s.player.id] = sixthId ? DEFAULT_BENCH_MINUTES : 14;
+  });
+  return map;
+}
+
+export function minutesTotal(minutes: MinutesMap | null | undefined): number {
+  if (!minutes) return 0;
+  return Object.values(minutes).reduce((t, v) => t + (Number.isFinite(v) ? v : 0), 0);
+}
+
+/** Role-free default plan for ordered rotations (first 5 = starters). */
+export function defaultMinutesForOrdered(ids: string[]): MinutesMap {
+  const map: MinutesMap = {};
+  if (ids.length === 0) return map;
+  if (ids.length <= 5) {
+    const each = TEAM_MINUTES_REGULATION / ids.length;
+    ids.forEach(id => { map[id] = each; });
+    return map;
+  }
+  ids.forEach((id, i) => { map[id] = i < 5 ? DEFAULT_STARTER_MINUTES : 14; });
+  return map;
+}
+
 /** 1st/2nd/3rd-option scoring bumps (applied to the PTS component). */
 export const OPTION_PTS_BOOST: Record<number, number> = { 1: 1.08, 2: 1.04, 3: 1.02 };
 
@@ -238,7 +298,26 @@ function rotationDivisor(players: StrengthInput[], sixthManId: string | null | u
   return div > 0 ? div : 5;
 }
 
-export function getBaseTeamImpact(players: StrengthInput[], sixthManId?: string | null, options?: OptionRanks | null): number {
+export function getBaseTeamImpact(players: StrengthInput[], sixthManId?: string | null, options?: OptionRanks | null, minutes?: MinutesMap | null): number {
+  // Minutes-share weighting mirrors the server: a custom plan replaces the
+  // fixed starter/sixth/bench weights (plan is normalized to 240 here too).
+  let effMin: MinutesMap | null = null;
+  if (minutes) {
+    const ids = players.map((p, i) => (p as { id?: string }).id ?? String(i));
+    const raw: MinutesMap = {};
+    ids.forEach((id, i) => {
+      const v = (minutes as MinutesMap)[id];
+      raw[id] = typeof v === 'number' && Number.isFinite(v) ? Math.max(0, Math.min(48, v)) : 0;
+      void i;
+    });
+    const sum = Object.values(raw).reduce((t, v) => t + v, 0);
+    effMin = {};
+    ids.forEach(id => {
+      effMin![id] = sum > 0 ? (raw[id] ?? 0) / sum * TEAM_MINUTES_REGULATION : TEAM_MINUTES_REGULATION / Math.max(1, ids.length);
+    });
+  }
+  const weightOf = (key: string, i: number): number =>
+    effMin ? (effMin[key] ?? 0) / 48 : rotationWeight(i, key, sixthManId, players.length);
   const impacts: Array<{ impact: number; usage: number; rank?: 1 | 2 | 3 }> = [];
   const primaries = new Set<string>();
   const assigned = new Array<string | undefined>(players.length).fill(undefined);
@@ -286,9 +365,15 @@ export function getBaseTeamImpact(players: StrengthInput[], sixthManId?: string 
     let impact = pts + defense + rest;
     const slot = assigned[i];
     if (slot && slot !== p.position) impact *= 0.95;
-    impact *= rotationWeight(i, (p as { id?: string }).id ?? String(i), sixthManId, players.length);
+    const key = (p as { id?: string }).id ?? String(i);
+    const rw = weightOf(key, i);
+    impact *= rw;
+    if (effMin) {
+      const m = effMin[key] ?? 0;
+      if (m > OVERUSE_THRESHOLD) impact *= 1 - (m - OVERUSE_THRESHOLD) * OVERUSE_PER_MIN;
+    }
     impacts.push({ impact, usage: traitUsage(p), rank });
-    primaries.add(p.position);
+    if (rw > 0.02) primaries.add(p.position);
   });
   if (impacts.length === 0) return 0;
   impacts.sort((a, b) => (a.rank ?? 99) - (b.rank ?? 99) || b.impact - a.impact);
@@ -297,7 +382,10 @@ export function getBaseTeamImpact(players: StrengthInput[], sixthManId?: string 
     total += impacts[i]!.impact * (STAR_USAGE_BONUS[i] ?? 1);
   }
   if (players.length > 5) {
-    total = total / rotationDivisor(players, sixthManId) * 5;
+    const div = effMin
+      ? players.reduce((t, p, i) => t + (p ? weightOf((p as { id?: string }).id ?? String(i), i) : 0), 0)
+      : rotationDivisor(players, sixthManId);
+    total = total / (div > 0 ? div : 5) * 5;
   }
   const mouths = impacts.filter((it) => it.usage > 30).length;
   if (mouths > 1) total *= 1.0 - 0.035 * (mouths - 1);
@@ -311,16 +399,18 @@ export function getBaseTeamImpact(players: StrengthInput[], sixthManId?: string 
   const excess = present3PAR - era3PAR;
   if (excess > 0) total *= 1 + Math.min(0.04, 0.01 + excess * 0.15);
   if (players.length > 5 && sixthManId && players.some((p, i) => i >= 5 && (p as { id?: string }).id === sixthManId)) {
-    total *= SIXTH_TEAM_BOOST;
+    if (!effMin || (effMin[sixthManId] ?? 0) > 0) {
+      total *= SIXTH_TEAM_BOOST;
+    }
   }
   const counted = impacts.length;
   const fullSize = players.length > 5 ? 10 : 5;
   return total * (counted / fullSize);
 }
 
-export function calculateTeamStrength(players: StrengthInput[], sixthManId?: string | null, options?: OptionRanks | null): number {
+export function calculateTeamStrength(players: StrengthInput[], sixthManId?: string | null, options?: OptionRanks | null, minutes?: MinutesMap | null): number {
   if (players.length === 0) return 0;
-  const base = getBaseTeamImpact(players, sixthManId, options);
+  const base = getBaseTeamImpact(players, sixthManId, options, minutes);
   return Math.max(0, Math.min(100, Math.round(50 + (base - LEAGUE_AVG_IMPACT) * IMPACT_TO_STRENGTH)));
 }
 
