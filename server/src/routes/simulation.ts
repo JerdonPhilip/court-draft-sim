@@ -44,6 +44,38 @@ const playerStatsSchema = z.object({
   blk: z.number().finite().min(0).max(10),
 });
 
+const attributesSchema = z.object({
+  closeShot: z.number().int().min(25).max(99).optional(),
+  drivingLayup: z.number().int().min(25).max(99).optional(),
+  drivingDunk: z.number().int().min(25).max(99).optional(),
+  standingDunk: z.number().int().min(25).max(99).optional(),
+  postControl: z.number().int().min(25).max(99).optional(),
+  midRangeShot: z.number().int().min(25).max(99).optional(),
+  threePointShot: z.number().int().min(25).max(99).optional(),
+  freeThrow: z.number().int().min(25).max(99).optional(),
+  passAccuracy: z.number().int().min(25).max(99).optional(),
+  ballHandle: z.number().int().min(25).max(99).optional(),
+  speedWithBall: z.number().int().min(25).max(99).optional(),
+  interiorDefense: z.number().int().min(25).max(99).optional(),
+  perimeterDefense: z.number().int().min(25).max(99).optional(),
+  steal: z.number().int().min(25).max(99).optional(),
+  block: z.number().int().min(25).max(99).optional(),
+  offensiveRebound: z.number().int().min(25).max(99).optional(),
+  defensiveRebound: z.number().int().min(25).max(99).optional(),
+  speed: z.number().int().min(25).max(99).optional(),
+  agility: z.number().int().min(25).max(99).optional(),
+  strength: z.number().int().min(25).max(99).optional(),
+  vertical: z.number().int().min(25).max(99).optional(),
+  stamina: z.number().int().min(25).max(99).optional(),
+  shotIq: z.number().int().min(25).max(99).optional(),
+  passPerception: z.number().int().min(25).max(99).optional(),
+  defensiveConsistency: z.number().int().min(25).max(99).optional(),
+  offensiveConsistency: z.number().int().min(25).max(99).optional(),
+  helpDefenseIq: z.number().int().min(25).max(99).optional(),
+  intangibles: z.number().int().min(25).max(99).optional(),
+  potential: z.number().int().min(25).max(99).optional(),
+}).optional();
+
 const playerSchema = z.object({
   id: z.string().min(1).max(100),
   name: z.string().min(1).max(100),
@@ -66,6 +98,7 @@ const playerSchema = z.object({
   ftPct: z.number().finite().min(0.3).max(1).optional(),
   threePar: z.number().finite().min(0).max(0.7).optional(),
   foulProneness: z.number().finite().min(1).max(100).optional(),
+  attributes: attributesSchema,
 });
 
 // A legal 5-man lineup covers all 5 slots counting versatility (bipartite match),

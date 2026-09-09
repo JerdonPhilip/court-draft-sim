@@ -14,6 +14,10 @@ export interface PlayerStats {
 /** Planned regulation minutes per player ID (must sum to ~240; normalized server-side). */
 export type MinutesMap = Record<string, number>;
 
+import type { PlayerAttributes, EngineTraits, EraContext } from './player.js';
+
+export type { PlayerAttributes, EngineTraits, EraContext } from './player.js';
+
 export interface Player {
   id: string;
   name: string;
@@ -29,6 +33,11 @@ export interface Player {
   overall: number;
   archetype: string;
   imageUrl?: string;
+  /**
+   * Optional 2K-style ratings (25-99). Any explicitly defined key wins;
+   * missing keys are formula-estimated in services/playerTraits.ts.
+   */
+  attributes?: Partial<PlayerAttributes>;
   // --- Engine trait overrides (all optional; estimated formulaically when absent) ---
   /** Pace rating (~85-110). Falls back to era pace + positional offset. */
   pace?: number;
@@ -51,6 +60,9 @@ export interface Player {
   /** Foul proneness 1-100 (gambling vs clean). Estimated from stocks/overall. */
   foulProneness?: number;
 }
+
+/** Alias used by the 2K-attribute spec: a card is the stored Player row. */
+export type PlayerCard = Player;
 
 export function getPlayerPositions(player: Pick<Player, 'position' | 'secondaryPositions'>): Position[] {
   const seen = new Set<Position>([player.position]);

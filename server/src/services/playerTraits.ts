@@ -1,4 +1,6 @@
 import { Player, Position } from '../types/game.js';
+import type { EraContext, NormalizedStats, PlayerAttributes } from '../types/player.js';
+import { getEraContext } from './eraConfig.js';
 
 /**
  * Engine trait tables & estimators (Section 1/3 supply).
@@ -183,4 +185,295 @@ export function rosterEra3PAR(lineup: Array<Player | null | undefined>): number 
   const present = lineup.filter((p): p is Player => !!p);
   if (present.length === 0) return 0.2;
   return present.reduce((t, p) => t + (ERA_3PAR[p.decade ?? ''] ?? 0.2), 0) / present.length;
+}
+
+// ---------------------------------------------------------------------------
+// 2K-style attribute estimator pipeline (spec v1.4.0)
+// ---------------------------------------------------------------------------
+
+const clampAttr = (v: number): number => Math.max(25, Math.min(99, Math.round(v)));
+
+const isBig = (pos: Position): boolean => pos === 'C' || pos === 'PF';
+const isGuard = (pos: Position): boolean => pos === 'PG' || pos === 'SG';
+const isWing = (pos: Position): boolean => pos === 'PG' || pos === 'SG' || pos === 'SF';
+
+const POSITION_HEIGHT_BASELINE_LOCAL: Record<Position, number> = {
+  PG: 74,
+  SG: 77,
+  SF: 79,
+  PF: 81,
+  C: 83,
+};
+
+function heightOf(card: Pick<Player, 'position' | 'heightIn'>): number {
+  if (typeof card.heightIn === 'number' && Number.isFinite(card.heightIn)) return card.heightIn;
+  return POSITION_HEIGHT_BASELINE_LOCAL[card.position] ?? 79;
+}
+
+function mpgEstimate(overall: number, explicit?: number): number {
+  if (typeof explicit === 'number' && Number.isFinite(explicit)) return Math.max(10, Math.min(40, explicit));
+  return Math.max(15, Math.min(38, 20 + (overall - 60) * 0.5));
+}
+
+export type AttributeEstimatorInput = Pick<Player, 'position' | 'overall' | 'decade' | 'heightIn'> &
+  Partial<Pick<Player, 'attributes'>>;
+
+function explicitOr(
+  card: AttributeEstimatorInput,
+  key: keyof PlayerAttributes,
+  fallback: number,
+): number {
+  const raw = card.attributes?.[key];
+  if (typeof raw === 'number' && Number.isFinite(raw)) return clampAttr(raw);
+  return clampAttr(fallback);
+}
+
+/**
+ * Build pace-normalized estimator inputs from a stored Player card.
+ * Counting stats are pace-neutralized; rate/defense traits reuse the
+ * existing estimators so explicit overrides still win.
+ */
+export function normalizedStatsFor(player: Player, mpg?: number): NormalizedStats {
+  return {
+    pts: normalizeStat(player.stats.pts, player.decade),
+    reb: normalizeStat(player.stats.reb, player.decade),
+    ast: normalizeStat(player.stats.ast, player.decade),
+    stl: normalizeStat(player.stats.stl, player.decade),
+    blk: normalizeStat(player.stats.blk, player.decade),
+    tov: tovOf(player),
+    tsPct: tsPctOf(player),
+    ftPct: ftPctOf(player),
+    threePar: threeParOf(player),
+    defRating: defRatingOf(player),
+    clutch: clutchOf(player),
+    usageRate: usageRateOf(player),
+    mpg: mpgEstimate(player.overall, mpg),
+  };
+}
+
+/**
+ * Estimate the full 2K attribute block. Any explicitly defined rating on
+ * `card.attributes` takes priority; missing keys use the documented
+ * formula fallback derived from position, overall, pace-normalized stats
+ * and era context. All outputs are integers in [25, 99].
+ */
+export function estimateAttributes(
+  card: AttributeEstimatorInput,
+  stats: NormalizedStats,
+  era: EraContext,
+): PlayerAttributes {
+  const pos = card.position;
+  const ovr = card.overall;
+  const big = isBig(pos);
+  const guard = isGuard(pos);
+  const wing = isWing(pos);
+  const height = heightOf(card as Pick<Player, 'position' | 'heightIn'>);
+  const decade = (card as { decade?: string }).decade ?? era.decade ?? '';
+  const pts = stats.pts;
+  const reb = stats.reb;
+  const ast = stats.ast;
+  const stl = stats.stl;
+  const blk = stats.blk;
+  const tov = stats.tov;
+  const tsPct = stats.tsPct;
+  const ftPct = stats.ftPct;
+  const threePar = stats.threePar;
+  const defRating = stats.defRating;
+  const clutch = stats.clutch;
+  const mpg = mpgEstimate(ovr, stats.mpg);
+
+  // --- Physicals first (other estimators depend on them) ---
+  const strengthBase: Record<Position, number> = { C: 65, PF: 55, SF: 45, SG: 35, PG: 30 };
+  let strengthRaw = strengthBase[pos] ?? 40;
+  if (big) strengthRaw += reb * 1.5;
+  if (era.physicality >= 0.8) strengthRaw += 8;
+
+  const baseline = POSITION_HEIGHT_BASELINE_LOCAL[pos] ?? 79;
+  const heightPenalty = Math.max(0, height - baseline) * 1.0;
+  let speedRaw = 50 + (ovr - 70) * 0.7 - heightPenalty;
+  if (pos === 'PG' || pos === 'SG') speedRaw += 10;
+  if (pos === 'C') speedRaw -= 15;
+  else if (pos === 'PF') speedRaw -= 8;
+  if (era.paceFactor >= 1.05) speedRaw += 5;
+
+  let agilityRaw = 50 + stl * 5 + (ovr - 70) * 0.5;
+  if (pos === 'PG' || pos === 'SG') agilityRaw += 12;
+  else if (pos === 'SF') agilityRaw += 5;
+  if (big) agilityRaw -= 10;
+
+  // Vertical base (before the drivingDunk kicker) so the dunk <-> vert
+  // cycle resolves deterministically in one pass.
+  let verticalBase = 40 + pts * 0.4 + clampAttr(speedRaw) * 0.3;
+  if (wing) verticalBase += 10;
+
+  // --- Finishing / shooting fallbacks ---
+  const closeRaw = 45 + pts * 0.8 + (ovr - 75) * 0.5 + (big ? 10 : 0);
+
+  // drivingLayup needs speed + strength (hand-checking check).
+  const speedEst = clampAttr(speedRaw);
+  const strengthEst = clampAttr(strengthRaw);
+  let layupRaw = 40 + pts * 0.6 + speedEst * 0.3 + (guard ? 12 : 0);
+  if (era.handChecking && strengthEst < 70) layupRaw -= 5;
+
+  // drivingDunk needs vertical.
+  const verticalEstBase = clampAttr(verticalBase);
+  let dunkRaw: number;
+  if (big) dunkRaw = 25 + verticalEstBase * 0.4 + pts * 0.2;
+  else dunkRaw = 30 + verticalEstBase * 0.5 + pts * 0.3 + (ovr - 80) * 0.8;
+  if (height < 76 && verticalEstBase < 95) dunkRaw = Math.min(dunkRaw, 85);
+  const dunkEst = clampAttr(dunkRaw);
+
+  let verticalRaw = verticalBase + (dunkEst >= 80 ? 8 : 0);
+
+  const standingRaw = big
+    ? 50 + reb * 1.5 + strengthEst * 0.4
+    : 25 + verticalEstBase * 0.3;
+
+  let postRaw = big ? 40 + pts * 0.7 + strengthEst * 0.5 : 30 + pts * 0.4;
+  if (big && era.paintDensity >= 0.7) postRaw += 8;
+
+  let midRaw = 40 + pts * 0.9 + (ovr - 75) * 0.6;
+  if (decade === '1990s' || decade === '2000s') midRaw += 5;
+  else if (decade === '2010s' || decade === '2020s') midRaw -= 5;
+
+  let threeRaw: number;
+  if (era.threePointEmphasis <= 0.0) {
+    threeRaw = 25 + (ovr - 70) * 0.3;
+    if (pos === 'SG' || pos === 'SF') threeRaw += 5;
+    threeRaw = Math.min(threeRaw, 45);
+  } else if (era.threePointEmphasis < 0.5) {
+    threeRaw = 30 + threePar * 40 + (ovr - 75) * 0.4;
+    if (pos === 'SG' || pos === 'SF') threeRaw += 5;
+    threeRaw = Math.min(threeRaw, 75);
+  } else {
+    threeRaw = 35 + threePar * 50 + (ovr - 75) * 0.5;
+    if (pos === 'SG' || pos === 'SF') threeRaw += 5;
+  }
+
+  const ftRaw = ftPct >= 0.75 ? 60 + ftPct * 40 : 50 + ftPct * 50;
+
+  // --- Playmaking ---
+  let passRaw = 35 + ast * 4 - tov * 3 + (ovr - 75) * 0.4;
+  if (pos === 'PG') passRaw += 15;
+  else if (pos === 'SG' || pos === 'SF') passRaw += 5;
+  if (era.zoneDefense) passRaw += 5;
+
+  let handleRaw = 35 + ast * 3 - tov * 4 + (ovr - 70) * 0.6;
+  if (pos === 'PG') handleRaw += 18;
+  else if (pos === 'SG') handleRaw += 10;
+  if (era.handChecking) handleRaw -= 5;
+  const handleEst = clampAttr(handleRaw);
+
+  let swbRaw = 35 + speedEst * 0.5 + handleEst * 0.3;
+  if (guard) swbRaw += 10;
+  if (era.handChecking) swbRaw -= 5;
+
+  // --- Defense / rebounding ---
+  const agilityEst = clampAttr(agilityRaw);
+  let intDefRaw = big
+    ? 45 + defRating * 0.5 + blk * 4 + strengthEst * 0.3
+    : 30 + defRating * 0.4 + blk * 2;
+  if (big && era.paintDensity >= 0.7) intDefRaw += 5;
+
+  let perDefRaw = !big
+    ? 45 + defRating * 0.5 + stl * 4 + agilityEst * 0.3
+    : 30 + defRating * 0.4 + stl * 2;
+  if (guard && era.handChecking) perDefRaw += 8;
+
+  let stealRaw = 30 + stl * 10 + defRating * 0.2;
+  if (guard) stealRaw += 10;
+  if (era.handChecking) stealRaw += 5;
+
+  let blockRaw = 25 + blk * 15 + verticalEstBase * 0.3;
+  if (pos === 'C' || pos === 'PF') blockRaw += 20;
+  else if (pos === 'SF') blockRaw += 10;
+
+  let orebRaw = 25 + reb * 3 + strengthEst * 0.4;
+  if (big) orebRaw += 15;
+  if (era.paintDensity >= 0.7) orebRaw += 5;
+  if (era.threePointEmphasis >= 0.5) orebRaw -= 5;
+
+  let drebRaw = 30 + reb * 4 + strengthEst * 0.3;
+  if (big) drebRaw += 15;
+
+  let staminaRaw = 50 + (ovr - 70) * 0.8 + mpg * 0.5;
+  if (era.paceFactor >= 1.05) staminaRaw += 5;
+
+  // --- Mental ---
+  const shotIqRaw = 40 + ovr * 0.4 + tsPct * 40 + (pts >= 25 ? 5 : 0);
+
+  let ppRaw = 35 + ast * 5 + defRating * 0.3;
+  if (pos === 'PG') ppRaw += 10;
+
+  const dcRaw = 40 + defRating * 0.5 + (defRating >= 88 ? 8 : 0);
+
+  let ocRaw = 40 + ovr * 0.5;
+  if (ovr >= 90) ocRaw += 10;
+  else if (ovr < 75) ocRaw -= 5;
+
+  let helpRaw = 35 + defRating * 0.4 + blk * 5 + stl * 5;
+  if (big) helpRaw += 5;
+  if (era.zoneDefense) helpRaw += 5;
+
+  const intRaw = 40 + ovr * 0.5 + clutch * 0.2 + (ovr >= 95 ? 10 : 0);
+
+  let potRaw: number;
+  if (ovr >= 90) potRaw = 90 + (ovr - 90) * 0.5;
+  else if (ovr >= 80) potRaw = 80 + (ovr - 80) * 0.6;
+  else if (ovr >= 70) potRaw = 75 + (ovr - 70) * 0.5;
+  else potRaw = 65 + (ovr - 60) * 0.5;
+  potRaw = Math.min(potRaw, 99);
+
+  // Respect explicit overrides (clamped) for every key.
+  return {
+    closeShot: explicitOr(card, 'closeShot', closeRaw),
+    drivingLayup: explicitOr(card, 'drivingLayup', layupRaw),
+    drivingDunk: explicitOr(card, 'drivingDunk', dunkRaw),
+    standingDunk: explicitOr(card, 'standingDunk', standingRaw),
+    postControl: explicitOr(card, 'postControl', postRaw),
+    midRangeShot: explicitOr(card, 'midRangeShot', midRaw),
+    threePointShot: explicitOr(card, 'threePointShot', threeRaw),
+    freeThrow: explicitOr(card, 'freeThrow', ftRaw),
+    passAccuracy: explicitOr(card, 'passAccuracy', passRaw),
+    ballHandle: explicitOr(card, 'ballHandle', handleRaw),
+    speedWithBall: explicitOr(card, 'speedWithBall', swbRaw),
+    interiorDefense: explicitOr(card, 'interiorDefense', intDefRaw),
+    perimeterDefense: explicitOr(card, 'perimeterDefense', perDefRaw),
+    steal: explicitOr(card, 'steal', stealRaw),
+    block: explicitOr(card, 'block', blockRaw),
+    offensiveRebound: explicitOr(card, 'offensiveRebound', orebRaw),
+    defensiveRebound: explicitOr(card, 'defensiveRebound', drebRaw),
+    speed: explicitOr(card, 'speed', speedRaw),
+    agility: explicitOr(card, 'agility', agilityRaw),
+    strength: explicitOr(card, 'strength', strengthRaw),
+    vertical: explicitOr(card, 'vertical', verticalRaw),
+    stamina: explicitOr(card, 'stamina', staminaRaw),
+    shotIq: explicitOr(card, 'shotIq', shotIqRaw),
+    passPerception: explicitOr(card, 'passPerception', ppRaw),
+    defensiveConsistency: explicitOr(card, 'defensiveConsistency', dcRaw),
+    offensiveConsistency: explicitOr(card, 'offensiveConsistency', ocRaw),
+    helpDefenseIq: explicitOr(card, 'helpDefenseIq', helpRaw),
+    intangibles: explicitOr(card, 'intangibles', intRaw),
+    potential: explicitOr(card, 'potential', potRaw),
+  };
+}
+
+/**
+ * Convenience: resolve attributes for a stored Player, deriving the era
+ * from the card decade when no explicit EraContext is supplied.
+ */
+export function resolvePlayerAttributes(player: Player, era?: EraContext): PlayerAttributes {
+  const ctx = era ?? getEraContext(player.decade ?? '2020s');
+  return estimateAttributes(player, normalizedStatsFor(player), ctx);
+}
+
+/** Recalculated stopper rating from the 2K defensive block (Part 7). */
+export function defRatingFromAttributes(a: PlayerAttributes): number {
+  return Math.round(
+    a.perimeterDefense * 0.35 +
+      a.interiorDefense * 0.25 +
+      a.steal * 0.15 +
+      a.block * 0.1 +
+      a.defensiveConsistency * 0.15,
+  );
 }

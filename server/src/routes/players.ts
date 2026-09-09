@@ -2,6 +2,7 @@ import { Router, Request, Response } from 'express';
 import { z } from 'zod';
 import { ALL_PLAYERS, getPlayersByFranchiseAndDecade, getPlayersByDecade, getPlayersByFranchise, getPlayerById, getRandomPlayersByFranchiseAndDecade } from '../data/players.js';
 import { FRANCHISES, DECADES } from '../data/constants.js';
+import { buildPlayerDossier } from '../services/dossier.js';
 
 const router = Router();
 
@@ -132,6 +133,19 @@ router.get('/franchise/:franchise', (req: Request, res: Response) => {
   const players = getPlayersByFranchise(franchise as string);
 
   res.json({ franchise: franchiseInfo, players, count: players.length });
+});
+
+// Single-player dossier: resolved 2K attributes + era context + modifiers.
+router.get('/:id/dossier', (req: Request, res: Response) => {
+  const { id } = req.params;
+  const player = getPlayerById(id as string);
+
+  if (!player) {
+    return res.status(404).json({ error: 'Player not found' });
+  }
+
+  const decade = typeof req.query.decade === 'string' ? req.query.decade : undefined;
+  res.json(buildPlayerDossier(player, decade));
 });
 
 // Keep /:id last so it can't shadow more specific routes.

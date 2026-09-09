@@ -25,8 +25,128 @@ import {
   team3PAR,
   rosterEra3PAR,
   LEAGUE_AVG_FTR,
+  resolvePlayerAttributes,
+  defRatingFromAttributes,
 } from './playerTraits.js';
+import { getEraContext } from './eraConfig.js';
+import {
+  applyEraModifiers,
+  threePointEffectivenessMultiplier,
+  midRangeEffectivenessMultiplier,
+  rimSuccessMultiplier,
+  fatigueRateMultiplier,
+  helpDefenseContribution,
+  perimeterDefenseMultiplier,
+  possessionsMultiplier,
+  turnoverMultiplier,
+  foulPronenessMultiplier,
+} from './eraEngine.js';
+import type { EraContext, PlayerAttributes } from '../types/player.js';
 import { randomInt } from 'node:crypto';
+
+// --- 2K attribute + era integration (spec v1.4.0, Parts 6-9) ---
+// Resolved/modified attributes are cached by player id (deterministic).
+const resolvedAttrCache = new Map<string, PlayerAttributes>();
+const modifiedAttrCache = new Map<string, PlayerAttributes>();
+
+function resolvedAttributesOf(player: Player): PlayerAttributes {
+  const hit = resolvedAttrCache.get(player.id);
+  if (hit) return hit;
+  const resolved = resolvePlayerAttributes(player);
+  resolvedAttrCache.set(player.id, resolved);
+  return resolved;
+}
+
+function modifiedAttributesOf(player: Player): PlayerAttributes {
+  const hit = modifiedAttrCache.get(player.id);
+  if (hit) return hit;
+  const base = resolvedAttributesOf(player);
+  const era = getEraContext(player.decade ?? '2020s');
+  const modified = applyEraModifiers(base, era, player.position);
+  modifiedAttrCache.set(player.id, modified);
+  return modified;
+}
+
+export function clearAttributeCaches(): void {
+  resolvedAttrCache.clear();
+  modifiedAttrCache.clear();
+}
+
+/** Blended era rules for a (possibly mixed-era) lineup: numerics averaged, flags by majority. */
+export function teamEraContext(lineup: Array<Player | null | undefined>): EraContext {
+  const present = lineup.filter((p): p is Player => !!p);
+  if (present.length === 0) return getEraContext('2020s');
+  let hand = 0;
+  let zone = 0;
+  let illegal = 0;
+  let paint = 0;
+  let phys = 0;
+  let pace = 0;
+  let three = 0;
+  for (const p of present) {
+    const e = getEraContext(p.decade ?? '2020s');
+    if (e.handChecking) hand++;
+    if (e.zoneDefense) zone++;
+    if (e.illegalDefenseRules) illegal++;
+    paint += e.paintDensity;
+    phys += e.physicality;
+    pace += e.paceFactor;
+    three += e.threePointEmphasis;
+  }
+  const n = present.length;
+  return {
+    handChecking: hand * 2 >= n,
+    zoneDefense: zone * 2 >= n,
+    illegalDefenseRules: illegal * 2 >= n,
+    paintDensity: paint / n,
+    physicality: phys / n,
+    paceFactor: pace / n,
+    threePointEmphasis: three / n,
+  };
+}
+
+/**
+ * Attribute-driven scoring quality for one player (mean-neutral by design:
+ * typical starters sit near 1.00, stars reach ~1.03, liabilities ~0.97).
+ */
+export function attributeScoringMultiplier(mod: PlayerAttributes, era: EraContext): number {
+  const rimQ = ((mod.drivingLayup + mod.drivingDunk) / 2 / 80) * rimSuccessMultiplier(era);
+  const midQ = (mod.midRangeShot / 78) * midRangeEffectivenessMultiplier(era);
+  const threeQ = (mod.threePointShot / 72) * threePointEffectivenessMultiplier(era);
+  // Blend toward 1 so era swings move shot mix more than raw efficiency.
+  const shotQuality = (rimQ * 0.4 + midQ * 0.35 + threeQ * 0.25);
+  const iq = 1 + (mod.shotIq - 70) * 0.0006 + (mod.offensiveConsistency - 70) * 0.0005;
+  return Math.max(0.9, Math.min(1.1, 0.82 + 0.18 * shotQuality)) * iq;
+}
+
+export function attributeDefenseMultiplier(mod: PlayerAttributes, era: EraContext, position: string): number {
+  const anchor = (mod.perimeterDefense + mod.interiorDefense) / 2;
+  let m = 1 + (anchor - 70) * 0.0009 + (mod.defensiveConsistency - 70) * 0.0006;
+  if (era.zoneDefense) m += (mod.helpDefenseIq - 70) * 0.0004;
+  if (era.handChecking && (position === 'PG' || position === 'SG')) {
+    m *= 1.01;
+  }
+  return Math.max(0.9, Math.min(1.1, m));
+}
+
+export function attributePlaymakingMultiplier(mod: PlayerAttributes, era: EraContext): number {
+  let m = 1 + (mod.passAccuracy - 70) * 0.0005 + (mod.ballHandle - 70) * 0.0003;
+  m /= turnoverMultiplier(mod, era) ** 0.5;
+  return Math.max(0.9, Math.min(1.08, m));
+}
+
+/** Effective stopper rating blending the legacy estimate with the 2K block. */
+export function effectiveDefRating(player: Player): number {
+  const legacy = defRatingOf(player);
+  const mod = modifiedAttributesOf(player);
+  const rebuilt = defRatingFromAttributes({
+    ...mod,
+    perimeterDefense: Math.min(110, Math.max(0, mod.perimeterDefense * perimeterDefenseMultiplier(getEraContext(player.decade ?? '2020s')))),
+  });
+  const era = getEraContext(player.decade ?? '2020s');
+  const help = helpDefenseContribution(era) > 0 ? mod.helpDefenseIq * helpDefenseContribution(era) : 0;
+  return Math.round(legacy * 0.6 + (rebuilt + help * 0.4) * 0.4);
+}
 
 // --- Tunable simulation knobs (see services/constants.ts) ---
 const BASE_SCORE = SIMULATION_CONSTANTS.BASE_SCORE;
@@ -289,17 +409,32 @@ function playerBaseParts(player: Player, handcuffed: boolean): { pts: number; de
   // stripe instead — see the grant below).
   const discMod = proneness < 40 ? 1.02 : proneness > 65 ? 1.05 : 1;
   const handcuffMod = handcuffed && proneness > 70 ? 0.9 : 1;
-  const pts = normalizeStat(stats.pts, player.decade) * weights.pts * STAT_IMPORTANCE.pts * curve * eff;
+  // 2K attribute layer: era-modified shot selection, stopper craft and
+  // ball security nudge each component a few percent (mean-neutral).
+  let scoreMult = 1;
+  let defMult = 1;
+  let playMult = 1;
+  try {
+    const mod = modifiedAttributesOf(player);
+    const era = getEraContext(player.decade ?? '2020s');
+    scoreMult = attributeScoringMultiplier(mod, era);
+    defMult = attributeDefenseMultiplier(mod, era, player.position);
+    playMult = attributePlaymakingMultiplier(mod, era);
+  } catch {
+    // Attribute layer is best-effort; the legacy model stands alone.
+  }
+  const pts = normalizeStat(stats.pts, player.decade) * weights.pts * STAT_IMPORTANCE.pts * curve * eff * scoreMult;
   const defense =
     (normalizeStat(stats.stl, player.decade) * weights.stl * STAT_IMPORTANCE.stl +
       normalizeStat(stats.blk, player.decade) * weights.blk * STAT_IMPORTANCE.blk * height.blk) *
     curve *
     eff *
     discMod *
-    handcuffMod;
+    handcuffMod *
+    defMult;
   const rest =
     (normalizeStat(stats.reb, player.decade) * weights.reb * STAT_IMPORTANCE.reb * height.reb +
-      normalizeStat(stats.ast, player.decade) * weights.ast * STAT_IMPORTANCE.ast) *
+      normalizeStat(stats.ast, player.decade) * weights.ast * STAT_IMPORTANCE.ast * playMult) *
     curve *
     eff;
   return { pts, defense, rest };
@@ -366,17 +501,41 @@ function calculateTeamRating(
   // Direct positional suppression received: an opposing stopper (defRating
   // 88+) at your primary slot shaves 4-8% off your scoring impact, while a
   // gambler (>65 proneness) on you grants ~3% back at the stripe.
+  // 2K layer: the stopper read blends the legacy estimate with the rebuilt
+  // 2K block; hand-checking eras add ~10% bite to perimeter stops and zone
+  // eras fold help IQ into the matchup.
   const suppression = new Map<Position, number>();
   const grant = new Map<Position, number>();
   if (opponentPlayers) {
     for (const opp of opponentPlayers) {
       if (!opp) continue;
-      const d = defRatingOf(opp);
-      if (d >= 88) {
-        const factor = 1 - Math.min(0.08, 0.04 + (d - 88) * 0.005);
+      let d = defRatingOf(opp);
+      try {
+        d = Math.max(d, effectiveDefRating(opp));
+      } catch {
+        // fall back to legacy
+      }
+      const oppEra = getEraContext(opp.decade ?? '2020s');
+      let threshold = 88;
+      // Hand-checking makes perimeter stops bite earlier; zone help adds bite.
+      if (oppEra.handChecking && (opp.position === 'PG' || opp.position === 'SG')) threshold -= 1;
+      if (d >= threshold) {
+        let factor = 1 - Math.min(0.08, 0.04 + (d - threshold) * 0.005);
+        if (oppEra.handChecking && (opp.position === 'PG' || opp.position === 'SG' || opp.position === 'SF')) {
+          factor *= 0.99;
+        }
+        if (oppEra.zoneDefense) {
+          try {
+            const help = modifiedAttributesOf(opp).helpDefenseIq;
+            factor *= 1 - Math.min(0.02, Math.max(0, (help - 75) * 0.0008));
+          } catch {
+            // ignore
+          }
+        }
         suppression.set(opp.position, Math.min(suppression.get(opp.position) ?? 1, factor));
       }
-      if (foulPronenessOf(opp) > 65) {
+      const foulMult = foulPronenessMultiplier(oppEra);
+      if (foulPronenessOf(opp) * foulMult > 65) {
         grant.set(opp.position, Math.max(grant.get(opp.position) ?? 1, 1.03));
       }
     }
@@ -391,11 +550,23 @@ function calculateTeamRating(
   const impacts: Array<{ impact: number; usage: number; rank?: 1 | 2 | 3 }> = [];
   const usages: number[] = [];
   const primaries = new Set<Position>();
+  const ownEra = teamEraContext(players);
   players.forEach((player, i) => {
     if (!player) return;
-    const { pts, defense, rest } = playerBaseParts(player, handcuffed && foulPronenessOf(player) > 70);
+    const playerEra = getEraContext(player.decade ?? '2020s');
+    const foulMult = foulPronenessMultiplier(playerEra);
+    const { pts, defense, rest } = playerBaseParts(player, handcuffed && foulPronenessOf(player) * foulMult > 70);
     const rank = optionRankOf(player.id, options);
-    const ptsBoosted = pts * (rank ? (OPTION_PTS_BOOST[rank] ?? 1) : 1);
+    let ptsBoosted = pts * (rank ? (OPTION_PTS_BOOST[rank] ?? 1) : 1);
+    // Usage priority by era: zone offenses run through handlers, illegal-
+    // defense isolations through post/mid masters (Part 8).
+    try {
+      const mod = modifiedAttributesOf(player);
+      if (ownEra.zoneDefense && mod.ballHandle >= 85) ptsBoosted *= 1.02;
+      if (ownEra.illegalDefenseRules && (mod.postControl >= 85 || mod.midRangeShot >= 85)) ptsBoosted *= 1.02;
+    } catch {
+      // ignore
+    }
     let impact = ptsBoosted * (suppression.get(player.position) ?? 1) * (grant.get(player.position) ?? 1) + defense + rest;
     // Flex-slot adaptation: playing off-primary retains 95%.
     const slot = slots[i];
@@ -410,7 +581,18 @@ function calculateTeamRating(
     }
     if (config.fatigueFactor > 0 && totalGames > 1) {
       const fatigue = config.fatigueFactor * (gameIndex / totalGames);
-      impact *= (1 - fatigue * 0.5);
+      // Stamina layer: low-motor players fade harder; fast/bruising eras
+      // wear everyone down faster (Part 9). Mean effect stays near legacy.
+      let staminaMult = 1;
+      try {
+        const stamina = modifiedAttributesOf(player).stamina;
+        const rate = fatigueRateMultiplier(playerEra);
+        const staminaEdge = (stamina - 75) * 0.0012;
+        staminaMult = 1 - fatigue * 0.5 * rate + staminaEdge * fatigue;
+      } catch {
+        staminaMult = 1 - fatigue * 0.5;
+      }
+      impact *= Math.max(0.8, staminaMult);
     }
     impact += (randomFloat() - 0.5) * 2 * config.variance * impact;
     impacts.push({ impact: Math.max(0, impact), usage: usageRateOf(player), rank });
@@ -438,10 +620,24 @@ function calculateTeamRating(
   if (!hasFloorBalance(primaries)) totalImpact *= 0.94;
 
   // Spacing boost: a roster shooting above its own eras' 3PAR average stretches
-  // the floor (+1% to +4%).
+  // the floor (+1% to +4%). High-emphasis eras add a 2K-spacing kicker when
+  // the lineup actually shoots (driving lanes open for teammates).
   const spacingExcess = team3PAR(players) - rosterEra3PAR(players);
   if (spacingExcess > 0) {
     totalImpact *= 1 + Math.min(0.04, 0.01 + spacingExcess * 0.15);
+  }
+  try {
+    if (ownEra.threePointEmphasis >= 0.5) {
+      const present = players.filter((p): p is Player => !!p);
+      if (present.length > 0) {
+        const avgThree = present.reduce((t, p) => t + modifiedAttributesOf(p).threePointShot, 0) / present.length;
+        if (avgThree > 75) {
+          totalImpact *= 1 + Math.min(0.02, (avgThree - 75) * 0.0012);
+        }
+      }
+    }
+  } catch {
+    // spacing kicker is best-effort
   }
 
   // Soft-defense debuff: foul-drawing outfits (team FTr > 1.15x league average)
@@ -479,13 +675,34 @@ export function teamPace(lineup: Player[]): number {
 
 /** Mean clutch of the two coldest-blooded players available. */
 export function teamClutch(lineup: Player[]): number {
-  const ratings = lineup
-    .filter(Boolean)
-    .map((p) => clutchOf(p!))
-    .sort((a, b) => b - a)
-    .slice(0, 2);
+  const present = lineup.filter(Boolean) as Player[];
+  if (present.length === 0) return 70;
+  // Clutch layer: base clutch blended with offensive/defensive consistency
+  // so steady two-way closers edge pure volume closers in tight games.
+  const blended = present.map((p) => {
+    const base = clutchOf(p);
+    try {
+      const mod = modifiedAttributesOf(p);
+      return base * 0.7 + mod.offensiveConsistency * 0.15 + mod.defensiveConsistency * 0.15;
+    } catch {
+      return base;
+    }
+  });
+  const ratings = blended.sort((a, b) => b - a).slice(0, 2);
   if (ratings.length === 0) return 70;
   return ratings.reduce((t, r) => t + r, 0) / ratings.length;
+}
+
+/** Blended game pace with the era possessions multiplier (Part 5, RULE 6). */
+export function gamePaceFor(homeTeam: Player[], awayTeam: Player[]): number {
+  const base = (teamPace(homeTeam) + teamPace(awayTeam)) / 2;
+  try {
+    const homeMult = possessionsMultiplier(teamEraContext(homeTeam));
+    const awayMult = possessionsMultiplier(teamEraContext(awayTeam));
+    return base * ((homeMult + awayMult) / 2);
+  } catch {
+    return base;
+  }
 }
 
 function simulateGameScore(
@@ -574,15 +791,23 @@ function assignRotationMinutes(team: Player[], sixthManId: string | null | undef
  * Personal-foul guardrail: 2.2 base + proneness slope + jitter, HARD-CAPPED
  * at 5. The cap binds the box score only — participation is unconditional.
  */
+function eraFoulMult(player: Player): number {
+  try {
+    return foulPronenessMultiplier(getEraContext(player.decade ?? '2020s'));
+  } catch {
+    return 1;
+  }
+}
+
 function rollFouls(player: Player): number {
-  const raw = Math.round(2.2 + (foulPronenessOf(player) / 100) * 2.5 + (randomFloat() * 1.2 - 0.6));
+  const raw = Math.round(2.2 + ((foulPronenessOf(player) * eraFoulMult(player)) / 100) * 2.5 + (randomFloat() * 1.2 - 0.6));
   return Math.min(5, Math.max(0, raw));
 }
 
 /** Minutes-scaled foul roll for the custom-minutes path: DNPs can't foul; 6 = fouled out. */
 function rollFoulsForMinutes(player: Player, minutes: number): number {
   if (minutes <= 0) return 0;
-  const expected = (minutes / 30) * (2.2 + (foulPronenessOf(player) / 100) * 2.5);
+  const expected = (minutes / 30) * (2.2 + ((foulPronenessOf(player) * eraFoulMult(player)) / 100) * 2.5);
   return Math.min(FOUL_OUT_LIMIT, Math.max(0, Math.round(expected + (randomFloat() * 1.2 - 0.6))));
 }
 
@@ -813,7 +1038,7 @@ export function simulateSingleGame(input: GameSimulationInput): GameSimulationOu
     else awayRating *= boost;
   }
 
-  const gamePace = (teamPace(homeTeam) + teamPace(awayTeam)) / 2;
+  const gamePace = gamePaceFor(homeTeam, awayTeam);
   // Clutch decides tight games: top-2 comparison swings it past a 5-pt spread.
   // No quarter clock exists, so |spread| <= 5 IS the late-game proxy — and
   // handcuffed (>70 proneness) defenders play it safe at 0.90 impact here.
@@ -828,10 +1053,25 @@ export function simulateSingleGame(input: GameSimulationInput): GameSimulationOu
     }
     spread = (homeRating - awayRating) * SCORE_SPREAD_FACTOR;
   }
-  const clutchDelta =
+  // Clutch layer: consistency-blended closers decide it; bruising eras lean
+  // on stops + stripe (more whistles late), hand-checking eras on stops.
+  let clutchDelta =
     Math.abs(spread) <= 5
       ? (teamClutch(homeTeam) - teamClutch(awayTeam)) * 0.15 + (teamFTr(homeTeam) - teamFTr(awayTeam)) * 10
       : 0;
+  if (Math.abs(spread) <= 5) {
+    try {
+      const homeEra = teamEraContext(homeTeam);
+      const awayEra = teamEraContext(awayTeam);
+      if (homeEra.handChecking || awayEra.handChecking) {
+        const homeStop = homeTeam.reduce((t, p) => t + (p ? modifiedAttributesOf(p).defensiveConsistency : 0), 0) / Math.max(1, homeTeam.filter(Boolean).length);
+        const awayStop = awayTeam.reduce((t, p) => t + (p ? modifiedAttributesOf(p).defensiveConsistency : 0), 0) / Math.max(1, awayTeam.filter(Boolean).length);
+        clutchDelta += (homeStop - awayStop) * 0.02;
+      }
+    } catch {
+      // clutch kicker best-effort
+    }
+  }
 
   // Custom-minutes sides resolve 6-foul ejections on regulation minutes
   // first; the disruption drag folds into the margin before OT is decided.
@@ -1240,7 +1480,7 @@ function simulateLeagueStandings(
     const awayDefaults = oppDefaults[aHome ? b : a] ?? null;
     let homeRating = calculateTeamRating(homeRoster, config, true, midSeason, totalGames, awayRoster, false, null, null, homeDefaults);
     let awayRating = calculateTeamRating(awayRoster, config, false, midSeason, totalGames, homeRoster, false, null, null, awayDefaults);
-    const gamePace = (teamPace(teamA) + teamPace(teamB)) / 2;
+    const gamePace = gamePaceFor(teamA, teamB);
     let spread = (homeRating - awayRating) * SCORE_SPREAD_FACTOR;
     if (Math.abs(spread) <= 5) {
       homeRating = calculateTeamRating(homeRoster, config, true, midSeason, totalGames, awayRoster, true, null, null, homeDefaults);
@@ -1445,11 +1685,25 @@ export function getBaseTeamImpact(lineup: Player[], sixthManId?: string | null, 
   const effMin = minutes ? effectiveMinutes(lineup, sixthManId ?? null, minutes) : null;
   const items: Array<{ impact: number; usage: number; rank?: 1 | 2 | 3 }> = [];
   const primaries = new Set<Position>();
+  let ownEra: EraContext;
+  try {
+    ownEra = teamEraContext(lineup);
+  } catch {
+    ownEra = getEraContext('2020s');
+  }
   for (const [index, player] of lineup.entries()) {
     if (!player) continue;
     const { pts, defense, rest } = playerBaseParts(player, false);
     const rank = optionRankOf(player.id, options);
-    let impact = pts * (rank ? (OPTION_PTS_BOOST[rank] ?? 1) : 1) + defense + rest;
+    let ptsWithOptions = pts * (rank ? (OPTION_PTS_BOOST[rank] ?? 1) : 1);
+    try {
+      const mod = modifiedAttributesOf(player);
+      if (ownEra.zoneDefense && mod.ballHandle >= 85) ptsWithOptions *= 1.02;
+      if (ownEra.illegalDefenseRules && (mod.postControl >= 85 || mod.midRangeShot >= 85)) ptsWithOptions *= 1.02;
+    } catch {
+      // ignore
+    }
+    let impact = ptsWithOptions + defense + rest;
     const slot = slots[index];
     if (slot && slot !== player.position) impact *= 0.95;
     const w = effMin ? (effMin[player.id] ?? 0) / 48 : rotationWeight(index, player.id, sixthManId, lineup.length);
@@ -1479,6 +1733,14 @@ export function getBaseTeamImpact(lineup: Player[], sixthManId?: string | null, 
   const spacingExcess = team3PAR(present) - rosterEra3PAR(present);
   if (spacingExcess > 0) {
     total *= 1 + Math.min(0.04, 0.01 + spacingExcess * 0.15);
+  }
+  try {
+    if (ownEra.threePointEmphasis >= 0.5 && present.length > 0) {
+      const avgThree = present.reduce((t, p) => t + modifiedAttributesOf(p).threePointShot, 0) / present.length;
+      if (avgThree > 75) total *= 1 + Math.min(0.02, (avgThree - 75) * 0.0012);
+    }
+  } catch {
+    // ignore
   }
   if (hasSixthMan(lineup, sixthManId)) {
     if (!effMin || (sixthManId && (effMin[sixthManId] ?? 0) > 0)) {
