@@ -27,12 +27,34 @@ const POSITION_COLORS: Record<string, string> = {
   PG: '#00d4aa',
   SG: '#ffd700',
   SF: '#ff6b6b',
-  PF: '#7c5cff',
+  PF: '#8f7bff',
   C: '#007aff',
 };
 
 export function getPositionColor(position: string): string {
   return POSITION_COLORS[position] || '#8fabbf';
+}
+
+/** Pick readable text (#0a0f14 or #ffffff) for a filled background — WCAG contrast, not a luminance guess. */
+export function bestTextOn(background: string, light = '#ffffff', dark = '#0a0f14'): string {
+  const lum = (hex: string): number => {
+    let h = hex.replace('#', '');
+    if (h.length === 3) h = h.split('').map(c => c + c).join('');
+    const n = parseInt(h, 16);
+    if (!Number.isFinite(n)) return 0;
+    const [r, g, b] = [(n >> 16) & 255, (n >> 8) & 255, n & 255].map(v => {
+      const s = v / 255;
+      return s <= 0.03928 ? s / 12.92 : Math.pow((s + 0.055) / 1.055, 2.4);
+    });
+    return 0.2126 * r! + 0.7152 * g! + 0.0722 * b!;
+  };
+  const ratio = (a: string, b: string): number => {
+    const x = lum(a);
+    const y = lum(b);
+    const [hi, lo] = x >= y ? [x, y] : [y, x];
+    return (hi + 0.05) / (lo + 0.05);
+  };
+  return ratio(light, background) >= ratio(dark, background) ? light : dark;
 }
 
 export const POSITION_LABELS: Record<string, string> = {

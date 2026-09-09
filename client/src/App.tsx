@@ -1,10 +1,13 @@
-import { useEffect, useRef } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { AnimatePresence } from 'framer-motion';
 import { useGameStore } from './store/gameStore';
 import { DraftScreen } from './components/draft/DraftScreen';
 import { SeasonSetup } from './components/simulation/SeasonSetup';
 import { SimulationDashboard } from './components/simulation/SimulationDashboard';
 import { VSModeScreen } from './components/simulation/VSMode';
+import { WelcomeScreen } from './components/welcome/WelcomeScreen';
+import { Footer, type LegalDoc } from './components/legal/Footer';
+import { LegalModal } from './components/legal/LegalModal';
 import { Toasts } from './components/ui/Toasts';
 import { api } from './utils/api';
 import { HISTORICAL_TEAMS } from './data/historicalTeams';
@@ -40,25 +43,46 @@ function ErrorScreen({ message, onRetry }: { message: string; onRetry: () => voi
   );
 }
 
+function legalFromHash(): LegalDoc | null {
+  const h = window.location.hash.replace('#', '');
+  return h === 'privacy' || h === 'terms' || h === 'cookies' ? h : null;
+}
+
 export default function App() {
   const { phase, draftState, simulationResult, vsMatchup, historicalTeams, setHistoricalTeams, initializeDraft, runSimulation, setPhase, error, setError } = useGameStore();
   const initialized = useRef(false);
+  const [legalDoc, setLegalDoc] = useState<LegalDoc | null>(() => legalFromHash());
+  const [apiOnline, setApiOnline] = useState<boolean | null>(null);
+
+  const openLegal = useCallback((doc: LegalDoc) => {
+    setLegalDoc(doc);
+    window.location.hash = doc;
+  }, []);
+  const closeLegal = useCallback(() => {
+    setLegalDoc(null);
+    if (legalFromHash()) {
+      history.replaceState(null, '', window.location.pathname + window.location.search);
+    }
+  }, []);
 
   useEffect(() => {
-    // Don't wipe rehydrated state: only init a fresh draft when there's no progress.
+    const onHash = () => setLegalDoc(legalFromHash());
+    window.addEventListener('hashchange', onHash);
+    return () => window.removeEventListener('hashchange', onHash);
+  }, []);
+
+  useEffect(() => {
+    // Don't wipe rehydrated state: only init a fresh draft when entering play.
+    // Welcome gate owns the first spin so cold visits cost zero API calls.
     if (initialized.current) return;
     initialized.current = true;
-    const hasProgress = draftState.lineup.slots.some(s => s.player !== null) || draftState.pool !== null;
-    if (!hasProgress && phase === 'draft') {
-      initializeDraft();
-      void useGameStore.getState().spinDraftPool();
-    }
     if (historicalTeams.length === 0) {
       api.simulation.getHistoricalTeams()
-        .then(data => setHistoricalTeams(data.teams))
+        .then(data => { setHistoricalTeams(data.teams); setApiOnline(true); })
         .catch(() => {
           // Offline backup: local reference list (ids match the server).
           setHistoricalTeams(HISTORICAL_TEAMS);
+          setApiOnline(false);
         });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -67,6 +91,23 @@ export default function App() {
   const handleNewDraft = () => {
     initializeDraft();
     void useGameStore.getState().spinDraftPool();
+  };
+
+  const handleWelcomeStart = () => {
+    initializeDraft();
+    void useGameStore.getState().spinDraftPool();
+  };
+
+  const handleWelcomeContinue = () => {
+    const s = useGameStore.getState();
+    s.setHasSeenWelcome(true);
+    s.setPhase('draft');
+    // Returning without a pool (e.g. cleared mid-draft) — recover a free spin.
+    const st = useGameStore.getState();
+    const filled = st.draftState.lineup.slots.filter(sl => sl.player).length;
+    if (!st.draftState.pool && filled < st.draftState.maxRounds && !st.draftState.isSpinning) {
+      void st.spinDraftPool();
+    }
   };
 
   const handleVSMode = () => {
@@ -78,54 +119,79 @@ export default function App() {
     setPhase(simulationResult ? 'results' : 'draft');
   };
 
+  const legalModal = legalDoc ? <LegalModal doc={legalDoc} onClose={closeLegal} /> : null;
+  const withChrome = (node: React.ReactNode) => <>{node}<Footer onOpenLegal={openLegal} /><Toasts />{legalModal}</>;
+
+  if (phase === 'welcome') {
+    const filled = draftState.lineup.slots.filter(s => s.player !== null).length;
+    const hasProgress = filled > 0 || draftState.pool !== null;
+    // Single viewport: screen + footer share one h-dvh so nothing scrolls.
+    return (
+      <div className="flex h-dvh flex-col overflow-hidden">
+        <WelcomeScreen
+          filledCount={filled}
+          maxRounds={draftState.maxRounds}
+          hasProgress={hasProgress}
+          apiOnline={apiOnline}
+          onStart={handleWelcomeStart}
+          onContinue={handleWelcomeContinue}
+          onNewDraft={handleNewDraft}
+        />
+        <Footer onOpenLegal={openLegal} />
+        <Toasts />
+        {legalModal}
+      </div>
+    );
+  }
+
   if (phase === 'draft') {
-    return <><DraftScreen /><Toasts /></>;
+    return withChrome(<DraftScreen />);
   }
 
   if (phase === 'season-setup') {
-    return <><SeasonSetup onBack={() => setPhase('draft')} /><Toasts /></>;
+    return withChrome(<SeasonSetup onBack={() => setPhase('draft')} />);
   }
 
   if (phase === 'simulation') {
     if (error) {
-      return <><ErrorScreen message={error} onRetry={() => { setError(null); setPhase('draft'); }} /><Toasts /></>;
+      return withChrome(<ErrorScreen message={error} onRetry={() => { setError(null); setPhase('draft'); }} />);
     }
     // The setup screen kicks off runSimulation; this is a transient state.
     // Retry once if we landed here without a pending load (e.g. persisted phase).
     if (!useGameStore.getState().isLoading && !simulationResult) {
       void runSimulation();
     }
-    return <><LoadingScreen message="Simulating your 82-game season..." /><Toasts /></>;
+    return withChrome(<LoadingScreen message="Simulating your 82-game season..." />);
   }
 
   if (phase === 'results' && simulationResult) {
-    return (
-      <><AnimatePresence mode="wait">
+    return withChrome(
+      <AnimatePresence mode="wait">
         <SimulationDashboard
           key="simulation"
           result={simulationResult}
           onNewDraft={handleNewDraft}
           onVSMode={handleVSMode}
         />
-      </AnimatePresence><Toasts /></>
+      </AnimatePresence>
     );
   }
 
   if (phase === 'results' && error) {
-    return <><ErrorScreen message={error} onRetry={handleBackToResults} /><Toasts /></>;
+    return withChrome(<ErrorScreen message={error} onRetry={handleBackToResults} />);
   }
 
   if (phase === 'vs-mode') {
-    return (
-      <><AnimatePresence mode="wait">
+    return withChrome(
+      <AnimatePresence mode="wait">
         <VSModeScreen
           key="vs-mode"
           onBack={handleBackToResults}
         />
-      </AnimatePresence><Toasts /></>
+      </AnimatePresence>
     );
   }
 
   void vsMatchup;
-  return <><DraftScreen /><Toasts /></>;
+  return withChrome(<DraftScreen />);
 }

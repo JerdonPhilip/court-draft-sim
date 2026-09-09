@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
 import { ChevronLeft, Trophy, Shuffle } from 'lucide-react';
-import { cn, getPositionColor, calculateTeamStrength, getWinProjection, foulRiskLabel } from '../../utils/helpers';
+import { cn, getPositionColor, bestTextOn, calculateTeamStrength, getWinProjection, foulRiskLabel } from '../../utils/helpers';
 import { useGameStore, minutesSum, isMinutesValid } from '../../store/gameStore';
 import { canPlayPosition } from '../../types/game';
 import { api } from '../../utils/api';
@@ -147,8 +147,8 @@ export function SeasonSetup({ onBack }: SeasonSetupProps) {
               className="inline-flex items-center gap-1 rounded-lg border border-white/10 bg-broadcast-card px-2 py-0.5 text-[11px] font-medium text-white"
             >
               <span
-                className="flex h-4 w-4 items-center justify-center rounded text-[9px] font-bold text-white"
-                style={{ backgroundColor: getPositionColor(p.position) }}
+                className="flex h-4 w-4 items-center justify-center rounded text-[9px] font-bold"
+                style={{ backgroundColor: getPositionColor(p.position), color: bestTextOn(getPositionColor(p.position)) }}
                 aria-hidden="true"
               >
                 {p.position}
@@ -325,8 +325,8 @@ export function SeasonSetup({ onBack }: SeasonSetupProps) {
                   )}
                 >
                   <span
-                    className="flex h-6 w-6 shrink-0 items-center justify-center rounded-lg text-[10px] font-bold text-white"
-                    style={{ backgroundColor: getPositionColor(p.position) }}
+                    className="flex h-6 w-6 shrink-0 items-center justify-center rounded-lg text-[10px] font-bold"
+                    style={{ backgroundColor: getPositionColor(p.position), color: bestTextOn(getPositionColor(p.position)) }}
                     aria-hidden="true"
                   >
                     {p.position}
@@ -369,6 +369,7 @@ export function SeasonSetup({ onBack }: SeasonSetupProps) {
                     type="button"
                     onClick={() => handleSwap(p.id)}
                     aria-pressed={isPick}
+                    aria-label={isPick ? `Cancel swap pick for ${p.name}` : `Swap ${p.name} with another player`}
                     title={isPick ? 'Cancel swap pick' : compat === false ? 'Spots must fit both players' : `Swap ${p.name} with a starter or bench player`}
                     className={cn(
                       'shrink-0 rounded-lg border px-2 py-1 text-[11px] font-bold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-broadcast-accent',
@@ -477,10 +478,10 @@ function EraCard({ selected, onSelect, title, subtitle, meta, badge, badgeClass 
     >
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
-          <h3 className="flex items-center gap-2 font-display text-base font-bold text-white">
+          <span className="flex items-center gap-2 font-display text-base font-bold text-white">
             {title === 'Mixed League' && <Shuffle className="h-4 w-4 text-broadcast-accent" aria-hidden="true" />}
             <span className="truncate">{title}</span>
-          </h3>
+          </span>
           <p className="mt-0.5 truncate text-xs text-broadcast-text-secondary">{subtitle}</p>
           <p className="mt-0.5 text-xs font-medium text-broadcast-text-muted">{meta}</p>
         </div>

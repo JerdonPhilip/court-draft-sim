@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { cn, getPositionColor, formatHeight, splitPlayerName, fitNameSize } from '../../utils/helpers';
+import { cn, getPositionColor, bestTextOn, formatHeight, splitPlayerName, fitNameSize } from '../../utils/helpers';
 import { FRANCHISES, DECADES } from '../../data/constants';
 import { canPlayPosition, getPlayerPositions, personKeyOf } from '../../types/game';
 import type { LineupSlot, Player, Position } from '../../types/game';
@@ -57,7 +57,7 @@ function makeDragGhost(player: Player): HTMLElement {
   const badge = document.createElement('span');
   badge.textContent = player.position;
   badge.style.cssText = `display:flex;align-items:center;justify-content:center;width:28px;height:28px;flex-shrink:0;`
-    + `border-radius:8px;font-size:11px;font-weight:800;color:#fff;background-color:${getPositionColor(player.position)};`;
+    + `border-radius:8px;font-size:11px;font-weight:800;color:${bestTextOn(getPositionColor(player.position))};background-color:${getPositionColor(player.position)};`;
   const name = document.createElement('span');
   name.textContent = compactName(player.name);
   name.style.cssText = 'flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;'
@@ -128,7 +128,7 @@ export function PlayerPool({ pool, draftedPlayerIds, draftedPersonKeys, onDraftP
         className="space-y-4"
       >
         <div className="flex items-center justify-between mb-4">
-          <h3 className="section-title font-display text-lg">AVAILABLE PLAYERS • {franchiseName} • {decadeLabel}</h3>
+          <h2 className="section-title font-display text-lg">AVAILABLE PLAYERS • {franchiseName} • {decadeLabel}</h2>
           <div className="flex items-center gap-2 text-sm text-broadcast-text-secondary" aria-live="polite">
             <span className="px-2 py-1 bg-broadcast-accent/20 text-broadcast-accent rounded border border-broadcast-accent/30">
               {draftableCount}/{availablePlayers.length} DRAFTABLE
@@ -255,8 +255,8 @@ export function PlayerPool({ pool, draftedPlayerIds, draftedPersonKeys, onDraftP
                 />
                 <div className="flex items-center gap-3 px-5 pt-3">
                   <span
-                    className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg font-display text-sm font-bold text-white ring-1 ring-white/25 [box-shadow:inset_0_2px_8px_rgb(0,0,0,0.35)]"
-                    style={{ backgroundImage: `linear-gradient(135deg, ${posColor}, ${posColor}55 130%)` }}
+                    className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg font-display text-sm font-bold ring-1 ring-white/25 [box-shadow:inset_0_2px_8px_rgb(0,0,0,0.35)]"
+                    style={{ backgroundColor: posColor, color: bestTextOn(posColor) }}
                     aria-hidden="true"
                     title={`Plays ${getPlayerPositions(player).join(' / ')}`}
                   >
@@ -264,7 +264,7 @@ export function PlayerPool({ pool, draftedPlayerIds, draftedPersonKeys, onDraftP
                   </span>
                   <div className="min-w-0 flex-1 overflow-hidden leading-tight" title={player.name}>
                     <div className="truncate text-[11px] font-semibold uppercase tracking-[0.16em] text-broadcast-text-secondary">{splitPlayerName(player.name).first}</div>
-                    <h4 className="whitespace-nowrap font-display font-bold leading-tight text-white" style={{ fontSize: fitNameSize(splitPlayerName(player.name).last || player.name) }}>{splitPlayerName(player.name).last || splitPlayerName(player.name).first}</h4>
+                    <span className="whitespace-nowrap font-display font-bold leading-tight text-white" style={{ fontSize: fitNameSize(splitPlayerName(player.name).last || player.name) }}>{splitPlayerName(player.name).last || splitPlayerName(player.name).first}</span>
                   </div>
                   <span className="shrink-0 whitespace-nowrap font-display text-2xl font-bold leading-none text-broadcast-accent" title={`Overall rating ${player.overall}`}>
                     {player.overall}

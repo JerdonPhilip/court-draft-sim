@@ -20,7 +20,7 @@ import {
   X,
 } from 'lucide-react';
 import { cn } from '../../utils/helpers';
-import { formatTeamName, getPositionColor, otLabel, defaultMinutesForOrdered } from '../../utils/helpers';
+import { formatTeamName, getPositionColor, bestTextOn, otLabel, defaultMinutesForOrdered } from '../../utils/helpers';
 import { useLockBodyScroll } from '../../utils/useLockBodyScroll';
 import { api } from '../../utils/api';
 import { notify } from '../../store/toastStore';
@@ -747,8 +747,8 @@ function PlayersView({ result }: { result: SimulationResult }) {
       {leader && (
         <div className="card-elevated flex items-center gap-4 p-4" aria-label={`Team leader in ${leaderMeta.long}: ${leader.playerName}`}>
           <div
-            className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl font-display text-sm font-bold text-white ring-1 ring-white/25"
-            style={{ backgroundColor: getPositionColor(leader.position ?? '') }}
+            className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl font-display text-sm font-bold ring-1 ring-white/25"
+            style={{ backgroundColor: getPositionColor(leader.position ?? ''), color: bestTextOn(getPositionColor(leader.position ?? '')) }}
             aria-hidden="true"
           >
             {leader.position ?? '•'}

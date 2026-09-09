@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ChevronLeft, Trophy, Zap, Star, RefreshCw } from 'lucide-react';
-import { cn, getPositionColor, calculateTeamStrength, getBaseTeamImpact, getWinProjection, otLabel, counterMinutesPreview, foulRiskLabel } from '../../utils/helpers';
+import { cn, getPositionColor, bestTextOn, calculateTeamStrength, getBaseTeamImpact, getWinProjection, otLabel, counterMinutesPreview, foulRiskLabel } from '../../utils/helpers';
 import { useGameStore, minutesSum, isMinutesValid } from '../../store/gameStore';
 import { notify } from '../../store/toastStore';
 import { api } from '../../utils/api';
@@ -17,18 +17,6 @@ function hexToRgba(hex: string, alpha: number): string {
   const g = (n >> 8) & 255;
   const b = n & 255;
   return `rgba(${r},${g},${b},${alpha})`;
-}
-
-function bestTextOn(hex: string): string {
-  const h = hex.replace('#', '');
-  const full = h.length === 3 ? h.split('').map(c => c + c).join('') : h;
-  const n = parseInt(full, 16);
-  if (!Number.isFinite(n)) return '#fff';
-  const r = (n >> 16) & 255;
-  const g = (n >> 8) & 255;
-  const b = n & 255;
-  const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
-  return luminance > 0.6 ? '#111111' : '#ffffff';
 }
 
 interface VSModeScreenProps {
@@ -209,7 +197,7 @@ export function VSModeScreen({ onBack }: VSModeScreenProps) {
         <div className="grid lg:grid-cols-3 gap-6">
           <div className="lg:col-span-2 space-y-6">
             <div className="card-elevated p-6">
-              <h3 className="section-title font-display text-lg mb-4">SELECT OPPONENT</h3>
+              <h2 className="section-title font-display text-lg mb-4">SELECT OPPONENT</h2>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3" role="radiogroup" aria-label="Historical opponents">
                 {historicalTeams.map(team => {
                   const colors = historicalTeamColors(team.id);
@@ -451,8 +439,8 @@ export function VSModeScreen({ onBack }: VSModeScreenProps) {
                   return (
                     <div key={p.id} className="flex items-center gap-2.5 rounded-xl border border-white/5 bg-black/20 px-2.5 py-1.5">
                       <span
-                        className="flex h-6 w-6 shrink-0 items-center justify-center rounded-lg text-[10px] font-bold text-white"
-                        style={{ backgroundColor: getPositionColor(p.position) }}
+                        className="flex h-6 w-6 shrink-0 items-center justify-center rounded-lg text-[10px] font-bold"
+                        style={{ backgroundColor: getPositionColor(p.position), color: bestTextOn(getPositionColor(p.position)) }}
                         aria-hidden="true"
                       >
                         {p.position}
@@ -608,8 +596,8 @@ function MatchupRow({ you, opp, youMin, oppMin, simYou, simOpp, oppColor, sixth 
     <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-2 p-2 bg-broadcast-darker rounded-lg">
       <div className="flex items-center gap-2 min-w-0">
         <div
-          className="w-7 h-7 shrink-0 rounded-lg flex items-center justify-center font-bold text-white text-xs"
-          style={{ backgroundColor: getPositionColor(you.position) }}
+          className="w-7 h-7 shrink-0 rounded-lg flex items-center justify-center font-bold text-xs"
+          style={{ backgroundColor: getPositionColor(you.position), color: bestTextOn(getPositionColor(you.position)) }}
         >
           {you.position}
         </div>
@@ -644,8 +632,8 @@ function MatchupRow({ you, opp, youMin, oppMin, simYou, simOpp, oppColor, sixth 
           </div>
         </div>
         <div
-          className="w-7 h-7 shrink-0 rounded-lg flex items-center justify-center font-bold text-white text-xs"
-          style={{ backgroundColor: getPositionColor(opp.position) }}
+          className="w-7 h-7 shrink-0 rounded-lg flex items-center justify-center font-bold text-xs"
+          style={{ backgroundColor: getPositionColor(opp.position), color: bestTextOn(getPositionColor(opp.position)) }}
         >
           {opp.position}
         </div>

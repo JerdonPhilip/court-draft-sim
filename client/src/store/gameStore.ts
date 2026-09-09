@@ -30,7 +30,9 @@ export interface PlayoffProgress {
 }
 
 interface GameStore {
-  phase: 'draft' | 'season-setup' | 'simulation' | 'results' | 'vs-mode';
+  phase: 'welcome' | 'draft' | 'season-setup' | 'simulation' | 'results' | 'vs-mode';
+  /** True once the visitor has entered the game at least once. */
+  hasSeenWelcome: boolean;
   draftState: DraftState;
   simulationResult: SimulationResult | null;
   vsMatchup: VSModeMatchup | null;
@@ -43,6 +45,7 @@ interface GameStore {
   error: string | null;
 
   setPhase: (phase: GameStore['phase']) => void;
+  setHasSeenWelcome: (seen: boolean) => void;
   setDraftState: (state: Partial<DraftState>) => void;
   setSimulationResult: (result: SimulationResult | null) => void;
   setVSMatchup: (matchup: VSModeMatchup | null) => void;
@@ -146,7 +149,8 @@ let spinRequestId = 0;
 export const useGameStore = create<GameStore>()(
   persist(
     (set, get) => ({
-      phase: 'draft',
+      phase: 'welcome',
+      hasSeenWelcome: false,
       draftState: createInitialDraftState(),
       simulationResult: null,
       vsMatchup: null,
@@ -157,6 +161,7 @@ export const useGameStore = create<GameStore>()(
       error: null,
 
       setPhase: (phase) => set({ phase }),
+      setHasSeenWelcome: (seen) => set({ hasSeenWelcome: seen }),
       setDraftState: (state) => set((prev) => ({ draftState: { ...prev.draftState, ...state } })),
       setSimulationResult: (result) => set({ simulationResult: result }),
       setVSMatchup: (matchup) => set({ vsMatchup: matchup }),
@@ -170,6 +175,7 @@ export const useGameStore = create<GameStore>()(
         spinRequestId++;
         set({
           phase: 'draft',
+          hasSeenWelcome: true,
           draftState: createInitialDraftState(),
           simulationResult: null,
           vsMatchup: null,
@@ -740,6 +746,7 @@ export const useGameStore = create<GameStore>()(
         spinRequestId++;
         set({
           phase: 'draft',
+          hasSeenWelcome: true,
           draftState: createInitialDraftState(),
           simulationResult: null,
           vsMatchup: null,
@@ -751,9 +758,10 @@ export const useGameStore = create<GameStore>()(
     }),
     {
       name: 'court-draft-sim-store',
-      version: 11,
+      version: 12,
       partialize: (state) => ({
         phase: state.phase === 'simulation' || state.phase === 'season-setup' ? 'draft' : state.phase,
+        hasSeenWelcome: (state as { hasSeenWelcome?: boolean }).hasSeenWelcome ?? false,
         draftState: {
           ...state.draftState,
           isSpinning: false,
@@ -769,7 +777,16 @@ export const useGameStore = create<GameStore>()(
         if (typeof persisted !== 'object' || persisted === null) {
           return persisted as GameStore;
         }
-        const p = persisted as { draftState?: Partial<DraftState> };
+        const p = persisted as { draftState?: Partial<DraftState>; hasSeenWelcome?: boolean; phase?: string };
+        // v11 -> v12: welcome landing. Returning players skip the gate.
+        if (typeof p.hasSeenWelcome !== 'boolean') {
+          const slots = (p.draftState as unknown as { lineup?: { slots?: Array<{ player?: unknown }> } })?.lineup?.slots;
+          const hasProgress = Array.isArray(slots) && slots.some(s => s?.player != null);
+          p.hasSeenWelcome = hasProgress || (p.phase != null && p.phase !== 'welcome');
+        }
+        if (p.phase === 'simulation' || p.phase === 'season-setup') {
+          p.phase = 'draft';
+        }
         if (p.draftState) {
           p.draftState.isSpinning = false;
           p.draftState.error = null;

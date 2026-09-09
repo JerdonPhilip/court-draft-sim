@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Plus, ChevronDown } from 'lucide-react';
-import { cn, getPositionColor, getPositionLabel, formatHeight } from '../../utils/helpers';
+import { cn, getPositionColor, bestTextOn, getPositionLabel, formatHeight } from '../../utils/helpers';
 import { canPlayPosition, getPlayerPositions } from '../../types/game';
 import type { LineupSlot, Player, Position } from '../../types/game';
 
@@ -98,8 +98,8 @@ function Slot({ slot, index, isSelected, draggedPlayer, sixthManAuto, optionAuto
         )}
       >
         <span
-          className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-[11px] font-bold text-white ring-1 ring-white/25"
-          style={{ backgroundColor: slotColor }}
+          className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-[11px] font-bold ring-1 ring-white/25"
+          style={{ backgroundColor: slotColor, color: bestTextOn(slotColor) }}
           aria-hidden="true"
         >
           {expectedPos}
@@ -137,8 +137,8 @@ function Slot({ slot, index, isSelected, draggedPlayer, sixthManAuto, optionAuto
     >
       <div className="flex w-full items-center gap-2 px-2.5 py-2">
         <span
-          className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-[11px] font-bold text-white ring-1 ring-white/25"
-          style={{ backgroundColor: slotColor }}
+          className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-[11px] font-bold ring-1 ring-white/25"
+          style={{ backgroundColor: slotColor, color: bestTextOn(slotColor) }}
           aria-hidden="true"
           title={`Plays ${getPlayerPositions(p).join(' / ')}`}
         >
@@ -172,6 +172,7 @@ function Slot({ slot, index, isSelected, draggedPlayer, sixthManAuto, optionAuto
           type="button"
           onClick={() => onSwapClick(index)}
           aria-pressed={isSwapPick}
+          aria-label={isSwapPick ? `Cancel swap pick for ${p.name}` : `Swap ${p.name} with another player`}
           title={swapMode ? (isSwapPick ? 'Cancel swap pick' : swapCompatible ? 'Swap with selected player' : 'Cannot swap: positions must fit both slots') : `Swap ${p.name} (positions must fit both slots)`}
           className={cn(
             'shrink-0 rounded-md border px-1.5 py-1 text-[11px] font-bold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-broadcast-accent',
