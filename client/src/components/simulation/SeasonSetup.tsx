@@ -3,6 +3,7 @@ import { motion } from 'framer-motion';
 import { ChevronLeft, Trophy, Shuffle } from 'lucide-react';
 import { cn, getPositionColor, calculateTeamStrength, getWinProjection, foulRiskLabel } from '../../utils/helpers';
 import { useGameStore, minutesSum, isMinutesValid } from '../../store/gameStore';
+import { canPlayPosition } from '../../types/game';
 import { api } from '../../utils/api';
 import { APP_VERSION } from '../../version';
 import { DECADES } from '../../data/constants';
@@ -22,9 +23,20 @@ const FALLBACK_ERAS: EraInfo[] = DECADES.map(d => ({
   difficulty: '',
 }));
 
+const PRESETS = [
+  { id: 'default', label: 'DEFAULT', title: 'Starters 34 • Sixth 22 • bench 12' },
+  { id: 'balanced', label: 'BALANCED', title: 'Everyone 24' },
+  { id: 'seven', label: '7-MAN', title: 'Starters 38 • Sixth 26 • one bench 24 • three DNP cover' },
+  { id: 'eight', label: '8-MAN', title: 'Starters 36 • Sixth 26 • two bench 17 • two DNP cover' },
+  { id: 'nine', label: '9-MAN', title: 'Starters 32 • Sixth 24 • bench 19/19/18 • one DNP cover' },
+] as const;
+
+type PresetId = (typeof PRESETS)[number]['id'];
+
 export function SeasonSetup({ onBack }: SeasonSetupProps) {
-  const { draftState, selectedEra, setSelectedEra, runSimulation, isLoading, setSixthMan, setOptionRank, confirmRotation, ensureMinutesInitialized, setPlayerMinutes, applyMinutesPreset, resetMinutesToDefault, rebalanceMinutes } = useGameStore();
+  const { draftState, selectedEra, setSelectedEra, runSimulation, isLoading, setSixthMan, setOptionRank, swapPlayers, ensureMinutesInitialized, setPlayerMinutes, applyMinutesPreset, resetMinutesToDefault, rebalanceMinutes } = useGameStore();
   const [eras, setEras] = useState<EraInfo[]>(FALLBACK_ERAS);
+  const [swapPickId, setSwapPickId] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -46,7 +58,10 @@ export function SeasonSetup({ onBack }: SeasonSetupProps) {
   };
   const sixthSlotIdx = slots.findIndex(s => s.isSixthMan && s.player);
   const rankSlotIdx = (r: 1 | 2 | 3): number => slots.findIndex(s => s.optionRank === r && s.player);
-  const confirmed = draftState.rotationConfirmed ?? false;
+  const rankHolder = (r: 1 | 2 | 3): string => {
+    const idx = rankSlotIdx(r);
+    return idx >= 0 ? slots[idx]?.player?.id ?? '' : '';
+  };
   const sixthAuto = !(draftState.sixthManExplicit ?? false);
   const optionAuto = (r: 1 | 2 | 3): boolean => !(draftState.optionsExplicit?.[r] ?? false);
   const benchSlots = slots
@@ -61,12 +76,35 @@ export function SeasonSetup({ onBack }: SeasonSetupProps) {
   const minutesAuto = !(draftState.minutesExplicit ?? false);
   const sixthId = sixthSlotIdx >= 0 ? slots[sixthSlotIdx]?.player?.id ?? null : null;
   const minuteOptions = {
-    first: rankSlotIdx(1) >= 0 ? slots[rankSlotIdx(1)]?.player?.id ?? null : null,
-    second: rankSlotIdx(2) >= 0 ? slots[rankSlotIdx(2)]?.player?.id ?? null : null,
-    third: rankSlotIdx(3) >= 0 ? slots[rankSlotIdx(3)]?.player?.id ?? null : null,
+    first: rankHolder(1) || null,
+    second: rankHolder(2) || null,
+    third: rankHolder(3) || null,
   };
   const minuteStrength = minutes ? calculateTeamStrength(lineup, sixthId, minuteOptions, minutes) : 0;
   const minuteProj = getWinProjection(minuteStrength);
+
+  // Starter ↔ bench swap without leaving the page. Both players must fit the
+  // other's fixed positional slot.
+  const swapPickIdx = swapPickId ? slotIndexOf(swapPickId) : -1;
+  const swappable = (id: string): boolean | null => {
+    if (swapPickIdx < 0 || id === swapPickId) return null;
+    const a = slots[swapPickIdx];
+    const b = slots[slotIndexOf(id)];
+    if (!a?.player || !b?.player) return false;
+    return canPlayPosition(a.player, b.position) && canPlayPosition(b.player, a.position);
+  };
+  const handleSwap = (id: string) => {
+    if (!swapPickId) {
+      setSwapPickId(id);
+      return;
+    }
+    if (swapPickId === id) {
+      setSwapPickId(null);
+      return;
+    }
+    swapPlayers(slotIndexOf(swapPickId), slotIndexOf(id));
+    setSwapPickId(null);
+  };
 
   const badgeFor = (id: string): string | null => {
     const slot = draftState.lineup.slots.find(s => s.player?.id === id);
@@ -85,8 +123,8 @@ export function SeasonSetup({ onBack }: SeasonSetupProps) {
 
   return (
     <div className="min-h-screen bg-broadcast-dark">
-      <div className="mx-auto max-w-5xl px-4 py-8 pb-12">
-        <div className="mb-2 flex items-center gap-3">
+      <div className="mx-auto max-w-4xl px-4 py-5 pb-8">
+        <div className="mb-3 flex items-center gap-3">
           <motion.button
             onClick={onBack}
             whileHover={{ scale: 1.05 }}
@@ -97,19 +135,19 @@ export function SeasonSetup({ onBack }: SeasonSetupProps) {
             <ChevronLeft className="w-5 h-5 text-broadcast-text-secondary" aria-hidden="true" />
           </motion.button>
           <div>
-            <h1 className="font-display text-2xl font-bold gradient-text">CHOOSE YOUR SEASON</h1>
-            <p className="text-xs text-broadcast-text-secondary">YOUR LOCKED 10 TAKE ON AN 82-GAME SCHEDULE AGAINST…</p>
+            <h1 className="font-display text-xl font-bold gradient-text">CHOOSE YOUR SEASON</h1>
+            <p className="text-xs text-broadcast-text-secondary">Set rotation and minutes, pick a league, sim 82.</p>
           </div>
         </div>
 
-        <div className="mb-5 flex flex-wrap items-center gap-2" aria-label="Your locked lineup">
+        <div className="mb-4 flex flex-wrap items-center gap-1.5" aria-label="Your locked lineup">
           {lineup.map(p => (
             <span
               key={p.id}
-              className="inline-flex items-center gap-1.5 rounded-lg border border-white/10 bg-broadcast-card px-2.5 py-1 text-xs font-medium text-white"
+              className="inline-flex items-center gap-1 rounded-lg border border-white/10 bg-broadcast-card px-2 py-0.5 text-[11px] font-medium text-white"
             >
               <span
-                className="flex h-5 w-5 items-center justify-center rounded text-[10px] font-bold text-white"
+                className="flex h-4 w-4 items-center justify-center rounded text-[9px] font-bold text-white"
                 style={{ backgroundColor: getPositionColor(p.position) }}
                 aria-hidden="true"
               >
@@ -117,7 +155,7 @@ export function SeasonSetup({ onBack }: SeasonSetupProps) {
               </span>
               {p.name}
               {badgeFor(p.id) && (
-                <span className="rounded-full border border-broadcast-gold/50 bg-broadcast-gold/15 px-1.5 py-0.5 text-[10px] font-bold text-broadcast-gold">
+                <span className="rounded-full border border-broadcast-gold/50 bg-broadcast-gold/15 px-1 py-px text-[9px] font-bold text-broadcast-gold">
                   {badgeFor(p.id)}
                 </span>
               )}
@@ -125,25 +163,18 @@ export function SeasonSetup({ onBack }: SeasonSetupProps) {
           ))}
         </div>
 
-        <div className="mb-5 rounded-2xl border border-white/10 bg-broadcast-card/90 p-4" aria-label="Confirm your rotation">
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <div>
-              <h2 className="font-display text-lg font-bold text-white">CONFIRM YOUR ROTATION</h2>
-              <p className="text-xs text-broadcast-text-secondary">
-                Review your Sixth Man + 1st/2nd/3rd options. Simulation stays locked until you confirm.
-                {(sixthAuto || optionAuto(1) || optionAuto(2) || optionAuto(3)) && (
-                  <> <span className="font-bold text-broadcast-gold">AUTO</span> = filled in for you; change it below.</>
-                )}
-              </p>
-            </div>
-            <span className={cn('rounded-full border px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider', confirmed ? 'border-broadcast-accent/50 bg-broadcast-accent/15 text-broadcast-accent' : 'border-broadcast-gold/50 bg-broadcast-gold/15 text-broadcast-gold')}>
-              {confirmed ? 'Confirmed ✓' : 'Needs review'}
-            </span>
-          </div>
+        <div className="mb-4 rounded-2xl border border-white/10 bg-broadcast-card/90 p-3" aria-label="Your rotation">
+          <h2 className="font-display text-base font-bold text-white">YOUR ROTATION</h2>
+          <p className="text-xs text-broadcast-text-secondary">
+            Sixth Man, scoring options and starter swaps. Whatever stands here at sim time is what plays.
+            {(sixthAuto || optionAuto(1) || optionAuto(2) || optionAuto(3)) && (
+              <> <span className="font-bold text-broadcast-gold">AUTO</span> filled the gaps. Change anything below.</>
+            )}
+          </p>
 
-          <div className="mt-3">
-            <h3 className="mb-2 text-xs font-bold uppercase tracking-[0.18em] text-broadcast-gold">Sixth Man (bench only)</h3>
-            <div className="flex flex-wrap gap-2" role="radiogroup" aria-label="Sixth man">
+          <div className="mt-2.5">
+            <h3 className="mb-1.5 text-xs font-bold uppercase tracking-[0.18em] text-broadcast-gold">Sixth Man (bench only)</h3>
+            <div className="flex flex-wrap gap-1.5" role="radiogroup" aria-label="Sixth man">
               {benchSlots.map(({ s, i }) => {
                 const active = i === sixthSlotIdx;
                 return (
@@ -154,14 +185,14 @@ export function SeasonSetup({ onBack }: SeasonSetupProps) {
                     aria-checked={active}
                     onClick={() => setSixthMan(i)}
                     className={cn(
-                      'rounded-xl border px-3 py-2 text-left text-xs font-medium transition-colors',
+                      'rounded-xl border px-2.5 py-1.5 text-left text-xs font-medium transition-colors',
                       active
                         ? 'border-broadcast-gold/60 bg-broadcast-gold/10 text-white shadow-glow-gold'
                         : 'border-white/10 bg-white/5 text-broadcast-text-secondary hover:border-broadcast-gold/40 hover:text-white'
                     )}
                   >
                     <span className="font-bold text-white">{s.player!.name}</span>
-                    <span className="ml-1.5 text-broadcast-text-muted">{s.position} • {s.player!.overall} OVR</span>
+                    <span className="ml-1.5 text-broadcast-text-muted">{s.position} • {s.player!.overall}</span>
                     {active && (
                       <span className="ml-1.5 rounded-full border border-broadcast-gold/50 bg-broadcast-gold/15 px-1.5 py-px text-[10px] font-bold text-broadcast-gold">
                         6TH{sixthAuto ? ' (AUTO)' : ''}
@@ -173,13 +204,16 @@ export function SeasonSetup({ onBack }: SeasonSetupProps) {
             </div>
           </div>
 
-          <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-3">
+          <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-3">
             {([1, 2, 3] as const).map(rank => {
-              const currentIdx = rankSlotIdx(rank);
-              const currentId = currentIdx >= 0 ? slots[currentIdx]?.player?.id ?? '' : '';
+              const currentId = rankHolder(rank);
+              // One player, one rank: holders of the other two ranks are locked out here.
+              const takenElsewhere = new Set(
+                ([1, 2, 3] as const).filter(o => o !== rank).map(rankHolder).filter(Boolean)
+              );
               return (
                 <div key={rank}>
-                  <label htmlFor={`option-${rank}`} className="mb-1.5 block text-xs font-bold uppercase tracking-[0.18em] text-broadcast-purple">
+                  <label htmlFor={`option-${rank}`} className="mb-1 block text-xs font-bold uppercase tracking-[0.18em] text-broadcast-purple">
                     {rank === 1 ? '1st option' : rank === 2 ? '2nd option' : '3rd option'}
                     {optionAuto(rank) && <span className="ml-1.5 rounded-full border border-broadcast-gold/50 bg-broadcast-gold/15 px-1.5 py-px text-[10px] font-bold text-broadcast-gold">AUTO</span>}
                   </label>
@@ -190,99 +224,108 @@ export function SeasonSetup({ onBack }: SeasonSetupProps) {
                       const idx = slotIndexOf(e.target.value || null);
                       if (idx >= 0) setOptionRank(idx, rank);
                     }}
-                    className="w-full rounded-xl border border-white/10 bg-broadcast-darker px-3 py-2 text-sm font-medium text-white focus:border-broadcast-purple/60 focus:outline-none"
+                    className="w-full rounded-xl border border-white/10 bg-broadcast-darker px-2.5 py-1.5 text-sm font-medium text-white focus:border-broadcast-purple/60 focus:outline-none"
                   >
                     {lineup.map(p => (
-                      <option key={p.id} value={p.id}>
-                        {p.name} ({p.position} • {p.overall} OVR)
+                      <option key={p.id} value={p.id} disabled={takenElsewhere.has(p.id)}>
+                        {p.name} ({p.position} • {p.overall})
                       </option>
                     ))}
                   </select>
-                  <p className="mt-1 text-[11px] text-broadcast-text-muted">
-                    {rank === 1 ? '+8% scoring, top usage' : rank === 2 ? '+4% scoring' : '+2% scoring'}
-                  </p>
                 </div>
               );
             })}
           </div>
-
-          <div className="mt-4 flex flex-wrap items-center gap-3">
-            <button
-              type="button"
-              onClick={() => confirmRotation()}
-              disabled={confirmed}
-              className={cn('rounded-xl px-5 py-2.5 text-sm font-bold transition-all', confirmed ? 'cursor-default border border-broadcast-accent/40 bg-broadcast-accent/10 text-broadcast-accent' : 'btn-primary')}
-            >
-              {confirmed ? 'ROTATION CONFIRMED ✓' : 'CONFIRM ROTATION'}
-            </button>
-            {!confirmed && (
-              <span className="text-xs text-broadcast-text-muted">Any change up top resets confirmation, so re-confirm before simulating.</span>
-            )}
-          </div>
-          <p className="mt-2 text-[11px] text-broadcast-text-muted">Need a starter ↔ bench swap? Head back to the draft. Swaps only go through when the positions fit.</p>
         </div>
 
-        <div className="mb-5 rounded-2xl border border-white/10 bg-broadcast-card/90 p-4" aria-label="Minutes plan">
+        <div className="mb-4 rounded-2xl border border-white/10 bg-broadcast-card/90 p-3" aria-label="Minutes plan">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <div>
-              <h2 className="font-display text-lg font-bold text-white">
+              <h2 className="font-display text-base font-bold text-white">
                 MINUTES PLAN{minutesAuto && <span className="ml-2 rounded-full border border-broadcast-gold/50 bg-broadcast-gold/15 px-1.5 py-px text-[10px] font-bold text-broadcast-gold">AUTO</span>}
               </h2>
               <p className="text-xs text-broadcast-text-secondary">
-                Minutes move win%. Ride your stars with a short rotation or stay fresh with a deep one (playing over 32 a night wears players down).
-                6 fouls = ejected; <span className="font-bold text-white">0 MIN</span> players only enter as emergency foul cover (must fit the slot).
+                Minutes move win%. Total caps at 240, so raising one player trims room for the rest.
+                6 fouls ends a night early. <span className="font-bold text-white">0 MIN</span> only checks in as emergency foul cover.
               </p>
             </div>
-            <span className={cn('rounded-full border px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider', minutesValid ? 'border-broadcast-accent/50 bg-broadcast-accent/15 text-broadcast-accent' : 'border-broadcast-red/50 bg-broadcast-red/15 text-broadcast-red')}>
-              {minutesTotal}/240{minutesValid ? '' : ' · FIX TO CONFIRM'}
+            <span className={cn('rounded-full border px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider', minutesValid ? 'border-broadcast-accent/50 bg-broadcast-accent/15 text-broadcast-accent' : 'border-broadcast-gold/50 bg-broadcast-gold/15 text-broadcast-gold')}>
+              {minutesTotal}/240
             </span>
           </div>
 
-          <div className="mt-3 flex flex-wrap items-center gap-2" role="group" aria-label="Minutes presets">
-            {(['default', 'balanced', 'short'] as const).map(preset => (
+          <div className="mt-2.5 flex flex-wrap items-center gap-1.5" role="group" aria-label="Minutes presets">
+            {PRESETS.map(preset => (
               <button
-                key={preset}
+                key={preset.id}
                 type="button"
-                onClick={() => applyMinutesPreset(preset)}
-                title={preset === 'default' ? 'Starters 34 • Sixth 22 • bench 12' : preset === 'balanced' ? 'Everyone 24' : 'Starters 36 • Sixth 26 • two bench 17 • two DNP cover'}
-                className="rounded-xl border border-white/10 bg-white/5 px-3 py-1.5 text-xs font-bold text-broadcast-text-secondary transition-colors hover:border-broadcast-accent/50 hover:text-white"
+                onClick={() => applyMinutesPreset(preset.id as PresetId)}
+                title={preset.title}
+                className="rounded-xl border border-white/10 bg-white/5 px-2.5 py-1 text-[11px] font-bold text-broadcast-text-secondary transition-colors hover:border-broadcast-accent/50 hover:text-white"
               >
-                {preset === 'default' ? 'DEFAULT 34/22/12' : preset === 'balanced' ? 'BALANCED 24s' : 'SHORT 8-MAN'}
+                {preset.label}
               </button>
             ))}
             <button
               type="button"
               onClick={() => rebalanceMinutes()}
               title="Stretch nonzero shares to total exactly 240 (DNP zeros stay 0)"
-              className="rounded-xl border border-white/10 bg-white/5 px-3 py-1.5 text-xs font-bold text-broadcast-text-secondary transition-colors hover:border-broadcast-accent/50 hover:text-white"
+              className="rounded-xl border border-white/10 bg-white/5 px-2.5 py-1 text-[11px] font-bold text-broadcast-text-secondary transition-colors hover:border-broadcast-accent/50 hover:text-white"
             >
               REBALANCE
             </button>
             <button
               type="button"
               onClick={() => resetMinutesToDefault()}
-              className="rounded-xl border border-white/10 bg-white/5 px-3 py-1.5 text-xs font-bold text-broadcast-text-secondary transition-colors hover:border-broadcast-accent/50 hover:text-white"
+              className="rounded-xl border border-white/10 bg-white/5 px-2.5 py-1 text-[11px] font-bold text-broadcast-text-secondary transition-colors hover:border-broadcast-accent/50 hover:text-white"
             >
               RESET
             </button>
             {minutes && (
               <span className="ml-auto text-xs font-bold text-broadcast-text-secondary">
-                PROJ WITH THESE MINUTES: <span className="text-broadcast-gold">{minuteProj}-{82 - minuteProj}</span>
-                <span className="text-broadcast-text-muted"> ({minuteStrength} STR)</span>
+                PROJ <span className="text-broadcast-gold">{minuteProj}-{82 - minuteProj}</span>
+                <span className="text-broadcast-text-muted"> ({minuteStrength})</span>
               </span>
             )}
           </div>
 
-          <div className="mt-3 space-y-2">
+          {swapPickId && (
+            <div className="mt-2.5 flex items-center justify-between gap-3 rounded-xl border border-broadcast-gold/40 bg-broadcast-gold/10 px-3 py-1.5">
+              <span className="text-xs font-bold text-broadcast-gold">Swap: pick a highlighted row. Spots must fit both players.</span>
+              <button
+                type="button"
+                onClick={() => setSwapPickId(null)}
+                className="rounded-lg border border-broadcast-gold/40 px-2 py-0.5 text-[11px] font-bold text-broadcast-gold hover:bg-broadcast-gold/20"
+              >
+                CANCEL
+              </button>
+            </div>
+          )}
+
+          <div className="mt-2.5 space-y-1.5">
             {slots.map((slot, i) => {
               const p = slot.player;
               if (!p) return null;
               const v = Math.round(minutes?.[p.id] ?? 0);
               const risk = foulRiskLabel(p);
+              const compat = swappable(p.id);
+              const isPick = swapPickId === p.id;
               return (
-                <div key={p.id} className="flex items-center gap-3 rounded-xl border border-white/5 bg-black/20 px-3 py-2">
+                <div
+                  key={p.id}
+                  className={cn(
+                    'flex items-center gap-2.5 rounded-xl border bg-black/20 px-2.5 py-1.5',
+                    isPick
+                      ? 'border-broadcast-gold shadow-glow-gold'
+                      : compat === true
+                        ? 'border-broadcast-accent/70 shadow-glow-accent'
+                        : compat === false
+                          ? 'border-broadcast-red/40 opacity-60'
+                          : 'border-white/5'
+                  )}
+                >
                   <span
-                    className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-[11px] font-bold text-white"
+                    className="flex h-6 w-6 shrink-0 items-center justify-center rounded-lg text-[10px] font-bold text-white"
                     style={{ backgroundColor: getPositionColor(p.position) }}
                     aria-hidden="true"
                   >
@@ -292,7 +335,7 @@ export function SeasonSetup({ onBack }: SeasonSetupProps) {
                     <div className="truncate text-sm font-medium text-white">
                       {p.name}
                       <span className="ml-1.5 text-[11px] font-medium text-broadcast-text-muted">
-                        {slot.role === 'bench' ? 'BENCH' : 'STARTER'} • {p.overall} OVR
+                        {slot.role === 'bench' ? 'BENCH' : 'STARTER'} • {p.overall}
                       </span>
                       {slot.isSixthMan && (
                         <span className="ml-1.5 rounded-full border border-broadcast-gold/50 bg-broadcast-gold/15 px-1.5 py-px text-[10px] font-bold text-broadcast-gold">6TH</span>
@@ -322,6 +365,20 @@ export function SeasonSetup({ onBack }: SeasonSetupProps) {
                       className="mt-1 w-full accent-amber-400"
                     />
                   </div>
+                  <button
+                    type="button"
+                    onClick={() => handleSwap(p.id)}
+                    aria-pressed={isPick}
+                    title={isPick ? 'Cancel swap pick' : compat === false ? 'Spots must fit both players' : `Swap ${p.name} with a starter or bench player`}
+                    className={cn(
+                      'shrink-0 rounded-lg border px-2 py-1 text-[11px] font-bold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-broadcast-accent',
+                      isPick
+                        ? 'border-broadcast-gold/60 bg-broadcast-gold/15 text-broadcast-gold'
+                        : 'border-white/10 bg-white/5 text-broadcast-text-secondary hover:border-broadcast-accent/50 hover:text-white'
+                    )}
+                  >
+                    ⇄
+                  </button>
                   <input
                     type="number"
                     min={0}
@@ -330,21 +387,20 @@ export function SeasonSetup({ onBack }: SeasonSetupProps) {
                     value={v}
                     onChange={(e) => setPlayerMinutes(p.id, Number(e.target.value))}
                     aria-label={`Minutes number for ${p.name}`}
-                    className="w-16 shrink-0 rounded-lg border border-white/10 bg-broadcast-darker px-2 py-1.5 text-center text-sm font-bold text-white focus:border-broadcast-accent/60 focus:outline-none"
+                    className="w-14 shrink-0 rounded-lg border border-white/10 bg-broadcast-darker px-2 py-1 text-center text-sm font-bold text-white focus:border-broadcast-accent/60 focus:outline-none [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
                   />
-                  <span className="hidden text-[11px] text-broadcast-text-muted sm:block" aria-hidden="true">#{i + 1}</span>
                 </div>
               );
             })}
           </div>
           {!minutesValid && (
-            <p className="mt-2 text-xs font-medium text-broadcast-red" role="alert">
-              Total is {minutesTotal}/240. Confirm stays locked until it hits 240 (Rebalance fixes it instantly; DNP zeros are kept).
+            <p className="mt-2 text-xs font-medium text-broadcast-gold" role="alert">
+              Total is {minutesTotal}/240. Sim unlocks at exactly 240 (Rebalance gets you there, DNP zeros stay put).
             </p>
           )}
         </div>
 
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2" role="radiogroup" aria-label="Season era">
+        <div className="grid grid-cols-1 gap-2 sm:grid-cols-2" role="radiogroup" aria-label="Season era">
           <EraCard
             selected={selectedEra === null}
             onSelect={() => setSelectedEra(null)}
@@ -361,37 +417,34 @@ export function SeasonSetup({ onBack }: SeasonSetupProps) {
               onSelect={() => setSelectedEra(era.id)}
               title={`${era.label} League`}
               subtitle={`${era.era} • ${era.range}`}
-              meta={era.teams > 0 ? `${era.teams} teams • ${era.avgOverall.toFixed(0)} avg OVR` : 'Historic rosters'}
+              meta={era.teams > 0 ? `${era.teams} teams • ${era.avgOverall.toFixed(0)} avg` : 'Historic rosters'}
               badge={era.difficulty || 'HISTORIC'}
               badgeClass="bg-broadcast-gold/20 text-broadcast-gold border-broadcast-gold/30"
             />
           ))}
         </div>
 
-        <div className="mt-6 flex flex-wrap items-center justify-center gap-3">
+        <div className="mt-4 flex flex-wrap items-center justify-center gap-3">
           <motion.button
             onClick={() => void runSimulation()}
-            disabled={isLoading || !confirmed}
-            title={!confirmed ? 'Confirm your rotation above first' : undefined}
-            whileHover={{ scale: confirmed ? 1.02 : 1 }}
-            whileTap={{ scale: confirmed ? 0.98 : 1 }}
-            className="btn-primary px-8 py-3 text-lg gap-2 disabled:cursor-not-allowed disabled:opacity-50"
+            disabled={isLoading || !minutesValid}
+            title={!minutesValid ? 'Minutes must total exactly 240' : undefined}
+            whileHover={{ scale: minutesValid ? 1.02 : 1 }}
+            whileTap={{ scale: minutesValid ? 0.98 : 1 }}
+            className="btn-primary px-6 py-2.5 text-base gap-2 disabled:cursor-not-allowed disabled:opacity-50"
           >
             {isLoading ? (
               'SIMULATING…'
             ) : (
               <>
                 <Trophy className="w-5 h-5" aria-hidden="true" />
-                {confirmed ? `SIMULATE 82 vs ${selectedLabel.toUpperCase()}` : 'CONFIRM ROTATION TO SIMULATE'}
+                SIMULATE 82 vs {selectedLabel.toUpperCase()}
               </>
             )}
           </motion.button>
         </div>
-        <p className="mt-3 text-center text-xs text-broadcast-text-muted">
-          Era leagues run softer or tougher than average. Projections adjust to the league you pick.
-        </p>
-        <p className="mt-1 text-center text-[11px] text-broadcast-text-muted/70">
-          COURT DRAFT SIM v{APP_VERSION}
+        <p className="mt-2 text-center text-[11px] text-broadcast-text-muted">
+          Era leagues play softer or tougher. Projections adjust. · COURT DRAFT SIM v{APP_VERSION}
         </p>
       </div>
     </div>
@@ -416,7 +469,7 @@ function EraCard({ selected, onSelect, title, subtitle, meta, badge, badgeClass 
       whileHover={{ scale: 1.01 }}
       whileTap={{ scale: 0.99 }}
       className={cn(
-        'relative rounded-2xl border p-4 text-left transition-all',
+        'relative rounded-2xl border p-3 text-left transition-all',
         selected
           ? 'border-broadcast-accent/60 bg-broadcast-accent/5 shadow-glow-accent'
           : 'border-white/10 bg-broadcast-card/90 hover:border-broadcast-accent/40'
@@ -424,12 +477,12 @@ function EraCard({ selected, onSelect, title, subtitle, meta, badge, badgeClass 
     >
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
-          <h3 className="flex items-center gap-2 font-display text-lg font-bold text-white">
+          <h3 className="flex items-center gap-2 font-display text-base font-bold text-white">
             {title === 'Mixed League' && <Shuffle className="h-4 w-4 text-broadcast-accent" aria-hidden="true" />}
             <span className="truncate">{title}</span>
           </h3>
           <p className="mt-0.5 truncate text-xs text-broadcast-text-secondary">{subtitle}</p>
-          <p className="mt-1 text-xs font-medium text-broadcast-text-muted">{meta}</p>
+          <p className="mt-0.5 text-xs font-medium text-broadcast-text-muted">{meta}</p>
         </div>
         <span className={cn('shrink-0 rounded-full border px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider', badgeClass, selected && 'ring-1 ring-current')}>
           {badge}

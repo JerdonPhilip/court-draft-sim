@@ -252,16 +252,24 @@ export function minutesTotal(minutes: MinutesMap | null | undefined): number {
   return Object.values(minutes).reduce((t, v) => t + (Number.isFinite(v) ? v : 0), 0);
 }
 
-/** Role-free default plan for ordered rotations (first 5 = starters). */
-export function defaultMinutesForOrdered(ids: string[]): MinutesMap {
+/** Role-free default plan for ordered rotations (first 5 = starters). Mirrors the server's star-driven CPU loads. */
+export function defaultMinutesForOrdered(players: Array<{ id: string; overall?: number }>): MinutesMap {
   const map: MinutesMap = {};
+  const ids = players.map(p => p.id);
   if (ids.length === 0) return map;
   if (ids.length <= 5) {
     const each = TEAM_MINUTES_REGULATION / ids.length;
     ids.forEach(id => { map[id] = each; });
     return map;
   }
-  ids.forEach((id, i) => { map[id] = i < 5 ? DEFAULT_STARTER_MINUTES : 14; });
+  const byOverall = (a: { id: string; overall?: number }, b: { id: string; overall?: number }) => (b.overall ?? 0) - (a.overall ?? 0);
+  const starters = players.slice(0, 5).slice().sort(byOverall);
+  const topOverall = starters[0]?.overall ?? 0;
+  const loads = topOverall >= 93 ? [44, 36, 33, 31, 26] : [40, 36, 33, 31, 30];
+  starters.forEach((p, rank) => { map[p.id] = loads[rank] ?? 30; });
+  players.slice(5).slice().sort(byOverall).forEach((p, rank) => {
+    map[p.id] = [12, 12, 12, 12][rank] ?? 12;
+  });
   return map;
 }
 

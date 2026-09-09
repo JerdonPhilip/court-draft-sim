@@ -132,8 +132,6 @@ export interface DraftState {
   isSpinning: boolean;
   spinResult: { franchise: string; decade: string } | null;
   error: string | null;
-  /** True once the user reviews + confirms 6th man + 1st/2nd/3rd in SeasonSetup. Reset on any roster change. */
-  rotationConfirmed: boolean;
   /** True only when the 6th man was explicitly picked (false = auto-defaulted). */
   sixthManExplicit: boolean;
   /** Per-rank explicit flags (false = auto-defaulted by finalizeDraft). */

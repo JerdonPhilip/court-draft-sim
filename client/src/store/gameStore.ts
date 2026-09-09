@@ -64,12 +64,10 @@ interface GameStore {
   setOptionRank: (slotIndex: number, rank: 1 | 2 | 3 | null) => void;
   /** Swap two filled slots (starter<->bench allowed) when both players fit the other slot. */
   swapPlayers: (indexA: number, indexB: number) => boolean;
-  /** Lock in 6th man + options from the SeasonSetup review step. */
-  confirmRotation: () => boolean;
   /** Build auto default minutes (34/22/12) when none exist yet. */
   ensureMinutesInitialized: () => void;
   setPlayerMinutes: (playerId: string, mins: number) => void;
-  applyMinutesPreset: (preset: 'default' | 'balanced' | 'short') => void;
+  applyMinutesPreset: (preset: 'default' | 'balanced' | 'seven' | 'eight' | 'nine') => void;
   resetMinutesToDefault: () => void;
   /** Scale nonzero entries to total 240 (keeps DNP zeros at 0). */
   rebalanceMinutes: () => void;
@@ -96,7 +94,6 @@ const createInitialDraftState = (): DraftState => ({
   availablePools: [],
   isSpinning: false,
   spinResult: null,
-  rotationConfirmed: false,
   sixthManExplicit: false,
   optionsExplicit: { 1: false, 2: false, 3: false },
   minutes: null,
@@ -344,7 +341,6 @@ export const useGameStore = create<GameStore>()(
             pool: null,
             spinResult: null,
             error: null,
-            rotationConfirmed: false,
             // A re-added player starts as DNP cover until rebalanced in setup.
             minutes: draftState.minutes ? { ...draftState.minutes, [player.id]: 0 } : draftState.minutes ?? null,
           },
@@ -381,7 +377,6 @@ export const useGameStore = create<GameStore>()(
             draftedPersonKeys: (draftState.draftedPersonKeys ?? []).filter(k => k !== removedKey),
             currentRound: Math.min(draftState.maxRounds, filledCount + 1),
             error: null,
-            rotationConfirmed: false,
             sixthManExplicit: slot.isSixthMan ? false : (draftState.sixthManExplicit ?? false),
             optionsExplicit: nextExplicit,
             minutes: nextMinutes,
@@ -402,7 +397,6 @@ export const useGameStore = create<GameStore>()(
             ...draftState,
             lineup: { slots: newSlots },
             error: null,
-            rotationConfirmed: false,
             sixthManExplicit: true,
           },
         });
@@ -428,7 +422,6 @@ export const useGameStore = create<GameStore>()(
             ...draftState,
             lineup: { slots: newSlots },
             error: null,
-            rotationConfirmed: false,
             optionsExplicit: nextExplicit,
           },
         });
@@ -475,7 +468,6 @@ export const useGameStore = create<GameStore>()(
             ...draftState,
             lineup: { slots: newSlots },
             error: null,
-            rotationConfirmed: false,
             sixthManExplicit: sixthExplicit,
             // Minutes follow the players through the swap (sum is preserved).
             minutes: (() => {
@@ -490,30 +482,6 @@ export const useGameStore = create<GameStore>()(
           },
         });
         notify.success(`${playerA.name} ⇄ ${playerB.name} swapped.`);
-        return true;
-      },
-
-      confirmRotation: () => {
-        const { draftState } = get();
-        const slots = draftState.lineup.slots;
-        const hasSixth = slots.some(s => s.isSixthMan && s.player);
-        const hasAllOptions = ([1, 2, 3] as const).every(r => slots.some(s => s.optionRank === r && s.player));
-        if (!hasSixth || !hasAllOptions) {
-          const msg = !hasSixth ? 'Pick a Sixth Man before confirming.' : 'Pick 1st, 2nd and 3rd options before confirming.';
-          set({ draftState: { ...draftState, error: msg } });
-          notify.warning(msg);
-          return false;
-        }
-        if (!isMinutesValid(slots, draftState.minutes)) {
-          const msg = `Minutes must total 240 (now ${Math.round(minutesSum(draftState.minutes))}). Adjust below or hit Rebalance.`;
-          set({ draftState: { ...draftState, error: msg } });
-          notify.warning(msg);
-          return false;
-        }
-        set({
-          draftState: { ...draftState, rotationConfirmed: true, error: null },
-        });
-        notify.success('Rotation confirmed. Simulation unlocked.');
         return true;
       },
 
@@ -533,13 +501,16 @@ export const useGameStore = create<GameStore>()(
       setPlayerMinutes: (playerId, mins) => {
         const { draftState } = get();
         const base = draftState.minutes ?? buildDefaultMinutes(draftState.lineup.slots);
-        const clamped = Math.max(0, Math.min(48, Math.round(mins)));
+        // Hard cap: one player's raise can never push the team total past 240.
+        const othersSum = Object.entries(base)
+          .filter(([id]) => id !== playerId)
+          .reduce((t, [, v]) => t + (Number.isFinite(v) ? v : 0), 0);
+        const clamped = Math.max(0, Math.min(48, Math.round(mins), TEAM_MINUTES_TARGET - othersSum));
         set({
           draftState: {
             ...draftState,
             minutes: { ...base, [playerId]: clamped },
             minutesExplicit: true,
-            rotationConfirmed: false,
             error: null,
           },
         });
@@ -549,29 +520,38 @@ export const useGameStore = create<GameStore>()(
         const { draftState } = get();
         const slots = draftState.lineup.slots;
         if (!slots.every(s => s.player)) return;
+        // Short rotations ride the starters + Sixth and stash the rest as DNP
+        // foul cover. Every row sums to 240.
+        const rotationPreset = (starterMins: number, sixthMins: number, benchMins: number[]): MinutesMap | null => {
+          const sixthId = slots.find(s => s.isSixthMan && s.player)?.player?.id ?? null;
+          if (!sixthId) {
+            notify.warning('Pick a Sixth Man first. Falling back to default minutes.');
+            return null;
+          }
+          const next: MinutesMap = {};
+          const benchOthers = slots
+            .filter(s => s.role === 'bench' && s.player && s.player.id !== sixthId)
+            .sort((a, b) => (b.player?.overall ?? 0) - (a.player?.overall ?? 0));
+          const rotationBench = benchOthers.slice(0, benchMins.length);
+          const benchLoad = new Map(rotationBench.map((s, k) => [s.player!.id, benchMins[k] ?? 0]));
+          slots.forEach(s => {
+            if (!s.player) return;
+            if (s.role !== 'bench') next[s.player.id] = starterMins;
+            else if (s.player.id === sixthId) next[s.player.id] = sixthMins;
+            else next[s.player.id] = benchLoad.get(s.player.id) ?? 0;
+          });
+          return next;
+        };
         let next: MinutesMap;
         if (preset === 'balanced') {
           next = {};
           slots.forEach(s => { if (s.player) next[s.player.id] = 24; });
-        } else if (preset === 'short') {
-          // 8-man rotation: starters 36, Sixth 26, next two bench 17, two DNP cover.
-          const sixthId = slots.find(s => s.isSixthMan && s.player)?.player?.id ?? null;
-          if (!sixthId) {
-            notify.warning('Pick a Sixth Man first. Falling back to default minutes.');
-            next = buildDefaultMinutes(slots);
-          } else {
-            next = {};
-            const benchOthers = slots
-              .filter(s => s.role === 'bench' && s.player && s.player.id !== sixthId)
-              .sort((a, b) => (b.player?.overall ?? 0) - (a.player?.overall ?? 0));
-            const rotationBench = new Set(benchOthers.slice(0, 2).map(s => s.player!.id));
-            slots.forEach(s => {
-              if (!s.player) return;
-              if (s.role !== 'bench') next[s.player.id] = 36;
-              else if (s.player.id === sixthId) next[s.player.id] = 26;
-              else next[s.player.id] = rotationBench.has(s.player.id) ? 17 : 0;
-            });
-          }
+        } else if (preset === 'seven') {
+          next = rotationPreset(38, 26, [24]) ?? buildDefaultMinutes(slots);
+        } else if (preset === 'eight') {
+          next = rotationPreset(36, 26, [17, 17]) ?? buildDefaultMinutes(slots);
+        } else if (preset === 'nine') {
+          next = rotationPreset(32, 24, [19, 19, 18]) ?? buildDefaultMinutes(slots);
         } else {
           next = buildDefaultMinutes(slots);
         }
@@ -580,7 +560,6 @@ export const useGameStore = create<GameStore>()(
             ...draftState,
             minutes: next,
             minutesExplicit: true,
-            rotationConfirmed: false,
             error: null,
           },
         });
@@ -595,7 +574,6 @@ export const useGameStore = create<GameStore>()(
             ...draftState,
             minutes: buildDefaultMinutes(draftState.lineup.slots),
             minutesExplicit: false,
-            rotationConfirmed: false,
             error: null,
           },
         });
@@ -633,7 +611,6 @@ export const useGameStore = create<GameStore>()(
           draftState: {
             ...draftState,
             minutes: next,
-            rotationConfirmed: false,
             error: null,
           },
         });
@@ -655,7 +632,6 @@ export const useGameStore = create<GameStore>()(
             availablePools: [],
             isSpinning: false,
             error: null,
-            rotationConfirmed: false,
             sixthManExplicit: false,
             optionsExplicit: { 1: false, 2: false, 3: false },
             minutes: null,
@@ -695,10 +671,10 @@ export const useGameStore = create<GameStore>()(
         slots.forEach((s, i) => {
           if (s.optionRank && !beforeRanks[i]) nextOptionsExplicit[s.optionRank] = false;
         });
-        // Lineup locked — next stop is the season setup (era pick + rotation confirm).
+        // Lineup locked — next stop is the season setup (era pick + rotation review).
         // Seed auto default minutes so the setup editor (and foul cover) has a base.
         const seedMinutes = draftState.minutes ?? buildDefaultMinutes(slots);
-        set({ phase: 'season-setup', error: null, draftState: { ...draftState, lineup: { slots }, rotationConfirmed: false, sixthManExplicit: sixthExplicit, optionsExplicit: nextOptionsExplicit, minutes: seedMinutes, minutesExplicit: draftState.minutes ? (draftState.minutesExplicit ?? false) : false } });
+        set({ phase: 'season-setup', error: null, draftState: { ...draftState, lineup: { slots }, sixthManExplicit: sixthExplicit, optionsExplicit: nextOptionsExplicit, minutes: seedMinutes, minutesExplicit: draftState.minutes ? (draftState.minutesExplicit ?? false) : false } });
       },
 
       runSimulation: async () => {
@@ -708,18 +684,14 @@ export const useGameStore = create<GameStore>()(
           set({ error: `Fill all ${draftState.maxRounds} roster spots before simulating`, phase: 'draft' });
           return;
         }
-        if (!draftState.rotationConfirmed) {
-          const msg = 'Confirm your Sixth Man + 1st/2nd/3rd options below before simulating.';
-          set({ error: msg, draftState: { ...draftState, error: msg } });
-          notify.warning(msg);
-          return;
-        }
         if (!isMinutesValid(draftState.lineup.slots, draftState.minutes)) {
           const msg = `Minutes must total 240 before simulating (now ${Math.round(minutesSum(draftState.minutes))}).`;
           set({ error: msg, draftState: { ...draftState, error: msg } });
           notify.warning(msg);
           return;
         }
+        // Rotation locks at sim time: whatever Sixth Man, options and minutes
+        // are set right now is what the season runs with.
         const sixthSlot = draftState.lineup.slots.find(s => s.isSixthMan && s.player);
         const sixthManId = sixthSlot?.player?.id;
         const options = getOptionsFromSlots(draftState.lineup.slots);
@@ -779,7 +751,7 @@ export const useGameStore = create<GameStore>()(
     }),
     {
       name: 'court-draft-sim-store',
-      version: 10,
+      version: 11,
       partialize: (state) => ({
         phase: state.phase === 'simulation' || state.phase === 'season-setup' ? 'draft' : state.phase,
         draftState: {
@@ -842,10 +814,8 @@ export const useGameStore = create<GameStore>()(
           if (typeof p.draftState.currentRound !== 'number') {
             p.draftState.currentRound = 1;
           }
-          // v8 -> v9: rotation confirm gate — old saves force a review (auto flags off).
-          if (typeof p.draftState.rotationConfirmed !== 'boolean') {
-            p.draftState.rotationConfirmed = false;
-          }
+          // v10 -> v11: confirm gate removed — sim locks the rotation instead.
+          delete (p.draftState as Record<string, unknown>).rotationConfirmed;
           if (typeof p.draftState.sixthManExplicit !== 'boolean') {
             p.draftState.sixthManExplicit = false;
           }

@@ -1280,7 +1280,7 @@ function PlayoffsView({
             try {
               const series = await simulateRealSeries(homeRoster, awayRoster, (gameNumber) => {
                 if (!simulationAborted.current) setBackgroundSimulation({ seriesKey: next, game: gameNumber });
-              }, undefined, 250, sixthFor(p.home), sixthFor(p.away), optionsFor(p.home), optionsFor(p.away), defaultMinutesForOrdered(homeRoster.map(pl => pl.id)), defaultMinutesForOrdered(awayRoster.map(pl => pl.id)));
+              }, undefined, 250, sixthFor(p.home), sixthFor(p.away), optionsFor(p.home), optionsFor(p.away), defaultMinutesForOrdered(homeRoster), defaultMinutesForOrdered(awayRoster));
               if (simulationAborted.current) break;
               games = series.games;
               winner =
@@ -1818,8 +1818,8 @@ function PlayoffsModal({
     }
     return sub;
   }, [homeName, awayName, userTeamName, lineup, opponent, seasonMinutes]);
-  const homeMinutes = homeName === userTeamName ? userPlayoffMinutes : (userPlayoffMinutes ? defaultMinutesForOrdered(lineup.map(p => p.id)) : null);
-  const awayMinutes = awayName === userTeamName ? userPlayoffMinutes : (userPlayoffMinutes ? defaultMinutesForOrdered(opponent.map(p => p.id)) : null);
+  const homeMinutes = homeName === userTeamName ? userPlayoffMinutes : (userPlayoffMinutes ? defaultMinutesForOrdered(lineup) : null);
+  const awayMinutes = awayName === userTeamName ? userPlayoffMinutes : (userPlayoffMinutes ? defaultMinutesForOrdered(opponent) : null);
 
   const MAX_GAMES = 7;
   const { homeWins, awayWins } = useMemo(() => {

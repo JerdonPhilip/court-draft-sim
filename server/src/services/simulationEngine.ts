@@ -90,7 +90,7 @@ export const FOUL_OUT_PTS_SHORTHANDED = 4;
 export const OVERUSE_THRESHOLD = 32;
 export const OVERUSE_PER_MIN = 0.008;
 
-/** Role-based default plan (sums to 240): starters 34, Sixth 22, other bench 12. */
+/** CPU default plan (sums to 240): star-ranked starter loads, Sixth 22, deep bench. */
 export function defaultMinutesFor(team: Player[], sixthManId?: string | null): MinutesMap {
   const map: MinutesMap = {};
   if (team.length === 0) return map;
@@ -102,11 +102,26 @@ export function defaultMinutesFor(team: Player[], sixthManId?: string | null): M
     return map;
   }
   const hasSixth = !!sixthManId && team.slice(5, 10).some((p) => p && p.id === sixthManId);
-  team.forEach((p, i) => {
-    if (!p) return;
-    if (i < 5) map[p.id] = DEFAULT_STARTER_MINUTES;
-    else if (hasSixth && p.id === sixthManId) map[p.id] = DEFAULT_SIXTH_MINUTES;
-    else map[p.id] = hasSixth ? DEFAULT_BENCH_MINUTES : DEFAULT_NOSIXTH_BENCH_MINUTES;
+  // Star-driven loads: starters ranked by overall get the big minutes, so an
+  // elite centerpiece actually plays like one (with the same overuse drag and
+  // foul risk human plans face). Generational starters (93+) take 44.
+  const starterOrder = [0, 1, 2, 3, 4]
+    .filter((i) => team[i])
+    .sort((a, b) => (team[b]!.overall ?? 0) - (team[a]!.overall ?? 0));
+  const topOverall = team[starterOrder[0] ?? 0]?.overall ?? 0;
+  const starterLoads = topOverall >= 93 ? [44, 36, 33, 31, 26] : [40, 36, 33, 31, 30];
+  starterOrder.forEach((rosterIdx, rank) => {
+    map[team[rosterIdx]!.id] = starterLoads[rank] ?? 30;
+  });
+  const benchOthers = team
+    .map((p, i) => ({ p, i }))
+    .filter(({ p, i }) => p && i >= 5 && (!hasSixth || p.id !== sixthManId))
+    .sort((a, b) => (b.p!.overall ?? 0) - (a.p!.overall ?? 0));
+  if (hasSixth && sixthManId) map[sixthManId] = DEFAULT_SIXTH_MINUTES;
+  // 170 (starters) + 22 (sixth) + 48 (bench) = 240.
+  const benchLoads = [12, 12, 12, 12];
+  benchOthers.forEach(({ p }, rank) => {
+    map[p!.id] = hasSixth ? (benchLoads[rank] ?? 11) : DEFAULT_NOSIXTH_BENCH_MINUTES;
   });
   return map;
 }
