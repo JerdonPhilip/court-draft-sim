@@ -120,7 +120,7 @@ export function SlotMachine({
                 <span className="truncate font-display text-sm font-bold text-white">{franchiseInfo.name}</span>
               </div>
             ) : (
-              <div className="flex h-11 items-center justify-center px-2 text-sm text-broadcast-text-muted">Franchise ?</div>
+              <div className="flex h-11 items-center justify-center px-2 text-sm text-broadcast-text-muted">TEAM</div>
             )}
           </div>
           <RerollLink
@@ -166,7 +166,7 @@ export function SlotMachine({
                 <span className="truncate text-xs text-broadcast-text-secondary">{decadeInfo.era}</span>
               </div>
             ) : (
-              <div className="flex h-11 items-center justify-center px-2 text-sm text-broadcast-text-muted">Decade ?</div>
+              <div className="flex h-11 items-center justify-center px-2 text-sm text-broadcast-text-muted">ERA</div>
             )}
           </div>
           <RerollLink
