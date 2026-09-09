@@ -269,6 +269,8 @@ export interface VSModeMatchup {
   userWins: number;
   historicalWins: number;
   seriesWinner: 'user' | 'historical';
+  /** CPU's planned minutes when a minutes plan was in play (absent otherwise). */
+  cpuMinutes?: MinutesMap | null;
 }
 
 export interface VSSeriesResult {

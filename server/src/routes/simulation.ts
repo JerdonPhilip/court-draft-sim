@@ -1,7 +1,7 @@
 import { Router, Request, Response } from 'express';
 import { z } from 'zod';
 import rateLimit from 'express-rate-limit';
-import { simulateSeason, getTeamStrength, getBaseTeamImpact, strengthVsLeague, calculateNonLinearWinCurve, simulateSingleGame, defaultMinutesFor } from '../services/simulationEngine.js';
+import { simulateSeason, getTeamStrength, getBaseTeamImpact, strengthVsLeague, calculateNonLinearWinCurve, simulateSingleGame, defaultMinutesFor, counterMinutesFor } from '../services/simulationEngine.js';
 import { DEFAULT_SIMULATION_CONFIG, SIMULATION_CONSTANTS, LEAGUE_AVG_IMPACT } from '../services/constants.js';
 import { getEraLeague, getAllEraLeagues } from '../services/eraRosters.js';
 import { DECADES } from '../data/constants.js';
@@ -445,9 +445,18 @@ router.post('/vs-mode', vsLimiter, (req: Request, res: Response) => {
   const historicalLineup = historicalTeam.players.slice(0, 10) as Player[];
   const userSixth = sixthManId ?? null;
   const userOptions = options ?? null;
-  // Symmetric ejections: when the user brings a minutes plan, the legends get
-  // role-based defaults; otherwise both sides stay on the legacy rotation.
-  const historicalMinutesPlan = userMinutesPlan ? defaultMinutesFor(historicalLineup, null) : null;
+  // CPU counter: when the user brings a minutes plan, the legends tilt extra
+  // run toward the slots where your minute-weighted usage is heaviest instead
+  // of plain role defaults; otherwise both sides stay on the legacy rotation.
+  const historicalMinutesPlan = userMinutesPlan
+    ? (() => {
+        try {
+          return counterMinutesFor(historicalLineup, userLineup as Player[], userMinutesPlan);
+        } catch {
+          return defaultMinutesFor(historicalLineup, null);
+        }
+      })()
+    : null;
   if (userSixth && (userLineup as Player[]).length === 10 && !(userLineup as Player[]).slice(5, 10).some(p => p.id === userSixth)) {
     return res.status(400).json({ error: 'sixthManId must be a bench player (roster spots 6-10)' });
   }
@@ -528,6 +537,7 @@ router.post('/vs-mode', vsLimiter, (req: Request, res: Response) => {
       userWins,
       historicalWins,
       seriesWinner: userWins > historicalWins ? 'user' : 'historical',
+      cpuMinutes: historicalMinutesPlan,
       results: seriesResults,
       // Aliases for older clients:
       games: seriesResults,

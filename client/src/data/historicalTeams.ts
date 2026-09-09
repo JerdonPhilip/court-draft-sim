@@ -1,5 +1,38 @@
 import { HistoricalTeam } from '../types/game';
+import { FRANCHISES } from './constants';
 
+/** Historic-team id → franchise id (drives team-color theming). */
+export const HISTORICAL_TEAM_FRANCHISE: Record<string, string> = {
+  'bulls-96': 'bulls',
+  'warriors-17': 'warriors',
+  'lakers-01': 'lakers',
+  'celtics-86': 'celtics',
+  'heat-13': 'heat',
+  'spurs-14': 'spurs',
+  'lakers-87': 'lakers',
+  'celtics-08': 'celtics',
+  'pistons-04': 'pistons',
+  'mavericks-11': 'mavericks',
+  'warriors-16': 'warriors',
+  'cavs-16': 'cavaliers',
+  'bucks-21': 'bucks',
+  'nuggets-23': 'nuggets',
+  'lakers-20': 'lakers',
+  'sixers-83': 'sixers',
+  'rockets-94': 'rockets',
+};
+
+export function historicalTeamColors(id: string): { color: string; secondary: string; abbreviation: string } {
+  const franchise = FRANCHISES.find(f => f.id === HISTORICAL_TEAM_FRANCHISE[id]);
+  return { color: franchise?.color ?? '#ffd700', secondary: franchise?.secondary ?? '#000000', abbreviation: franchise?.abbreviation ?? 'NBA' };
+}
+
+/**
+ * Offline reference / backup for the versus list.
+ * Mirrors GET /api/simulation/historical-teams metadata (ids must match —
+ * the server resolves full 10-man rosters by id for the sim itself).
+ * Only used when the API call fails; players stay [] client-side on purpose.
+ */
 export const HISTORICAL_TEAMS: HistoricalTeam[] = [
   {
     id: 'bulls-96',
@@ -90,5 +123,68 @@ export const HISTORICAL_TEAMS: HistoricalTeam[] = [
     record: '57-25',
     championships: 1,
     description: 'Dirk\'s masterpiece. Beat the Big 3 Heat. The ultimate underdog story.',
+  },
+  {
+    id: 'warriors-16',
+    name: '2015-16 Golden State Warriors',
+    season: '2015-16',
+    players: [],
+    record: '73-9',
+    championships: 0,
+    description: 'Best regular season ever (73-9). Unanimous MVP Curry with 402 threes. Fell 3-1 up in the Finals.',
+  },
+  {
+    id: 'cavs-16',
+    name: '2015-16 Cleveland Cavaliers',
+    season: '2015-16',
+    players: [],
+    record: '57-25',
+    championships: 1,
+    description: 'The Block. The Shot. 3-1 comeback over 73 wins. Cleveland\'s first title.',
+  },
+  {
+    id: 'bucks-21',
+    name: '2020-21 Milwaukee Bucks',
+    season: '2020-21',
+    players: [],
+    record: '46-26',
+    championships: 1,
+    description: 'Giannis 50 in the clincher. Worst to first on defense. Milwaukee\'s first in 50 years.',
+  },
+  {
+    id: 'nuggets-23',
+    name: '2022-23 Denver Nuggets',
+    season: '2022-23',
+    players: [],
+    record: '53-29',
+    championships: 1,
+    description: 'Jokic\'s coronation. Unstoppable two-man game humbled the league 16-4.',
+  },
+  {
+    id: 'lakers-20',
+    name: '2019-20 Los Angeles Lakers',
+    season: '2019-20',
+    players: [],
+    record: '52-19',
+    championships: 1,
+    description: 'Bubble champs. LeBron + AD switching everything. Mamba forever run.',
+  },
+  {
+    id: 'sixers-83',
+    name: '1982-83 Philadelphia 76ers',
+    season: '1982-83',
+    players: [],
+    record: '65-17',
+    championships: 1,
+    description: 'Fo\' Fo\' Fo\'. Moses + Dr. J swept the league 12-1. Near-perfect dominance.',
+  },
+  {
+    id: 'rockets-94',
+    name: '1993-94 Houston Rockets',
+    season: '1993-94',
+    players: [],
+    record: '58-24',
+    championships: 1,
+    description: 'Hakeem\'s Dream Shake title. DPOY + MVP. Clutch City over Ewing\'s Knicks in 7.',
   },
 ];

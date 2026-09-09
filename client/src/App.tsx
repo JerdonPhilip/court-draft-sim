@@ -7,6 +7,7 @@ import { SimulationDashboard } from './components/simulation/SimulationDashboard
 import { VSModeScreen } from './components/simulation/VSMode';
 import { Toasts } from './components/ui/Toasts';
 import { api } from './utils/api';
+import { HISTORICAL_TEAMS } from './data/historicalTeams';
 
 function LoadingScreen({ message }: { message: string }) {
   return (
@@ -56,7 +57,8 @@ export default function App() {
       api.simulation.getHistoricalTeams()
         .then(data => setHistoricalTeams(data.teams))
         .catch(() => {
-          // Fallback: keep empty; VS screen shows an error state.
+          // Offline backup: local reference list (ids match the server).
+          setHistoricalTeams(HISTORICAL_TEAMS);
         });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps

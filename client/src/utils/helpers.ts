@@ -273,6 +273,82 @@ export function defaultMinutesForOrdered(players: Array<{ id: string; overall?: 
   return map;
 }
 
+/** Usage-rate proxy (mirrors server playerTraits.ts): scoring volume + creation burden. */
+export function usageRateOf(p: { stats: { pts: number; ast: number }; usageRate?: number }): number {
+  if (typeof p.usageRate === 'number' && Number.isFinite(p.usageRate)) return p.usageRate;
+  return Math.max(10, Math.min(38, 14 + p.stats.pts * 0.55 + p.stats.ast * 0.4));
+}
+
+/** Normalize to 240 with a hard 48-min cap (mirrors the server counter path). */
+function normalizeMinutesCapped(map: MinutesMap, target = TEAM_MINUTES_REGULATION, cap = 48): MinutesMap {
+  const ids = Object.keys(map);
+  const scaled: MinutesMap = {};
+  for (const id of ids) scaled[id] = Math.max(0, Math.min(cap, map[id] ?? 0));
+  for (let iter = 0; iter < 12; iter++) {
+    const sum = ids.reduce((t, id) => t + (scaled[id] ?? 0), 0);
+    if (!(sum > 0)) break;
+    const factor = target / sum;
+    if (Math.abs(factor - 1) < 0.0005) break;
+    let over = 0;
+    const under: string[] = [];
+    for (const id of ids) {
+      const v = (scaled[id] ?? 0) * factor;
+      if (v > cap) {
+        over += v - cap;
+        scaled[id] = cap;
+      } else {
+        scaled[id] = v;
+        under.push(id);
+      }
+    }
+    if (over <= 0.001) break;
+    const underSum = under.reduce((t, id) => t + (scaled[id] ?? 0), 0);
+    if (underSum <= 0) break;
+    for (const id of under) scaled[id] = (scaled[id] ?? 0) + over * ((scaled[id] ?? 0) / underSum);
+  }
+  const out: MinutesMap = {};
+  for (const id of ids) out[id] = Math.round(Math.max(0, Math.min(cap, scaled[id] ?? 0)));
+  let diff = target - ids.reduce((t, id) => t + (out[id] ?? 0), 0);
+  for (let guard = 0; guard < 120 && diff !== 0; guard++) {
+    const sorted = ids.slice().sort((a, b) => (diff > 0 ? (out[b]! - out[a]!) : (out[a]! - out[b]!)));
+    const cand = sorted.find((id) => (diff > 0 ? (out[id]! < cap) : (out[id]! > 0)));
+    if (!cand) break;
+    out[cand]! += diff > 0 ? 1 : -1;
+    diff += diff > 0 ? -1 : 1;
+  }
+  return out;
+}
+
+/**
+ * CPU counter-minutes preview (mirrors server counterMinutesFor): tilts the
+ * legends' default loads toward your minute-weighted usage by position
+ * (±5 max), renormalized to 240. Display only — the server is authoritative.
+ */
+export function counterMinutesPreview(
+  cpuPlayers: Array<{ id: string; position: string; overall?: number }>,
+  userPlayers: Array<{ id: string; position: string; stats: { pts: number; ast: number }; usageRate?: number }>,
+  userMinutes: MinutesMap,
+): MinutesMap {
+  const base = defaultMinutesForOrdered(cpuPlayers);
+  if (userPlayers.length === 0) return base;
+  const threat = new Map<string, number>();
+  for (const p of userPlayers) {
+    const raw = userMinutes[p.id] ?? 0;
+    const share = Math.max(0, Math.min(48, raw)) / 48;
+    threat.set(p.position, (threat.get(p.position) ?? 0) + usageRateOf(p) * share);
+  }
+  const vals = [...threat.values()];
+  const avg = vals.reduce((t, v) => t + v, 0) / Math.max(1, vals.length);
+  const raw: MinutesMap = {};
+  for (const p of cpuPlayers) {
+    const edge = Math.max(-5, Math.min(5, ((threat.get(p.position) ?? avg) - avg) * 0.5));
+    raw[p.id] = (base[p.id] ?? 0) + edge;
+  }
+  const sum = Object.values(raw).reduce((t, v) => t + v, 0);
+  if (!(sum > 0)) return base;
+  return normalizeMinutesCapped(raw, TEAM_MINUTES_REGULATION, 48);
+}
+
 /** 1st/2nd/3rd-option scoring bumps (applied to the PTS component). */
 export const OPTION_PTS_BOOST: Record<number, number> = { 1: 1.08, 2: 1.04, 3: 1.02 };
 

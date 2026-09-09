@@ -261,6 +261,51 @@ function roundMapToTarget(map: MinutesMap, target: number): MinutesMap {
   return out;
 }
 
+/**
+ * Normalize a minutes map to the target total with a hard per-player cap
+ * (default 48 = a full game). Overflow past the cap redistributes to players
+ * under it instead of inflating anyone past a full game — the plain scaler
+ * can otherwise push a 49-minute edge to 52 after renormalization.
+ */
+function normalizeMinutesCapped(raw: MinutesMap, target: number, cap: number): MinutesMap {
+  const ids = Object.keys(raw);
+  const scaled: MinutesMap = {};
+  for (const id of ids) scaled[id] = Math.max(0, Math.min(cap, raw[id] ?? 0));
+  for (let iter = 0; iter < 12; iter++) {
+    const sum = ids.reduce((t, id) => t + (scaled[id] ?? 0), 0);
+    if (!(sum > 0)) break;
+    const factor = target / sum;
+    if (Math.abs(factor - 1) < 0.0005) break;
+    let over = 0;
+    const under: string[] = [];
+    for (const id of ids) {
+      const v = (scaled[id] ?? 0) * factor;
+      if (v > cap) {
+        over += v - cap;
+        scaled[id] = cap;
+      } else {
+        scaled[id] = v;
+        under.push(id);
+      }
+    }
+    if (over <= 0.001) break;
+    const underSum = under.reduce((t, id) => t + (scaled[id] ?? 0), 0);
+    if (underSum <= 0) break;
+    for (const id of under) scaled[id] = (scaled[id] ?? 0) + over * ((scaled[id] ?? 0) / underSum);
+  }
+  const out: MinutesMap = {};
+  for (const id of ids) out[id] = Math.round(Math.max(0, Math.min(cap, scaled[id] ?? 0)));
+  let diff = target - ids.reduce((t, id) => t + (out[id] ?? 0), 0);
+  for (let guard = 0; guard < 120 && diff !== 0; guard++) {
+    const sorted = ids.slice().sort((a, b) => (diff > 0 ? (out[b]! - out[a]!) : (out[a]! - out[b]!)));
+    const cand = sorted.find((id) => (diff > 0 ? (out[id]! < cap) : (out[id]! > 0)));
+    if (!cand) break;
+    out[cand]! += diff > 0 ? 1 : -1;
+    diff += diff > 0 ? -1 : 1;
+  }
+  return out;
+}
+
 /** Defensive normalize: unknown IDs dropped, missing/invalid entries fall back to role defaults, total forced to 240. */
 export function effectiveMinutes(team: Player[], sixthManId: string | null | undefined, minutes: MinutesMap): MinutesMap {
   const defaults = defaultMinutesFor(team, sixthManId ?? null);
@@ -664,6 +709,43 @@ function calculateTeamRating(
   }
 
   return totalImpact;
+}
+
+/**
+ * CPU counter-minutes for VS Mode: when the challenger brings a minutes
+ * plan, the legends don't just run role defaults — they tilt extra run to
+ * the slots where your minute-weighted usage is heaviest (up to +5) and
+ * trim where you're thinnest (down to -5), then renormalize to 240.
+ * Deterministic (no RNG) so series stay auditable.
+ */
+export function counterMinutesFor(
+  cpuLineup: Player[],
+  userLineup: Player[],
+  userMinutes: MinutesMap,
+): MinutesMap {
+  const base = defaultMinutesFor(cpuLineup, null);
+  const user = userLineup.filter((p): p is Player => !!p);
+  if (user.length === 0) return base;
+  const threat = new Map<Position, number>();
+  for (const p of user) {
+    const share = Math.max(0, Math.min(48, userMinutes[p.id] ?? 0)) / 48;
+    threat.set(p.position, (threat.get(p.position) ?? 0) + usageRateOf(p) * share);
+  }
+  const vals = [...threat.values()];
+  const avg = vals.reduce((t, v) => t + v, 0) / Math.max(1, vals.length);
+  const raw: MinutesMap = {};
+  for (const p of cpuLineup) {
+    if (!p) continue;
+    const edge = Math.max(-5, Math.min(5, ((threat.get(p.position) ?? avg) - avg) * 0.5));
+    raw[p.id] = (base[p.id] ?? 0) + edge;
+  }
+  try {
+    const out = normalizeMinutesCapped(raw, TEAM_MINUTES_REGULATION, 48);
+    if (Object.keys(out).length === 0) return base;
+    return out;
+  } catch {
+    return base;
+  }
 }
 
 /** Mean pace rating of a 5-man unit. */
