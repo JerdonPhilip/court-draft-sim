@@ -50,6 +50,9 @@
     @apply bg-broadcast-dark text-white font-body min-h-screen;
     background: linear-gradient(180deg, #0a0f14 0%, #0d151c 50%, #0a0f14 100%);
     overscroll-behavior-y: contain;
+    /* clip (not hidden) so position:sticky keeps working while stray
+       wide children can never create a sideways page scroll */
+    overflow-x: clip;
     touch-action: manipulation;
     -webkit-tap-highlight-color: transparent;
   }

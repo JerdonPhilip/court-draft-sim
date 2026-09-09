@@ -134,10 +134,10 @@ export function PlayerPool({ pool, draftedPlayerIds, draftedPersonKeys, onDraftP
         animate={{ opacity: 1, y: 0 }}
         exit={{ opacity: 0, y: -20 }}
         transition={{ duration: 0.3 }}
-        className="space-y-4"
+        className="min-w-0 space-y-4"
       >
         <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-          <h2 className="section-title min-w-0 flex-1 truncate font-display text-base sm:text-lg">AVAILABLE PLAYERS • {franchiseName} • {decadeLabel}</h2>
+          <h2 className="section-title min-w-0 flex-1 overflow-hidden font-display text-base sm:text-lg [&::before]:shrink-0"><span className="min-w-0 flex-1 truncate">AVAILABLE PLAYERS • {franchiseName} • {decadeLabel}</span></h2>
           <div className="flex shrink-0 items-center gap-2 text-sm text-broadcast-text-secondary" aria-live="polite">
             <span className="rounded border border-broadcast-accent/30 bg-broadcast-accent/20 px-2 py-1 text-xs font-bold text-broadcast-accent">
               {draftableCount}/{availablePlayers.length} DRAFTABLE
@@ -239,7 +239,7 @@ export function PlayerPool({ pool, draftedPlayerIds, draftedPersonKeys, onDraftP
                 }}
                 onDragEnd={() => { clearDragGhost(); onDragEndPlayer(); }}
                 className={cn(
-                  'group relative flex h-full w-full flex-col overflow-hidden rounded-2xl border text-left',
+                  'group relative flex h-full w-full min-w-0 flex-col overflow-hidden rounded-2xl border text-left',
                   'bg-broadcast-card/90 shadow-[0_10px_36px_rgb(0,0,0,0.38)] backdrop-blur-sm',
                   'transition-[transform,border-color,box-shadow,opacity] duration-200 hover:-translate-y-1',
                   'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-broadcast-accent focus-visible:ring-offset-2 focus-visible:ring-offset-broadcast-dark',
@@ -283,7 +283,7 @@ export function PlayerPool({ pool, draftedPlayerIds, draftedPersonKeys, onDraftP
                   </span>
                   <div className="min-w-0 flex-1 overflow-hidden leading-tight" title={player.name}>
                     <div className="truncate text-[10px] font-semibold uppercase tracking-[0.16em] text-broadcast-text-secondary sm:text-[11px]">{splitPlayerName(player.name).first}</div>
-                    <span className="whitespace-nowrap font-display font-bold leading-tight text-white" style={{ fontSize: fitNameSize(splitPlayerName(player.name).last || player.name) }}>{splitPlayerName(player.name).last || splitPlayerName(player.name).first}</span>
+                    <span className="block max-w-full truncate font-display font-bold leading-tight text-white" style={{ fontSize: fitNameSize(splitPlayerName(player.name).last || player.name) }}>{splitPlayerName(player.name).last || splitPlayerName(player.name).first}</span>
                   </div>
                   <span className="shrink-0 whitespace-nowrap font-display text-xl font-bold leading-none text-broadcast-accent sm:text-2xl" title={`Overall rating ${player.overall}`}>
                     {player.overall}

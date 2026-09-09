@@ -79,8 +79,8 @@ export function SlotMachine({
   const decadeInfo = pool ? DECADES.find(d => d.id === pool.decade) : undefined;
 
   return (
-    <div className="w-full rounded-2xl border border-white/10 bg-broadcast-card/90 px-3 py-2.5 shadow-[0_10px_36px_rgb(0,0,0,0.38)] backdrop-blur-sm">
-      <div className="flex items-center gap-2 sm:gap-2.5">
+    <div className="w-full min-w-0 rounded-2xl border border-white/10 bg-broadcast-card/90 px-2.5 py-2.5 shadow-[0_10px_36px_rgb(0,0,0,0.38)] backdrop-blur-sm sm:px-3">
+      <div className="flex min-w-0 items-center gap-1.5 sm:gap-2.5">
         <span className="shrink-0 whitespace-nowrap rounded-full border border-broadcast-accent/30 bg-broadcast-accent/10 px-2.5 py-1 font-display text-xs font-bold text-broadcast-accent">
           {Math.min(currentRound, maxRounds)}/{maxRounds}
         </span>
@@ -190,7 +190,7 @@ export function SlotMachine({
           disabled={isSpinning || (!!pool && spinsLeft <= 0)}
           title={spinsLeft > 0 ? `Redraw this pool (${spinsLeft} manual spins left)` : 'No manual spins left. Draft from this pool or use a reroll'}
           aria-label={spinsLeft > 0 ? `Spin for a new pool (${spinsLeft} left)` : 'No spins left'}
-          className="btn-primary shrink-0 gap-1.5 px-4 py-2 text-sm"
+          className="btn-primary shrink-0 gap-1.5 px-3 py-2 text-sm sm:px-4"
         >
           {isSpinning ? (
             <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />

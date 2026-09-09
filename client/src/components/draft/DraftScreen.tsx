@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { motion } from 'framer-motion';
+import { AnimatePresence, motion } from 'framer-motion';
 import { RotateCcw, Trophy, Zap } from 'lucide-react';
 import { useGameStore } from '../../store/gameStore';
 import { notify } from '../../store/toastStore';
 import { SlotMachine } from './SlotMachine';
 import { PlayerPool } from './PlayerPool';
 import { LineupBuilder } from './LineupBuilder';
+import { DraftPickModal } from './DraftPickModal';
 import { calculateTeamStrength, getWinProjection } from '../../utils/helpers';
 import { APP_VERSION } from '../../version';
 import { canPlayPosition, getPlayerPositions } from '../../types/game';
@@ -55,6 +56,13 @@ export function DraftScreen() {
   // Slot-first drafting: click an open slot, then click (or drag) a player into it.
   const [selectedSlot, setSelectedSlot] = useState<number | null>(null);
   const [draggedPlayer, setDraggedPlayer] = useState<Player | null>(null);
+  // Pick modal: tap a player with several open fits, choose STARTER/BENCH inline.
+  const [pickPlayer, setPickPlayer] = useState<Player | null>(null);
+
+  // A new pool invalidates any open pick dialog (the player may be gone).
+  useEffect(() => {
+    setPickPlayer(null);
+  }, [pool?.franchise, pool?.decade]);
 
   // Default the selection to the first open slot; advance it as picks land.
   useEffect(() => {
@@ -78,6 +86,20 @@ export function DraftScreen() {
   }, [lineup]);
 
   const handleDraftPlayer = useCallback((player: Player, targetSlot?: number) => {
+    // No forced slot: single fit drafts instantly, several fits open the
+    // starter/bench picker so nothing is ever auto-routed without consent.
+    if (targetSlot === undefined) {
+      const fits = lineup.slots
+        .map((s, i) => ({ slot: s, index: i }))
+        .filter(({ slot }) => !slot.player && canPlayPosition(player, slot.position));
+      if (fits.length === 0) return; // card is disabled in this state
+      if (fits.length === 1) {
+        draftPlayer(player, fits[0]!.index);
+        return;
+      }
+      setPickPlayer(player);
+      return;
+    }
     const explicit = targetSlot ?? selectedSlot;
     if (explicit !== null && explicit !== undefined) {
       const slot = lineup.slots[explicit];
@@ -106,6 +128,11 @@ export function DraftScreen() {
     draftPlayer(player, fallback === -1 ? 0 : fallback);
   }, [draftPlayer, lineup, selectedSlot]);
 
+  const handleConfirmPick = useCallback((player: Player, slotIndex: number) => {
+    setPickPlayer(null);
+    draftPlayer(player, slotIndex);
+  }, [draftPlayer]);
+
   const handleDropToSlot = useCallback((player: Player, slotIndex: number) => {
     setDraggedPlayer(null);
     handleDraftPlayer(player, slotIndex);
@@ -119,7 +146,7 @@ export function DraftScreen() {
   const selectedPosition = selectedSlot !== null ? lineup.slots[selectedSlot]?.position ?? null : null;
 
   return (
-    <div className="min-h-screen bg-broadcast-dark">
+    <div className="min-h-screen overflow-x-clip bg-broadcast-dark">
       <a href="#draft-pools" className="sr-only focus:not-sr-only focus:absolute focus:top-2 focus:left-2 focus:z-50 focus:px-3 focus:py-2 focus:bg-broadcast-accent focus:text-broadcast-dark focus:rounded-lg">
         Skip to draft pools
       </a>
@@ -197,21 +224,20 @@ export function DraftScreen() {
                   <>PICK {filledPlayers.length + 1} OF {maxRounds}{neededLabels ? ` • ${neededLabels}` : ''}</>
                 )}
               </p>
-              <button
-                type="button"
-                onClick={() => document.getElementById('draft-lineup')?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
+              <a
+                href="#draft-lineup"
                 className="shrink-0 rounded-full border border-broadcast-accent/50 bg-broadcast-accent/15 px-3 py-1.5 text-[11px] font-bold uppercase tracking-wider text-broadcast-accent transition-colors hover:bg-broadcast-accent/25 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-broadcast-accent"
               >
                 Lineup {filledPlayers.length}/{maxRounds}
-              </button>
+              </a>
             </div>
           )}
         </div>
       </div>
 
-      <main id="draft-pools" className={`mx-auto max-w-7xl px-4 pt-4 2xl:max-w-[1500px] ${isLineupComplete ? 'pb-28' : 'pb-6'}`}>
-        <div className="grid gap-6 lg:grid-cols-5 lg:gap-8">
-          <div className="space-y-4 lg:col-span-3">
+      <main id="draft-pools" className={`mx-auto w-full max-w-7xl min-w-0 px-3 pt-4 sm:px-4 2xl:max-w-[1500px] ${isLineupComplete ? 'pb-28' : 'pb-6'}`}>
+        <div className="grid min-w-0 gap-6 lg:grid-cols-5 lg:gap-8">
+          <div className="min-w-0 space-y-4 lg:col-span-3">
             <SlotMachine
               pool={pool}
               isSpinning={isSpinning}
@@ -277,7 +303,7 @@ export function DraftScreen() {
             )}
           </div>
 
-          <div id="draft-lineup" className="scroll-mt-32 lg:col-span-2">
+          <div id="draft-lineup" className="min-w-0 scroll-mt-32 lg:col-span-2">
             <div className="lg:sticky lg:top-[104px] lg:max-h-[calc(100vh-120px)] lg:overflow-y-auto lg:rounded-2xl lg:pb-2 lg:pl-1 lg:pr-2">
             <LineupBuilder
               lineup={lineup.slots}
@@ -297,11 +323,11 @@ export function DraftScreen() {
       </main>
 
       {isLineupComplete && (
-        <div className="pointer-events-none fixed inset-x-0 bottom-4 z-40 flex justify-center px-4">
-          <div className="pointer-events-auto flex items-center gap-4 rounded-2xl border border-broadcast-accent/40 bg-broadcast-dark/90 py-2.5 pl-5 pr-2.5 shadow-glow-accent backdrop-blur-md">
-            <div>
-              <div className="font-display text-sm font-bold gradient-text">LINEUP COMPLETE</div>
-              <div className="text-xs text-broadcast-text-secondary">{projectedWins}-{82 - projectedWins} PROJ • {teamStrength} STR</div>
+        <div className="pointer-events-none fixed inset-x-0 bottom-4 z-40 flex justify-center px-4 [padding-bottom:max(0rem,env(safe-area-inset-bottom))]">
+          <div className="pointer-events-auto flex w-full max-w-md items-center gap-3 rounded-2xl border border-broadcast-accent/40 bg-broadcast-dark/90 py-2.5 pl-4 pr-2.5 shadow-glow-accent backdrop-blur-md sm:w-auto sm:max-w-none sm:gap-4 sm:pl-5">
+            <div className="min-w-0 flex-1 sm:flex-none">
+              <div className="truncate font-display text-sm font-bold gradient-text">LINEUP COMPLETE</div>
+              <div className="whitespace-nowrap text-xs text-broadcast-text-secondary">{projectedWins}-{82 - projectedWins} PROJ • {teamStrength} STR</div>
             </div>
             <button
               onClick={() => void finalizeDraft()}
@@ -314,6 +340,17 @@ export function DraftScreen() {
           </div>
         </div>
       )}
+
+      <AnimatePresence>
+        {pickPlayer && (
+          <DraftPickModal
+            player={pickPlayer}
+            slots={lineup.slots}
+            onPick={handleConfirmPick}
+            onClose={() => setPickPlayer(null)}
+          />
+        )}
+      </AnimatePresence>
     </div>
   );
 }
