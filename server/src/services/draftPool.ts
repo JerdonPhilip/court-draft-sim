@@ -2,7 +2,7 @@ import { DraftPool, Position } from '../types/game.js';
 import { FRANCHISES, DECADES } from '../data/constants.js';
 import { getRandomPlayersByFranchiseAndDecade, getPlayersByFranchiseAndDecade } from '../data/players.js';
 import { canPlayPosition } from '../types/game.js';
-import { randomInt } from 'node:crypto';
+import { secureRandomInt as randomInt } from './random.js';
 
 export const MIN_POOL_SIZE = 3;
 

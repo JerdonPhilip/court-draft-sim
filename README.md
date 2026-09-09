@@ -95,6 +95,17 @@ npm run build
 npm run start
 ```
 
+The server also serves `client/dist` when present, so `npm run start`
+alone hosts the full game at `http://localhost:3001/` — no internet needed.
+
+### Offline & PWA
+
+- The client is installable (manifest + service worker precache the shell,
+  fonts, and game engine) and works fully offline after the first visit.
+- When the API is unreachable, the app transparently runs the same
+  simulation/draft engine bundled in the client (`client/src/utils/localEngine.ts`,
+  shared with `server/src/services/`), so results match online play.
+
 ## Game Mechanics
 
 ### Draft Phase

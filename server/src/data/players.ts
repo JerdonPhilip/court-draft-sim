@@ -1,5 +1,5 @@
 import { Player, Position } from '../types/game.js';
-import { randomInt } from 'node:crypto';
+import { secureRandomInt as randomInt } from '../services/random.js';
 import { PLAYER_ATTRIBUTES } from './playerAttributes.js';
 
 // NOTE: Steals/blocks were not officially tracked before 1973-74.

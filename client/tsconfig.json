@@ -21,7 +21,8 @@
       "@components/*": ["src/components/*"],
       "@store/*": ["src/store/*"],
       "@utils/*": ["src/utils/*"],
-      "@data/*": ["src/data/*"]
+      "@data/*": ["src/data/*"],
+      "@server/*": ["../server/src/*"]
     }
   },
   "include": ["src"],

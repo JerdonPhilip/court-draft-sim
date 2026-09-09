@@ -7,7 +7,11 @@ import { getEraLeague, getAllEraLeagues } from '../services/eraRosters.js';
 import { DECADES } from '../data/constants.js';
 import { Player, Position, getPlayerPositions, personKeyOf } from '../types/game.js';
 import { getAllHistoricalTeams } from '../data/historicalTeams.js';
-import { randomInt } from 'node:crypto';
+import { generateOpponentPools } from '../services/opponents.js';
+import { formatSeasonResult } from '../services/seasonResult.js';
+
+// Re-exported for calibration scripts (recompute LEAGUE_AVG_IMPACT if the model changes).
+export { generateOpponentPools };
 
 const router = Router();
 
@@ -283,90 +287,14 @@ router.post('/season', seasonLimiter, (req: Request, res: Response) => {
     : strengthVsLeague(getBaseTeamImpact(players, sixthManId ?? null, options ?? null, minutes), eraAvgImpact);
   const projectedWins = calculateNonLinearWinCurve(effectiveStrength);
 
-  const formattedResult = {
-    wins: seasonResult.wins,
-    losses: seasonResult.losses,
-    winPct: Number((seasonResult.wins / SIMULATION_CONSTANTS.MAX_GAMES).toFixed(3)),
+  const formattedResult = formatSeasonResult({
+    seasonResult,
+    players,
+    opponentPool,
     projectedWins,
     teamStrength,
-    era: eraMeta,
-    games: seasonResult.games.map(g => ({
-      gameNumber: g.gameNumber,
-      opponent: g.opponent,
-      isHome: g.isHome,
-      result: g.result,
-      score: g.score,
-      otPeriods: g.otPeriods,
-      playerPerformances: Object.entries(g.playerStats).map(([playerId, stats]) => {
-        const player = players.find(p => p.id === playerId);
-        return {
-          playerId,
-          playerName: player?.name ?? playerId,
-          stats,
-          minutes: g.userMinutes[playerId] ?? 40,
-          position: player?.position,
-          secondaryPositions: player?.secondaryPositions,
-          overall: player?.overall,
-          heightIn: player?.heightIn,
-          team: 'Your Team',
-          baseStats: player?.stats,
-        };
-      }),
-      opponentPerformances: Object.entries(g.opponentPlayerStats).map(([playerId, stats]) => {
-        const player = g.opponentRoster.find(p => p.playerId === playerId);
-        return {
-          playerId,
-          playerName: player?.playerName ?? playerId,
-          stats,
-          minutes: g.opponentMinutes?.[playerId] ?? 40,
-          position: player?.position,
-          secondaryPositions: player?.secondaryPositions,
-          overall: player?.overall,
-          heightIn: player?.heightIn,
-          team: g.opponent,
-          baseStats: player?.baseStats,
-        };
-      }),
-    })),
-    playerStats: Object.values(seasonResult.playerSeasonStats).map(s => {
-      const base = players.find(p => p.id === s.playerId);
-      return {
-        playerId: s.playerId,
-        playerName: s.playerName,
-        gamesPlayed: s.gamesPlayed,
-        minutesPerGame: s.minutesPerGame,
-        averages: s.averages,
-        totals: s.totals,
-        highGames: s.highGames,
-        position: base?.position,
-        secondaryPositions: base?.secondaryPositions,
-        overall: base?.overall,
-        heightIn: base?.heightIn,
-        team: 'Your Team',
-        baseStats: base?.stats,
-      };
-    }),
-    teamStats: seasonResult.teamStats,
-    standings: seasonResult.standings,
-    opponentPlayerStats: Object.values(seasonResult.opponentPlayerSeasonStats).map(s => {
-      const player = opponentPool.flat().find(p => p.id === s.playerId);
-      return {
-        playerId: s.playerId,
-        playerName: s.playerName,
-        gamesPlayed: s.gamesPlayed,
-        minutesPerGame: s.minutesPerGame,
-        averages: s.averages,
-        totals: s.totals,
-        highGames: s.highGames,
-        position: player?.position,
-        secondaryPositions: player?.secondaryPositions,
-        overall: player?.overall,
-        heightIn: player?.heightIn,
-        team: player?.team ?? 'Opponent',
-        baseStats: player?.stats,
-      };
-    }),
-  };
+    eraMeta,
+  });
 
   res.json({ result: formattedResult });
 });
@@ -567,97 +495,5 @@ router.get('/historical-teams', (req: Request, res: Response) => {
   }));
   res.json({ teams });
 });
-
-const OPPONENT_NAMES = [
-  'Chicago Bulls', 'Boston Celtics', 'LA Lakers', 'Miami Heat', 'Dallas Mavericks',
-  'Phoenix Suns', 'Denver Nuggets', 'Milwaukee Bucks', 'Philadelphia 76ers', 'New York Knicks',
-  'Golden State Warriors', 'San Antonio Spurs', 'Houston Rockets', 'OKC Thunder', 'Utah Jazz',
-  'Portland Trail Blazers', 'Sacramento Kings', 'Atlanta Hawks', 'Toronto Raptors', 'Detroit Pistons',
-  'Cleveland Cavaliers', 'Indiana Pacers', 'Orlando Magic', 'Brooklyn Nets', 'LA Clippers',
-  'Memphis Grizzlies', 'New Orleans Pelicans', 'Minnesota Timberwolves', 'Charlotte Hornets', 'Washington Wizards',
-];
-
-function randomStat(min: number, max: number): number {
-  return min + (randomInt(1_000_000) / 1_000_000) * (max - min);
-}
-
-/** Exported for calibration scripts (recompute LEAGUE_AVG_IMPACT if the model changes). */
-export function generateOpponentPools(): { pools: Player[][]; names: string[] } {
-  const pools: Player[][] = [];
-
-  // 30 distinct 10-man opponents (300 unique players, starters + bench).
-  // A top-heavy league like the real NBA: 24 regular starter-quality
-  // pools plus 6 contender pools that can actually beat elite user teams,
-  // so 82-0 stays possible but never automatic.
-  // Mean base impact ~= LEAGUE_AVG_IMPACT (services/constants.ts), measured
-  // empirically over generated pools (10-man impacts normalize to the 5-man
-  // scale, so the reference still holds). Keep them in sync if these ranges change.
-  // Heights sit near positional averages so size is neutral for the league.
-  const HEIGHT_RANGE: Record<Position, [number, number]> = {
-    PG: [71, 75],
-    SG: [74, 78],
-    SF: [77, 81],
-    PF: [79, 83],
-    C: [81, 87],
-  };
-  const makePlayer = (i: number, j: number, pos: Position, overall: number, span: number, floor: number, contender: boolean): Player => {
-    const star = (overall - floor) / span; // 0..1
-    return {
-      id: `opp-${i}-${j}`,
-      name: `${OPPONENT_NAMES[i]} Player ${j + 1}`,
-      position: pos,
-      heightIn: Math.round(randomStat(HEIGHT_RANGE[pos][0], HEIGHT_RANGE[pos][1])),
-      // Display schedule name (not a generic tag) so standings, bracket,
-      // awards and playoff rosters can join on team.
-      team: OPPONENT_NAMES[i]!,
-      decade: '2020s',
-      era: 'Current',
-      stats: contender
-        ? {
-            pts: randomStat(18 + star * 6, 22 + star * 6),
-            reb: randomStat(5 + star * 2, 8 + star * 3),
-            ast: randomStat(4 + star * 2, 6 + star * 3),
-            stl: randomStat(0.8, 1.2 + star * 0.8),
-            blk: randomStat(0.4, 0.8 + star * 0.8),
-            pf: 0, // cards carry no fouls; per-game fouls generate live
-          }
-        : {
-            pts: randomStat(12 + star * 6, 16 + star * 6),
-            reb: randomStat(4 + star * 2, 7 + star * 3),
-            ast: randomStat(3 + star * 2, 5 + star * 3),
-            stl: randomStat(0.6, 1.0 + star * 0.8),
-            blk: randomStat(0.3, 0.6 + star * 0.8),
-            pf: 0,
-          },
-      overall,
-      archetype: contender ? 'Star' : 'Role Player',
-    };
-  };
-  for (let i = 0; i < 30; i++) {
-    const pool: Player[] = [];
-    const contender = i % 5 === 4;
-    // Starters (first 5): same quality as before.
-    for (let j = 0; j < 5; j++) {
-      const pos = (['PG', 'SG', 'SF', 'PF', 'C'] as Position[])[j]!;
-      const overall = Math.round(contender ? randomStat(88, 96) : randomStat(74, 88));
-      const span = contender ? 8 : 14;
-      const floor = contender ? 88 : 74;
-      pool.push(makePlayer(i, j, pos, overall, span, floor, contender));
-    }
-    // Bench (last 5): a clear step below the starters.
-    for (let j = 5; j < 10; j++) {
-      const pos = (['PG', 'SG', 'SF', 'PF', 'C'] as Position[])[j - 5]!;
-      const overall = Math.round(contender ? randomStat(80, 88) : randomStat(68, 80));
-      const span = contender ? 8 : 12;
-      const floor = contender ? 80 : 68;
-      const bench = makePlayer(i, j, pos, overall, span, floor, false);
-      bench.archetype = 'Bench';
-      pool.push(bench);
-    }
-    pools.push(pool);
-  }
-
-  return { pools, names: [...OPPONENT_NAMES] };
-}
 
 export default router;

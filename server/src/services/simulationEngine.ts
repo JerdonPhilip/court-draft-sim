@@ -42,7 +42,7 @@ import {
   foulPronenessMultiplier,
 } from './eraEngine.js';
 import type { EraContext, PlayerAttributes } from '../types/player.js';
-import { randomInt } from 'node:crypto';
+import { secureRandomInt as randomInt, secureRandom } from './random.js';
 
 // --- 2K attribute + era integration (spec v1.4.0, Parts 6-9) ---
 // Resolved/modified attributes are cached by player id (deterministic).
@@ -158,7 +158,7 @@ const AVG_POSSESSIONS = SIMULATION_CONSTANTS.BASE_PACE;
 
 function randomFloat(): number {
   // Uniform [0, 1) via crypto for auditable fairness (draft + sim).
-  return randomInt(1_000_000) / 1_000_000;
+  return secureRandom();
 }
 
 const POSITION_WEIGHTS = {
