@@ -86,6 +86,7 @@ export function SlotMachine({
         </span>
 
         <div className="flex min-w-0 flex-1 flex-col gap-1">
+          <span className="text-[10px] font-bold uppercase tracking-[0.18em] text-broadcast-text-muted" aria-hidden="true">Team</span>
           <div
             className="h-11 min-w-0 overflow-hidden rounded-xl border border-white/10 bg-black/20"
             aria-live="polite"
@@ -123,7 +124,8 @@ export function SlotMachine({
             )}
           </div>
           <RerollLink
-            label="Reroll franchise"
+            label="Reroll"
+            ariaLabel="Reroll franchise"
             hint={pool ? `Keep ${decadeInfo?.label ?? pool.decade}, roll a new team` : 'Roll a new team, keep the decade'}
             rerollsLeft={franchiseRerollsLeft}
             disabled={isSpinning || !pool}
@@ -134,6 +136,7 @@ export function SlotMachine({
         <span className="hidden shrink-0 text-sm text-broadcast-text-muted sm:inline" aria-hidden="true">×</span>
 
         <div className="flex min-w-0 flex-1 flex-col gap-1">
+          <span className="text-[10px] font-bold uppercase tracking-[0.18em] text-broadcast-text-muted" aria-hidden="true">Era</span>
           <div
             className="h-11 min-w-0 overflow-hidden rounded-xl border border-white/10 bg-black/20"
             aria-live="polite"
@@ -167,7 +170,8 @@ export function SlotMachine({
             )}
           </div>
           <RerollLink
-            label="Reroll decade"
+            label="Reroll"
+            ariaLabel="Reroll decade"
             hint={pool ? `Keep ${franchiseLabel}, roll a new era` : 'Roll a new era, keep the team'}
             rerollsLeft={decadeRerollsLeft}
             disabled={isSpinning || !pool}
@@ -204,8 +208,9 @@ export function SlotMachine({
   );
 }
 
-function RerollLink({ label, hint, rerollsLeft, disabled, onReroll }: {
+function RerollLink({ label, ariaLabel, hint, rerollsLeft, disabled, onReroll }: {
   label: string;
+  ariaLabel: string;
   hint: string;
   rerollsLeft: number;
   disabled: boolean;
@@ -218,7 +223,7 @@ function RerollLink({ label, hint, rerollsLeft, disabled, onReroll }: {
       onClick={onReroll}
       disabled={exhausted || disabled}
       title={hint}
-      aria-label={exhausted ? `${label} — no rerolls left` : `${label} — ${hint} (${rerollsLeft} left)`}
+      aria-label={exhausted ? `${ariaLabel} — no rerolls left` : `${ariaLabel} — ${hint} (${rerollsLeft} left)`}
       className={cn(
         'flex items-center justify-center gap-1.5 rounded-md py-1 text-xs font-bold uppercase tracking-[0.14em] transition-colors',
         'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-broadcast-accent',

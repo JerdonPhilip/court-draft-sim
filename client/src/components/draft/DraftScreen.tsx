@@ -49,6 +49,9 @@ export function DraftScreen() {
     [lineup]
   );
 
+  // Deduped for display (10-man rosters hold each position twice).
+  const neededLabels = useMemo(() => [...new Set(emptyPositions)].join(' · '), [emptyPositions]);
+
   // Slot-first drafting: click an open slot, then click (or drag) a player into it.
   const [selectedSlot, setSelectedSlot] = useState<number | null>(null);
   const [draggedPlayer, setDraggedPlayer] = useState<Player | null>(null);
@@ -140,7 +143,7 @@ export function DraftScreen() {
                     ? `LINEUP COMPLETE • ${maxRounds} OF ${maxRounds}`
                     : emptyPositions.length === maxRounds
                       ? `ROUND 1 OF ${maxRounds} • PICK A SLOT, THEN A PLAYER`
-                      : `PICK ${filledPlayers.length + 1} OF ${maxRounds} • NEED: ${emptyPositions.join(', ')}`}
+                      : `PICK ${filledPlayers.length + 1} OF ${maxRounds} • OPEN: ${neededLabels}`}
                 </p>
               </div>
             </div>
@@ -215,7 +218,8 @@ export function DraftScreen() {
             ) : (
               !isSpinning && !isLineupComplete && (
                 <div className="text-center p-8 card">
-                  <p className="text-broadcast-text-secondary mb-4">No active pool. Spin to get players{emptyPositions.length > 0 ? ` for ${emptyPositions.join(', ')}` : ''}.</p>
+                  <p className="text-broadcast-text-secondary mb-1 font-medium">No active pool.</p>
+                  <p className="text-broadcast-text-muted text-sm mb-4">{neededLabels ? `Spin to scout prospects for your open positions — ${neededLabels}.` : 'Spin to scout the next batch of prospects.'}</p>
                   <button onClick={() => void spinDraftPool()} className="btn-primary px-6 py-3" disabled={isSpinning || isLoading}>
                     <RotateCcw className="w-4 h-4" aria-hidden="true" />
                     SPIN POOL

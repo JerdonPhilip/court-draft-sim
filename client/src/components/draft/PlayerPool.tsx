@@ -34,6 +34,47 @@ const POSITION_ORDER: Position[] = ['PG', 'SG', 'SF', 'PF', 'C'];
 
 type SortKey = 'overall' | 'pts' | 'name';
 
+/** "Michael Jordan" -> "M. Jordan" for the compact drag ghost. */
+function compactName(fullName: string): string {
+  const parts = fullName.trim().split(/\s+/);
+  if (parts.length < 2) return fullName;
+  return `${parts[0]!.charAt(0)}. ${parts.slice(1).join(' ')}`;
+}
+
+/**
+ * Compact drag preview (POS | name | OVR) so the ghost never covers the
+ * lineup drop targets. Built with textContent (no HTML injection) and
+ * removed on drag end.
+ */
+let dragGhost: HTMLElement | null = null;
+
+function makeDragGhost(player: Player): HTMLElement {
+  const el = document.createElement('div');
+  el.style.cssText = 'position:fixed;top:-1000px;left:0;display:flex;align-items:center;gap:8px;'
+    + 'padding:8px 12px;background:#141b26;border:1px solid rgba(0,212,170,.55);border-radius:12px;'
+    + 'pointer-events:none;width:230px;box-shadow:0 10px 36px rgba(0,0,0,.5);'
+    + "font-family:system-ui,sans-serif;";
+  const badge = document.createElement('span');
+  badge.textContent = player.position;
+  badge.style.cssText = `display:flex;align-items:center;justify-content:center;width:28px;height:28px;flex-shrink:0;`
+    + `border-radius:8px;font-size:11px;font-weight:800;color:#fff;background-color:${getPositionColor(player.position)};`;
+  const name = document.createElement('span');
+  name.textContent = compactName(player.name);
+  name.style.cssText = 'flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;'
+    + 'font-size:13px;font-weight:600;color:#fff;';
+  const ovr = document.createElement('span');
+  ovr.textContent = String(player.overall);
+  ovr.style.cssText = 'flex-shrink:0;font-size:16px;font-weight:800;color:#00d4aa;';
+  el.append(badge, name, ovr);
+  document.body.appendChild(el);
+  return el;
+}
+
+function clearDragGhost(): void {
+  dragGhost?.remove();
+  dragGhost = null;
+}
+
 export function PlayerPool({ pool, draftedPlayerIds, draftedPersonKeys, onDraftPlayer, onDragStartPlayer, onDragEndPlayer, emptyPositions, lineupSlots, selectedSlotPosition }: PlayerPoolProps) {
   const [posFilter, setPosFilter] = useState<Position | 'ALL'>('ALL');
   const [sortKey, setSortKey] = useState<SortKey>('overall');
@@ -167,9 +208,17 @@ export function PlayerPool({ pool, draftedPlayerIds, draftedPersonKeys, onDraftP
                 onDragStart={(e: React.DragEvent<HTMLButtonElement>) => {
                   e.dataTransfer.setData('application/json', JSON.stringify(player));
                   e.dataTransfer.effectAllowed = 'move';
+                  // Shrink the drag ghost to a compact chip so drop targets stay visible.
+                  try {
+                    clearDragGhost();
+                    dragGhost = makeDragGhost(player);
+                    e.dataTransfer.setDragImage(dragGhost, 115, 22);
+                  } catch {
+                    /* fall back to the default drag image */
+                  }
                   onDragStartPlayer(player);
                 }}
-                onDragEnd={onDragEndPlayer}
+                onDragEnd={() => { clearDragGhost(); onDragEndPlayer(); }}
                 className={cn(
                   'group relative flex h-full w-full flex-col overflow-hidden rounded-2xl border text-left',
                   'bg-broadcast-card/90 shadow-[0_10px_36px_rgb(0,0,0,0.38)] backdrop-blur-sm',
