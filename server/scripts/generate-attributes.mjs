@@ -42,13 +42,39 @@ const OVERRIDES = {
   'chris-paul-20s': {closeShot:82,drivingLayup:84,drivingDunk:45,standingDunk:25,postControl:55,midRangeShot:90,threePointShot:84,freeThrow:90,passAccuracy:96,ballHandle:94,speedWithBall:86,interiorDefense:62,perimeterDefense:88,steal:88,block:35,offensiveRebound:35,defensiveRebound:60,speed:78,agility:78,strength:55,vertical:65,stamina:84,shotIq:96,passPerception:95,defensiveConsistency:88,offensiveConsistency:92,helpDefenseIq:88,intangibles:98,potential:70},
 };
 
+// Partial star fixes (baked into playerAttributes.ts; kept here so regen stays exact).
+const STAR_FIXES = {
+  'klay-thompson-10s': {threePointShot:97,midRangeShot:87,ballHandle:72,speedWithBall:82,drivingDunk:68,vertical:72,strength:55},
+  'klay-thompson-20s': {threePointShot:96,midRangeShot:85,ballHandle:70,speedWithBall:80,drivingDunk:66,vertical:70,strength:55},
+  'ray-allen-00s': {threePointShot:97,midRangeShot:90,ballHandle:80,speedWithBall:86,drivingDunk:70,vertical:78,strength:55},
+  'reggie-miller-90s': {threePointShot:96,midRangeShot:90,ballHandle:78,speedWithBall:84,drivingDunk:68,vertical:76,strength:55},
+  'damian-lillard-10s': {threePointShot:92,midRangeShot:86,ballHandle:90,speedWithBall:90,drivingDunk:78,strength:45},
+  'larry-bird-80s': {threePointShot:88,midRangeShot:92,ballHandle:80,speedWithBall:76,drivingDunk:65,vertical:68,strength:70},
+  'steve-nash-00s': {threePointShot:93,midRangeShot:90,ballHandle:96,speedWithBall:88,drivingDunk:45,vertical:62,strength:38,passAccuracy:98},
+  'dirk-nowitzki-00s': {threePointShot:87,midRangeShot:94,ballHandle:70,postControl:90,strength:70},
+  'kevin-durant-10s': {threePointShot:92,midRangeShot:95,ballHandle:86,speedWithBall:86},
+  'kevin-durant-00s': {threePointShot:88,midRangeShot:90,ballHandle:82,speedWithBall:84},
+  'james-harden-10s': {threePointShot:90,midRangeShot:86,ballHandle:95,speedWithBall:92,drivingDunk:82},
+  'kyrie-irving-10s': {threePointShot:90,midRangeShot:92,ballHandle:98,speedWithBall:95,drivingDunk:75,vertical:82},
+  'devin-booker-20s': {threePointShot:90,midRangeShot:90,ballHandle:86},
+  'trae-young-20s': {threePointShot:90,midRangeShot:86,ballHandle:94,drivingDunk:55},
+  'chris-paul-10s': {threePointShot:85,midRangeShot:88,ballHandle:95,drivingDunk:42,vertical:65,strength:50,speedWithBall:86},
+  'chris-paul-00s': {threePointShot:82,midRangeShot:86,ballHandle:95,drivingDunk:42,vertical:65,strength:48},
+  'lebron-james-10s': {threePointShot:78,midRangeShot:82,ballHandle:88,strength:90,postControl:82,speedWithBall:90},
+  'shaquille-oneal-00s': {midRangeShot:42,threePointShot:25,freeThrow:53,ballHandle:45,speedWithBall:55,strength:95,vertical:72},
+  'kobe-bryant-00s': {threePointShot:82,midRangeShot:94,ballHandle:92,speedWithBall:92,strength:65,drivingDunk:92},
+  'tim-duncan-00s': {threePointShot:28,midRangeShot:82},
+  'hakeem-olajuwon-90s': {threePointShot:25,midRangeShot:84},
+  'ron-artest-00s': {steal:86,strength:78,perimeterDefense:99},
+};
+
 for (const p of ALL_PLAYERS) {
   let attrs;
   if (OVERRIDES[p.id]) {
     attrs = OVERRIDES[p.id];
   } else {
     const era = getEraContext(p.decade);
-    attrs = estimateAttributes(p, normalizedStatsFor(p), era);
+    attrs = { ...estimateAttributes(p, normalizedStatsFor(p), era), ...(STAR_FIXES[p.id] || {}) };
   }
   const vals = KEYS.map((k) => `${k}:${attrs[k]}`).join(',');
   out += `  '${p.id}':{${vals}},\n`;

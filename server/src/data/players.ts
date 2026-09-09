@@ -23602,7 +23602,9 @@ for (const player of ALL_PLAYERS) {
   if (attrs === undefined) {
     throw new Error(`Missing attributes for player ${player.id}`);
   }
-  player.attributes = attrs;
+  // Exact block — single source of truth for the future player builder
+  // (copy player.attributes directly, no merge layer).
+  player.attributes = { ...attrs };
 }
 
 export function getPlayersByFranchiseAndDecade(franchise: string, decade: string): Player[] {
