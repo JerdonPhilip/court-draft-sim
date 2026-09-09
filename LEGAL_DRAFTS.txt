@@ -1,0 +1,163 @@
+COURT DRAFT SIM — LEGAL DRAFTS (for review, not legal advice)
+Contact: jerdonphilipmacaraeg@gmail.com
+Venue: Malasiqui, Pangasinan, PH | Log retention: max 30 days
+Hosting plan: GitHub (source) -> Vercel (frontend) + Render Singapore (API). No database yet.
+Effective date: [SET AT LAUNCH]
+
+================================================================
+1. PRIVACY NOTICE (page: #privacy)
+================================================================
+Court Draft Sim — Privacy Notice
+
+Who we are. Court Draft Sim is a free hobby fan game by Jerdon Philip
+Macaraeg, Malasiqui, Pangasinan, PH. Contact jerdonphilipmacaraeg@gmail.com
+for privacy requests, corrections, erasure, objections, and takedowns.
+
+What we collect.
+- Game state (browser only): lineup, draft pools, minutes, results stored
+  as `court-draft-sim-store` in your own browser localStorage. It stays on
+  your device except when your browser sends the lineup you chose as part of
+  a simulation request you trigger. Clear site data to delete it.
+- Server logs (personal data under PH Data Privacy Act RA 10173): IP address,
+  date/time, HTTP method/URL/status, user-agent, referrer. URLs may include
+  game filters (franchise/decade) if used. We collect NO name, email, account,
+  password, payment, precise location, or contacts.
+
+Why + legal basis. Security, debugging, and abuse prevention (rate limiting).
+Basis: legitimate interest under DPA Sec. 12(f). No marketing, no profiling,
+no sale or sharing for advertising. Where your local law requires consent for
+any future non-essential processing, we will ask first.
+
+Recipients / cross-border. Frontend CDN by Vercel (global edge, per Vercel
+DPA); API hosting by Render in Singapore; no database today. Fonts are
+self-hosted (no Google Fonts transfer). If Postgres (e.g. Neon, Singapore)
+or any new processor is added, it will be listed here before use. Source code
+may be browsable on GitHub; GitHub's own privacy statement applies if you
+visit the repository.
+
+Retention. Raw API logs max 30 days, then deleted or aggregated to anonymous
+counts. Browser save persists until you clear it. Backups, if any, roll off
+within the same window.
+
+Your rights (DPA Sec. 16 + applicable foreign rights where you reside). Be
+informed, object, access, correct, erase/block, claim damages, and complain
+to the National Privacy Commission (privacy.gov.ph) or your local authority.
+Email above; we reply within a reasonable time. Objecting to security logs
+means not using the hosted simulation, because logging is required to run it
+securely.
+
+Children. General audience; 13+ recommended, parental guidance below that.
+No accounts and no knowing collection beyond technical logs. Parents/guardians
+may email for review or erasure.
+
+Changes. Material changes are posted here with a new effective date.
+
+================================================================
+2. TERMS OF USE (page: #terms)
+================================================================
+Terms of Use — Court Draft Sim
+By using or browsing the game you agree to these terms. If you do not agree,
+do not use it.
+
+What it is. A free, hobby, fan-made NBA roster-building and simulation game.
+No accounts, no fees. Provided AS-IS and AS AVAILABLE, without warranties of
+any kind (merchantability, fitness, accuracy, uptime, non-infringement), to
+the extent excludable by law. The game may change, break, or shut down at any
+time. Source visibility on GitHub (if public) is under the repo LICENSE
+(MIT) for code; these Terms govern USE of the hosted game.
+
+Fan / IP disclaimer — please read. Not affiliated with, endorsed, sponsored,
+or approved by the NBA, its teams, or any player. Team and player names plus
+factual stats/scores are used for identification and informational fan use
+only (nominative use). No team logos, jerseys, photos, wordmarks in stylized
+form, or other marks are included. Historical facts and game rules are not
+claimed as ours. Rights owners: contact jerdonphilipmacaraeg@gmail.com for
+prompt takedown or other remedy; we act expeditiously on valid requests,
+including under PH IP Code (RA 8293) and applicable notice-and-takedown
+regimes where the service is accessed.
+
+Acceptable use. Do not: abuse the simulation API (scraping past rate limits,
+DDoS, cheating/exploiting, disrupting service); upload unlawful, infringing,
+or malicious content; attempt to breach security; or use the service in
+violation of applicable law, including PH Cybercrime Prevention Act (RA 10175)
+and the laws of your place of access. Violations may be rate-limited, blocked,
+or removed. You are responsible for complying with your own local laws when
+accessing the service from outside the Philippines.
+
+LIABILITY — PHILIPPINES + INTERNATIONAL.
+To the maximum extent permitted by all applicable laws — including the laws of
+the Philippines and the mandatory and non-waivable laws of the jurisdiction
+where you access or use the service (including, where applicable, consumer
+guarantees and product-liability rules in your country) — :
+(a) the service is provided without warranties except those that cannot be
+    excluded by law, and those are limited to the minimum required;
+(b) we are not liable for indirect, incidental, special, consequential,
+    exemplary, or punitive damages, or for loss of profits, revenue, data,
+    goodwill, or anticipated savings, even if advised of the possibility;
+(c) our aggregate liability for any claim arising out of or relating to the
+    service is limited to the amount you paid for the service (zero for this
+    free game) or, where your law requires, to re-supply of the service;
+(d) nothing in these Terms limits or excludes liability for fraud, fraudulent
+    misrepresentation, willful misconduct, or gross negligence, or any right
+    or remedy that cannot be waived or limited under applicable law (including
+    PH Civil Code provisions on obligations and contracts, and any
+    non-excludable consumer rights in your jurisdiction, which prevail to the
+    extent of any conflict).
+If a court or authority holds any exclusion unenforceable in your jurisdiction,
+it will be narrowed to the minimum scope the law allows and the remainder
+continues in effect.
+
+Privacy. Use is also governed by the Privacy Notice above.
+
+Changes / severability / assignment. We may update these Terms by posting a
+new version with an effective date; continued use after that date is
+acceptance. If any clause is held invalid, the rest remains. You may not
+assign your rights without consent; we may assign in connection with a
+reorganization, with notice.
+
+Governing law / venue / cross-border use. These Terms are governed by the
+laws of the Philippines, without regard to conflict-of-laws rules, and
+disputes fall under the exclusive jurisdiction of the courts of Malasiqui,
+Pangasinan, PH, EXCEPT where the mandatory law of your habitual residence
+grants you non-waivable jurisdiction, venue, or consumer-protection rights —
+those rights are preserved and prevail to that extent. You consent to service
+by email at the address you use to contact us.
+
+Contact: jerdonphilipmacaraeg@gmail.com.
+
+================================================================
+3. COOKIES & LOCAL STORAGE POLICY (page: #cookies)
+================================================================
+Cookies & Local Storage Policy — Court Draft Sim
+
+First-party cookies: none. No cookie banner is shown because there is nothing
+requiring cookie consent to operate.
+
+Local storage (functional, strictly necessary):
+- Key: `court-draft-sim-store`
+- Purpose: saves draft, lineup, minutes, and results so a reload resumes.
+- Legal basis: necessary to provide the game you requested; legitimate
+  interest / necessity. No advertising or tracking purpose.
+- Control: browser settings -> Clear site data / Clear localStorage. The game
+  still works; progress resets.
+
+Third parties / tracking: none in the game itself after font self-hosting.
+No analytics, pixels, beacons, or ad SDKs. No Google Fonts network calls.
+If analytics, pixels, or other storage are ever added, this page and the
+Privacy Notice will be updated BEFORE use, with prior consent where your law
+requires it, plus an equally easy withdraw path.
+
+Questions: jerdonphilipmacaraeg@gmail.com.
+
+================================================================
+DEPLOY NOTES (GitHub -> Vercel + Render SG)
+================================================================
+- Keep .env and any secrets out of GitHub. Public repo = code only.
+- At launch: set Effective date, confirm frontend URL (Vercel) and API URL
+  (Render Singapore) in the files, keep retention line at 30 days.
+- When Postgres is added: append processor (e.g. Neon, Singapore), data
+  categories stored, retention, and rights procedure for DB rows.
+- Footer (all screens): Privacy | Terms | Cookies + "Fan game. Not affiliated
+  with the NBA." + version.
+
+END OF DRAFT
