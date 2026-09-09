@@ -32,7 +32,7 @@ export function Toasts() {
 
   return (
     <div
-      className="pointer-events-none fixed bottom-4 right-4 z-[100] flex w-[min(92vw,360px)] flex-col gap-2"
+      className="pointer-events-none fixed left-1/2 top-3 z-[100] flex w-[min(92vw,380px)] -translate-x-1/2 flex-col gap-2 [top:max(0.75rem,env(safe-area-inset-top))] sm:left-auto sm:top-auto sm:bottom-4 sm:right-4 sm:w-[min(92vw,360px)] sm:translate-x-0 sm:[top:auto] sm:[padding-bottom:max(0rem,env(safe-area-inset-bottom))]"
       aria-live="polite"
     >
       <AnimatePresence>
@@ -42,9 +42,9 @@ export function Toasts() {
             <motion.div
               key={toast.id}
               layout
-              initial={{ opacity: 0, x: 48, scale: 0.96 }}
-              animate={{ opacity: 1, x: 0, scale: 1 }}
-              exit={{ opacity: 0, x: 48, scale: 0.96 }}
+              initial={{ opacity: 0, y: -16, scale: 0.96 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: -16, scale: 0.96 }}
               transition={{ duration: 0.22, ease: 'easeOut' }}
               role={toast.kind === 'error' ? 'alert' : 'status'}
               className={cn(
@@ -72,9 +72,9 @@ export function Toasts() {
                 type="button"
                 onClick={() => dismiss(toast.id)}
                 aria-label="Dismiss notification"
-                className="shrink-0 rounded-md p-1 text-broadcast-text-muted transition-colors hover:bg-white/5 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-broadcast-accent"
+                className="flex min-h-[44px] min-w-[44px] shrink-0 items-center justify-center rounded-md p-1 text-broadcast-text-muted transition-colors hover:bg-white/5 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-broadcast-accent sm:min-h-0 sm:min-w-0 sm:block sm:p-1"
               >
-                <X className="h-4 w-4" aria-hidden="true" />
+                <X className="h-5 w-5 sm:h-4 sm:w-4" aria-hidden="true" />
               </button>
             </motion.div>
           );

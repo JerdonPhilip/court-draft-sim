@@ -124,9 +124,9 @@ export function DraftScreen() {
         Skip to draft pools
       </a>
       <div className="sticky top-0 z-40 border-b border-broadcast-border/50 bg-broadcast-dark/95 backdrop-blur">
-        <div className="mx-auto max-w-7xl px-4 py-3 2xl:max-w-[1500px]">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
+        <div className="mx-auto max-w-7xl px-3 py-2 sm:px-4 sm:py-3 2xl:max-w-[1500px]">
+          <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2">
+            <div className="flex min-w-0 items-center gap-2 sm:gap-3">
               <motion.button
                 onClick={initializeDraft}
                 whileHover={{ scale: 1.05 }}
@@ -136,9 +136,9 @@ export function DraftScreen() {
               >
                 <RotateCcw className="w-5 h-5 text-broadcast-text-secondary" aria-hidden="true" />
               </motion.button>
-              <div>
-                <h1 className="font-display text-2xl font-bold gradient-text">COURT DRAFT SIM <span className="ml-1 align-middle rounded-full border border-white/15 bg-white/5 px-1.5 py-0.5 text-[10px] font-bold tracking-wider text-broadcast-text-muted">v{APP_VERSION}</span></h1>
-                <p className="text-xs text-broadcast-text-secondary">
+              <div className="min-w-0">
+                <h1 className="font-display text-lg font-bold gradient-text sm:text-2xl">COURT DRAFT SIM <span className="ml-1 hidden align-middle rounded-full border border-white/15 bg-white/5 px-1.5 py-0.5 text-[10px] font-bold tracking-wider text-broadcast-text-muted min-[420px]:inline">v{APP_VERSION}</span></h1>
+                <p className="truncate text-xs text-broadcast-text-secondary">
                   {isLineupComplete
                     ? `LINEUP COMPLETE • ${maxRounds} OF ${maxRounds}`
                     : emptyPositions.length === maxRounds
@@ -148,15 +148,15 @@ export function DraftScreen() {
               </div>
             </div>
             <div
-              className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-2xl border border-white/10 bg-broadcast-card/90 px-3 py-1.5 shadow-[0_10px_36px_rgb(0,0,0,0.38)] backdrop-blur-sm"
+              className="flex flex-wrap items-center gap-x-2 gap-y-1 rounded-2xl border border-white/10 bg-broadcast-card/90 px-2 py-1 shadow-[0_10px_36px_rgb(0,0,0,0.38)] backdrop-blur-sm sm:gap-x-3 sm:px-3 sm:py-1.5"
               aria-live="polite"
               aria-label={`Team strength ${teamStrength}, projected record ${projectedWins} and ${82 - projectedWins}, ${filledPlayers.length} of ${maxRounds} picks made`}
             >
               <div className="flex items-center gap-1.5">
                 <Zap className="h-4 w-4 shrink-0 text-broadcast-accent" aria-hidden="true" />
-                <span className="font-display text-lg font-bold leading-none text-broadcast-accent">{teamStrength}</span>
+                <span className="font-display text-base font-bold leading-none text-broadcast-accent sm:text-lg">{teamStrength}</span>
                 <span className="text-[10px] font-bold uppercase tracking-[0.14em] text-broadcast-text-muted">STR</span>
-                <span className="h-1 w-10 overflow-hidden rounded-full bg-white/10" role="img" aria-label={`Strength ${teamStrength} out of 100`}>
+                <span className="hidden h-1 w-10 overflow-hidden rounded-full bg-white/10 min-[380px]:block" role="img" aria-label={`Strength ${teamStrength} out of 100`}>
                   <span
                     className="block h-full rounded-full bg-gradient-to-r from-broadcast-accent to-broadcast-gold transition-[width] duration-500"
                     style={{ width: `${Math.max(4, Math.min(100, teamStrength))}%` }}
@@ -166,7 +166,7 @@ export function DraftScreen() {
               <div className="h-6 w-px shrink-0 bg-white/10" aria-hidden="true" />
               <div className="flex items-center gap-1.5">
                 <Trophy className="h-4 w-4 shrink-0 text-broadcast-gold" aria-hidden="true" />
-                <span className="font-display text-lg font-bold leading-none text-broadcast-gold">{projectedWins}-{82 - projectedWins}</span>
+                <span className="font-display text-base font-bold leading-none text-broadcast-gold sm:text-lg">{projectedWins}-{82 - projectedWins}</span>
                 <span className="text-[10px] font-bold uppercase tracking-[0.14em] text-broadcast-text-muted">PROJ</span>
               </div>
               <div className="hidden h-6 w-px shrink-0 bg-white/10 min-[420px]:block" aria-hidden="true" />
@@ -183,6 +183,29 @@ export function DraftScreen() {
               </div>
             </div>
           </div>
+          {!isLineupComplete && (
+            <div className="mt-2 flex items-center gap-2 lg:hidden" aria-live="polite">
+              <p className="min-w-0 flex-1 truncate text-xs font-semibold text-broadcast-text-secondary">
+                {selectedPosition ? (
+                  <>
+                    PICK <span className="font-bold text-broadcast-gold">{selectedPosition}</span>
+                    <span aria-hidden="true"> • </span>
+                    <span>{filledPlayers.length}/{maxRounds}</span>
+                    {neededLabels ? <span className="text-broadcast-text-muted"> • {neededLabels}</span> : null}
+                  </>
+                ) : (
+                  <>PICK {filledPlayers.length + 1} OF {maxRounds}{neededLabels ? ` • ${neededLabels}` : ''}</>
+                )}
+              </p>
+              <button
+                type="button"
+                onClick={() => document.getElementById('draft-lineup')?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
+                className="shrink-0 rounded-full border border-broadcast-accent/50 bg-broadcast-accent/15 px-3 py-1.5 text-[11px] font-bold uppercase tracking-wider text-broadcast-accent transition-colors hover:bg-broadcast-accent/25 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-broadcast-accent"
+              >
+                Lineup {filledPlayers.length}/{maxRounds}
+              </button>
+            </div>
+          )}
         </div>
       </div>
 
@@ -254,7 +277,7 @@ export function DraftScreen() {
             )}
           </div>
 
-          <div className="lg:col-span-2">
+          <div id="draft-lineup" className="scroll-mt-32 lg:col-span-2">
             <div className="lg:sticky lg:top-[104px] lg:max-h-[calc(100vh-120px)] lg:overflow-y-auto lg:rounded-2xl lg:pb-2 lg:pl-1 lg:pr-2">
             <LineupBuilder
               lineup={lineup.slots}

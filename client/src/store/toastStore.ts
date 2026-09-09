@@ -24,27 +24,46 @@ const DEFAULT_DURATION_MS: Record<ToastKind, number> = {
   error: 4800,
 };
 
-const MAX_VISIBLE = 3;
+const MAX_VISIBLE = 2;
 
 let seq = 0;
+const timers = new Map<string, ReturnType<typeof setTimeout>>();
+
+function scheduleDismiss(id: string, ms: number) {
+  const prev = timers.get(id);
+  if (prev) clearTimeout(prev);
+  const t = setTimeout(() => {
+    timers.delete(id);
+    useToastStore.getState().dismiss(id);
+  }, ms);
+  timers.set(id, t);
+}
 
 export const useToastStore = create<ToastState>()((set, get) => ({
   toasts: [],
 
   push: (toast) => {
-    // Collapse exact repeats so rapid clicks don't stack identical toasts.
+    // Collapse exact repeats so rapid clicks reset the timer instead of stacking.
     const visible = get().toasts;
     const last = visible[visible.length - 1];
-    if (last && last.kind === toast.kind && last.message === toast.message) {
+    if (last && last.kind === toast.kind && last.message === toast.message && last.title === toast.title) {
+      scheduleDismiss(last.id, toast.durationMs ?? DEFAULT_DURATION_MS[toast.kind]);
       return last.id;
     }
     const id = `toast-${Date.now().toString(36)}-${seq++}`;
     set({ toasts: [...visible.slice(-(MAX_VISIBLE - 1)), { ...toast, id }] });
-    setTimeout(() => get().dismiss(id), toast.durationMs ?? DEFAULT_DURATION_MS[toast.kind]);
+    scheduleDismiss(id, toast.durationMs ?? DEFAULT_DURATION_MS[toast.kind]);
     return id;
   },
 
-  dismiss: (id) => set((prev) => ({ toasts: prev.toasts.filter(t => t.id !== id) })),
+  dismiss: (id) => {
+    const t = timers.get(id);
+    if (t) {
+      clearTimeout(t);
+      timers.delete(id);
+    }
+    set((prev) => ({ toasts: prev.toasts.filter(to => to.id !== id) }));
+  },
 
   clear: () => set({ toasts: [] }),
 }));

@@ -49,6 +49,9 @@
   body {
     @apply bg-broadcast-dark text-white font-body min-h-screen;
     background: linear-gradient(180deg, #0a0f14 0%, #0d151c 50%, #0a0f14 100%);
+    overscroll-behavior-y: contain;
+    touch-action: manipulation;
+    -webkit-tap-highlight-color: transparent;
   }
 
   ::selection {

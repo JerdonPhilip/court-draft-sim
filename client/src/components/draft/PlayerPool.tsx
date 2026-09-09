@@ -78,10 +78,12 @@ function clearDragGhost(): void {
 export function PlayerPool({ pool, draftedPlayerIds, draftedPersonKeys, onDraftPlayer, onDragStartPlayer, onDragEndPlayer, emptyPositions, lineupSlots, selectedSlotPosition }: PlayerPoolProps) {
   const [posFilter, setPosFilter] = useState<Position | 'ALL'>('ALL');
   const [sortKey, setSortKey] = useState<SortKey>('overall');
+  const [showUnavailable, setShowUnavailable] = useState(false);
 
   // New pool = fresh filter; keep the chosen sort.
   useEffect(() => {
     setPosFilter('ALL');
+    setShowUnavailable(false);
   }, [pool?.franchise, pool?.decade]);
 
   const availablePlayers = useMemo(
@@ -109,12 +111,19 @@ export function PlayerPool({ pool, draftedPlayerIds, draftedPersonKeys, onDraftP
     }
   }, [availablePlayers, posFilter, sortKey]);
 
+  const displayPlayers = useMemo(() => {
+    if (showUnavailable) return visiblePlayers;
+    return visiblePlayers.filter(p => fittingEmptySlots(p, lineupSlots).length > 0);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [visiblePlayers, lineupSlots, showUnavailable]);
+
   if (!pool) return null;
 
   const franchiseName = FRANCHISES.find(f => f.id === pool.franchise)?.name ?? pool.franchise;
   const decadeLabel = DECADES.find(d => d.id === pool.decade)?.label ?? pool.decade;
 
   const draftableCount = availablePlayers.filter(p => fittingEmptySlots(p, lineupSlots).length > 0).length;
+  const hiddenCount = visiblePlayers.length - displayPlayers.length;
   const isFiltered = posFilter !== 'ALL';
 
   return (
@@ -127,10 +136,10 @@ export function PlayerPool({ pool, draftedPlayerIds, draftedPersonKeys, onDraftP
         transition={{ duration: 0.3 }}
         className="space-y-4"
       >
-        <div className="flex items-center justify-between mb-4">
-          <h2 className="section-title font-display text-lg">AVAILABLE PLAYERS • {franchiseName} • {decadeLabel}</h2>
-          <div className="flex items-center gap-2 text-sm text-broadcast-text-secondary" aria-live="polite">
-            <span className="px-2 py-1 bg-broadcast-accent/20 text-broadcast-accent rounded border border-broadcast-accent/30">
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+          <h2 className="section-title min-w-0 flex-1 truncate font-display text-base sm:text-lg">AVAILABLE PLAYERS • {franchiseName} • {decadeLabel}</h2>
+          <div className="flex shrink-0 items-center gap-2 text-sm text-broadcast-text-secondary" aria-live="polite">
+            <span className="rounded border border-broadcast-accent/30 bg-broadcast-accent/20 px-2 py-1 text-xs font-bold text-broadcast-accent">
               {draftableCount}/{availablePlayers.length} DRAFTABLE
             </span>
           </div>
@@ -166,10 +175,20 @@ export function PlayerPool({ pool, draftedPlayerIds, draftedPersonKeys, onDraftP
               {pos}
             </button>
           ))}
+          {hiddenCount > 0 && (
+            <button
+              type="button"
+              onClick={() => setShowUnavailable(v => !v)}
+              aria-pressed={showUnavailable}
+              className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs font-bold text-broadcast-text-secondary transition-colors hover:border-broadcast-accent/30 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-broadcast-accent"
+            >
+              {showUnavailable ? 'HIDE UNFIT' : `SHOW ALL (${hiddenCount} UNFIT)`}
+            </button>
+          )}
           <div className="ml-auto flex items-center gap-2">
-            {isFiltered && (
+            {(isFiltered || hiddenCount > 0) && (
               <span className="text-xs text-broadcast-text-muted" aria-live="polite">
-                {visiblePlayers.length} of {availablePlayers.length}
+                {displayPlayers.length} of {availablePlayers.length}
               </span>
             )}
             <label htmlFor="pool-sort" className="sr-only">Sort players</label>
@@ -186,8 +205,8 @@ export function PlayerPool({ pool, draftedPlayerIds, draftedPersonKeys, onDraftP
           </div>
         </div>
 
-        <div className="grid grid-cols-1 items-stretch gap-4 sm:grid-cols-2 [grid-auto-rows:1fr] 2xl:grid-cols-3" role="list">
-          {visiblePlayers.map((player: Player, index: number) => {
+        <div className="grid grid-cols-2 items-stretch gap-2 sm:gap-4 [grid-auto-rows:1fr] 2xl:grid-cols-3" role="list">
+          {displayPlayers.map((player: Player, index: number) => {
             const fits = fittingEmptySlots(player, lineupSlots);
             const isDraftable = fits.length > 0;
             const isFlex = (player.secondaryPositions?.length ?? 0) > 0;
@@ -253,9 +272,9 @@ export function PlayerPool({ pool, draftedPlayerIds, draftedPersonKeys, onDraftP
                   style={{ backgroundImage: `linear-gradient(90deg, transparent, ${posColor}, transparent)` }}
                   aria-hidden="true"
                 />
-                <div className="flex items-center gap-3 px-5 pt-3">
+                <div className="flex items-center gap-2 px-3 pt-2.5 sm:gap-3 sm:px-5 sm:pt-3">
                   <span
-                    className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg font-display text-sm font-bold ring-1 ring-white/25 [box-shadow:inset_0_2px_8px_rgb(0,0,0,0.35)]"
+                    className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg font-display text-xs font-bold ring-1 ring-white/25 [box-shadow:inset_0_2px_8px_rgb(0,0,0,0.35)] sm:h-9 sm:w-9 sm:text-sm"
                     style={{ backgroundColor: posColor, color: bestTextOn(posColor) }}
                     aria-hidden="true"
                     title={`Plays ${getPlayerPositions(player).join(' / ')}`}
@@ -263,16 +282,35 @@ export function PlayerPool({ pool, draftedPlayerIds, draftedPersonKeys, onDraftP
                     {player.position}
                   </span>
                   <div className="min-w-0 flex-1 overflow-hidden leading-tight" title={player.name}>
-                    <div className="truncate text-[11px] font-semibold uppercase tracking-[0.16em] text-broadcast-text-secondary">{splitPlayerName(player.name).first}</div>
+                    <div className="truncate text-[10px] font-semibold uppercase tracking-[0.16em] text-broadcast-text-secondary sm:text-[11px]">{splitPlayerName(player.name).first}</div>
                     <span className="whitespace-nowrap font-display font-bold leading-tight text-white" style={{ fontSize: fitNameSize(splitPlayerName(player.name).last || player.name) }}>{splitPlayerName(player.name).last || splitPlayerName(player.name).first}</span>
                   </div>
-                  <span className="shrink-0 whitespace-nowrap font-display text-2xl font-bold leading-none text-broadcast-accent" title={`Overall rating ${player.overall}`}>
+                  <span className="shrink-0 whitespace-nowrap font-display text-xl font-bold leading-none text-broadcast-accent sm:text-2xl" title={`Overall rating ${player.overall}`}>
                     {player.overall}
-                    <span className="ml-1 align-middle text-[11px] font-semibold uppercase tracking-[0.18em] text-broadcast-text-muted">OVR</span>
+                    <span className="ml-1 hidden align-middle text-[11px] font-semibold uppercase tracking-[0.18em] text-broadcast-text-muted sm:inline">OVR</span>
                   </span>
                 </div>
 
-                <div className="space-y-1.5 px-5 pb-1.5 pt-2">
+                {/* Compact one-liner for phones — full meta + 5-stat grid stay on sm+. */}
+                <div className="px-3 pb-2.5 pt-1.5 sm:hidden">
+                  <p className="truncate text-xs text-broadcast-text-secondary">
+                    <span className="font-bold text-broadcast-accent">{getPlayerPositions(player).join('/')}</span>
+                    <span aria-hidden="true"> • </span>
+                    <span className="font-medium text-broadcast-gold">{player.stats.pts} PTS</span>
+                    <span aria-hidden="true"> • </span>
+                    <span>{player.stats.reb} REB</span>
+                    <span aria-hidden="true"> • </span>
+                    <span>{player.stats.ast} AST</span>
+                    {isFlex && <span className="font-bold text-broadcast-gold"> • FLEX</span>}
+                  </p>
+                  {selectedSlotPosition && (
+                    <p className={`mt-1 text-[11px] font-bold uppercase tracking-wider ${fitsSelected ? 'text-broadcast-gold' : 'text-broadcast-red'}`}>
+                      {fitsSelected ? `Fits ${selectedSlotPosition} — tap to draft` : `Not for ${selectedSlotPosition}`}
+                    </p>
+                  )}
+                </div>
+
+                <div className="hidden space-y-1.5 px-5 pb-1.5 pt-2 sm:block">
                   <p className="text-sm leading-relaxed text-broadcast-text-secondary">
                     <span className="font-bold text-broadcast-accent">{getPlayerPositions(player).join(' / ')}</span>
                     <span aria-hidden="true"> • </span>
@@ -291,7 +329,7 @@ export function PlayerPool({ pool, draftedPlayerIds, draftedPersonKeys, onDraftP
                   </p>
                 </div>
 
-                <div className="mt-auto grid grid-cols-5 gap-2 border-t border-white/5 bg-black/20 px-5 pb-3 pt-2.5">
+                <div className="mt-auto hidden grid-cols-5 gap-2 border-t border-white/5 bg-black/20 px-5 pb-3 pt-2.5 sm:grid">
                   <StatMini label="PTS" value={player.stats.pts} color="text-broadcast-accent" />
                   <StatMini label="REB" value={player.stats.reb} color="text-broadcast-gold" />
                   <StatMini label="AST" value={player.stats.ast} color="text-broadcast-blue" />

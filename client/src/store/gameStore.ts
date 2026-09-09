@@ -351,7 +351,9 @@ export const useGameStore = create<GameStore>()(
             minutes: draftState.minutes ? { ...draftState.minutes, [player.id]: 0 } : draftState.minutes ?? null,
           },
         });
-        notify.success(`${player.name} locks in ${slot.role === 'bench' ? 'backup' : 'starter'} ${slot.position}.`);
+        // No success toast on draft picks — the sticky pick bar + lineup update
+        // already confirm the pick inline. Toasts are reserved for errors/warnings
+        // so they never cover the next pick or CTA on mobile.
 
         // Auto-spin the next pool so the user is never dead-ended.
         if (filledCount < draftState.maxRounds) {
