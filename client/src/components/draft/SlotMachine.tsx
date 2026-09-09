@@ -159,7 +159,7 @@ export function SlotMachine({
                 })}
               </div>
             ) : decadeInfo ? (
-              <div className="flex h-11 items-center gap-2 px-2.5" title={`${decadeInfo.label} — ${decadeInfo.era}`}>
+              <div className="flex h-11 items-center gap-2 px-2.5" title={`${decadeInfo.label} (${decadeInfo.era})`}>
                 <span className="flex h-7 shrink-0 items-center justify-center rounded-lg border border-broadcast-gold/30 bg-broadcast-gold/15 px-1.5 text-[11px] font-bold text-broadcast-gold" aria-hidden="true">
                   {decadeInfo.label}
                 </span>
@@ -188,7 +188,7 @@ export function SlotMachine({
         <button
           onClick={onSpin}
           disabled={isSpinning || (!!pool && spinsLeft <= 0)}
-          title={spinsLeft > 0 ? `Redraw this pool (${spinsLeft} manual spins left)` : 'No manual spins left — draft from this pool or use a reroll'}
+          title={spinsLeft > 0 ? `Redraw this pool (${spinsLeft} manual spins left)` : 'No manual spins left. Draft from this pool or use a reroll'}
           aria-label={spinsLeft > 0 ? `Spin for a new pool (${spinsLeft} left)` : 'No spins left'}
           className="btn-primary shrink-0 gap-1.5 px-4 py-2 text-sm"
         >
@@ -223,7 +223,7 @@ function RerollLink({ label, ariaLabel, hint, rerollsLeft, disabled, onReroll }:
       onClick={onReroll}
       disabled={exhausted || disabled}
       title={hint}
-      aria-label={exhausted ? `${ariaLabel} — no rerolls left` : `${ariaLabel} — ${hint} (${rerollsLeft} left)`}
+      aria-label={exhausted ? `${ariaLabel}, no rerolls left` : `${ariaLabel}: ${hint} (${rerollsLeft} left)`}
       className={cn(
         'flex items-center justify-center gap-1.5 rounded-md py-1 text-xs font-bold uppercase tracking-[0.14em] transition-colors',
         'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-broadcast-accent',

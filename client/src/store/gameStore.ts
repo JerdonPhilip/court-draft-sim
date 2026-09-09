@@ -191,7 +191,7 @@ export const useGameStore = create<GameStore>()(
         const hadPool = !!draftState.pool;
         const consuming = consumeManualSpin && hadPool;
         if (consuming && draftState.spinsLeft <= 0) {
-          const msg = 'No spins left — draft from this pool or use a reroll.';
+          const msg = 'No spins left. Draft from this pool or use a reroll.';
           set({ draftState: { ...draftState, error: msg } });
           notify.warning(msg);
           return;
@@ -322,7 +322,7 @@ export const useGameStore = create<GameStore>()(
         }
         if (!canPlayPosition(player, slot.position)) {
           const plays = [player.position, ...(player.secondaryPositions ?? [])].join('/');
-          const msg = `Player not suitable for the position — ${player.name} plays ${plays}, not ${slot.position}.`;
+          const msg = `Player not suitable for the position. ${player.name} plays ${plays}, not ${slot.position}.`;
           set({ draftState: { ...draftState, error: msg } });
           notify.error(msg);
           return;
@@ -467,7 +467,7 @@ export const useGameStore = create<GameStore>()(
             newSlots[landsOn] = { ...newSlots[landsOn]!, isSixthMan: true };
           } else {
             sixthExplicit = false;
-            notify.warning('Sixth Man moved to the starters — pick a new bench Sixth Man.');
+            notify.warning('Sixth Man moved to the starters. Pick a new bench Sixth Man.');
           }
         }
         set({
@@ -505,7 +505,7 @@ export const useGameStore = create<GameStore>()(
           return false;
         }
         if (!isMinutesValid(slots, draftState.minutes)) {
-          const msg = `Minutes must total 240 (now ${Math.round(minutesSum(draftState.minutes))}) — adjust below or hit Rebalance.`;
+          const msg = `Minutes must total 240 (now ${Math.round(minutesSum(draftState.minutes))}). Adjust below or hit Rebalance.`;
           set({ draftState: { ...draftState, error: msg } });
           notify.warning(msg);
           return false;
@@ -513,7 +513,7 @@ export const useGameStore = create<GameStore>()(
         set({
           draftState: { ...draftState, rotationConfirmed: true, error: null },
         });
-        notify.success('Rotation confirmed — simulation unlocked.');
+        notify.success('Rotation confirmed. Simulation unlocked.');
         return true;
       },
 
@@ -557,7 +557,7 @@ export const useGameStore = create<GameStore>()(
           // 8-man rotation: starters 36, Sixth 26, next two bench 17, two DNP cover.
           const sixthId = slots.find(s => s.isSixthMan && s.player)?.player?.id ?? null;
           if (!sixthId) {
-            notify.warning('Pick a Sixth Man first — falling back to default minutes.');
+            notify.warning('Pick a Sixth Man first. Falling back to default minutes.');
             next = buildDefaultMinutes(slots);
           } else {
             next = {};
@@ -584,7 +584,7 @@ export const useGameStore = create<GameStore>()(
             error: null,
           },
         });
-        notify.success(`Minutes preset applied (${preset}) — total ${Math.round(minutesSum(next))}/240.`);
+        notify.success(`Minutes preset applied (${preset}). Total ${Math.round(minutesSum(next))}/240.`);
       },
 
       resetMinutesToDefault: () => {

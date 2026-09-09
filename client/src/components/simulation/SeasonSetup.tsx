@@ -130,7 +130,7 @@ export function SeasonSetup({ onBack }: SeasonSetupProps) {
             <div>
               <h2 className="font-display text-lg font-bold text-white">CONFIRM YOUR ROTATION</h2>
               <p className="text-xs text-broadcast-text-secondary">
-                Review your Sixth Man + 1st/2nd/3rd options — simulation stays locked until you confirm.
+                Review your Sixth Man + 1st/2nd/3rd options. Simulation stays locked until you confirm.
                 {(sixthAuto || optionAuto(1) || optionAuto(2) || optionAuto(3)) && (
                   <> <span className="font-bold text-broadcast-gold">AUTO</span> = filled in for you; change it below.</>
                 )}
@@ -216,10 +216,10 @@ export function SeasonSetup({ onBack }: SeasonSetupProps) {
               {confirmed ? 'ROTATION CONFIRMED ✓' : 'CONFIRM ROTATION'}
             </button>
             {!confirmed && (
-              <span className="text-xs text-broadcast-text-muted">Any change up top resets confirmation — re-confirm before simulating.</span>
+              <span className="text-xs text-broadcast-text-muted">Any change up top resets confirmation, so re-confirm before simulating.</span>
             )}
           </div>
-          <p className="mt-2 text-[11px] text-broadcast-text-muted">Need a starter ↔ bench swap? Head back to the draft — swaps are position-validated there.</p>
+          <p className="mt-2 text-[11px] text-broadcast-text-muted">Need a starter ↔ bench swap? Head back to the draft. Swaps only go through when the positions fit.</p>
         </div>
 
         <div className="mb-5 rounded-2xl border border-white/10 bg-broadcast-card/90 p-4" aria-label="Minutes plan">
@@ -229,12 +229,12 @@ export function SeasonSetup({ onBack }: SeasonSetupProps) {
                 MINUTES PLAN{minutesAuto && <span className="ml-2 rounded-full border border-broadcast-gold/50 bg-broadcast-gold/15 px-1.5 py-px text-[10px] font-bold text-broadcast-gold">AUTO</span>}
               </h2>
               <p className="text-xs text-broadcast-text-secondary">
-                Minutes move win% — short rotations ride stars (with overuse drag past 32), deep rotations stay fresh.
+                Minutes move win%. Ride your stars with a short rotation or stay fresh with a deep one (playing over 32 a night wears players down).
                 6 fouls = ejected; <span className="font-bold text-white">0 MIN</span> players only enter as emergency foul cover (must fit the slot).
               </p>
             </div>
             <span className={cn('rounded-full border px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider', minutesValid ? 'border-broadcast-accent/50 bg-broadcast-accent/15 text-broadcast-accent' : 'border-broadcast-red/50 bg-broadcast-red/15 text-broadcast-red')}>
-              {minutesTotal}/240{minutesValid ? '' : ' — FIX TO CONFIRM'}
+              {minutesTotal}/240{minutesValid ? '' : ' · FIX TO CONFIRM'}
             </span>
           </div>
 
@@ -298,7 +298,7 @@ export function SeasonSetup({ onBack }: SeasonSetupProps) {
                         <span className="ml-1.5 rounded-full border border-broadcast-gold/50 bg-broadcast-gold/15 px-1.5 py-px text-[10px] font-bold text-broadcast-gold">6TH</span>
                       )}
                       <span
-                        title={risk === 'High' ? 'High foul risk — gambler profile, handcuffed late in close games' : risk === 'Low' ? 'Low foul risk — clean defender' : 'Average foul risk'}
+                        title={risk === 'High' ? 'High foul risk: gambler profile, plays it safe late in close games' : risk === 'Low' ? 'Low foul risk: clean defender' : 'Average foul risk'}
                         className={cn(
                           'ml-1.5 rounded-full border px-1.5 py-px text-[10px] font-bold',
                           risk === 'High'
@@ -339,7 +339,7 @@ export function SeasonSetup({ onBack }: SeasonSetupProps) {
           </div>
           {!minutesValid && (
             <p className="mt-2 text-xs font-medium text-broadcast-red" role="alert">
-              Total is {minutesTotal}/240 — confirm stays locked until it hits 240 (Rebalance fixes it instantly; DNP zeros are kept).
+              Total is {minutesTotal}/240. Confirm stays locked until it hits 240 (Rebalance fixes it instantly; DNP zeros are kept).
             </p>
           )}
         </div>
@@ -388,7 +388,7 @@ export function SeasonSetup({ onBack }: SeasonSetupProps) {
           </motion.button>
         </div>
         <p className="mt-3 text-center text-xs text-broadcast-text-muted">
-          Era leagues run softer or tougher than average — projections adjust to the league you pick.
+          Era leagues run softer or tougher than average. Projections adjust to the league you pick.
         </p>
         <p className="mt-1 text-center text-[11px] text-broadcast-text-muted/70">
           COURT DRAFT SIM v{APP_VERSION}

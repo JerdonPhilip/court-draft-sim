@@ -218,7 +218,7 @@ function Slot({ slot, index, isSelected, draggedPlayer, sixthManAuto, optionAuto
                     onClick={() => onSetSixthMan(index)}
                     disabled={slot.isSixthMan}
                     aria-pressed={!!slot.isSixthMan}
-                    title={slot.isSixthMan ? 'Your Sixth Man — first off the bench' : 'Make Sixth Man — first off the bench'}
+                    title={slot.isSixthMan ? 'Your Sixth Man. First off the bench.' : 'Make Sixth Man. First off the bench.'}
                     className={cn(
                       'rounded-lg border px-2.5 py-1 text-[11px] font-bold tracking-wide transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-broadcast-gold',
                       slot.isSixthMan
@@ -250,7 +250,7 @@ function Slot({ slot, index, isSelected, draggedPlayer, sixthManAuto, optionAuto
                 </div>
               </div>
               {swapMode && isSwapPick && (
-                <p className="mt-1.5 text-[11px] font-medium text-broadcast-gold">Pick another highlighted row to swap — positions must fit both slots.</p>
+                <p className="mt-1.5 text-[11px] font-medium text-broadcast-gold">Pick another highlighted row to swap. Positions must fit both slots.</p>
               )}
             </div>
           </motion.div>
@@ -356,7 +356,7 @@ export function LineupBuilder({ lineup, selectedSlot, draggedPlayer, sixthManExp
       )}
       {swapMode && (
         <div className="flex items-center justify-between gap-3 rounded-xl border border-broadcast-gold/40 bg-broadcast-gold/10 px-3 py-2">
-          <span className="text-xs font-bold text-broadcast-gold">SWAP — pick a highlighted row.</span>
+          <span className="text-xs font-bold text-broadcast-gold">SWAP: pick a highlighted row.</span>
           <button
             type="button"
             onClick={() => setSwapPick(null)}

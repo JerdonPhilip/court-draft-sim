@@ -9,7 +9,6 @@ import {
   ChevronRight,
   Flame,
   ListOrdered,
-  RefreshCw,
   Search,
   Shield,
   Sparkles,
@@ -21,7 +20,7 @@ import {
   X,
 } from 'lucide-react';
 import { cn } from '../../utils/helpers';
-import { formatTeamName, otLabel, defaultMinutesForOrdered } from '../../utils/helpers';
+import { formatTeamName, getPositionColor, otLabel, defaultMinutesForOrdered } from '../../utils/helpers';
 import { useLockBodyScroll } from '../../utils/useLockBodyScroll';
 import { api } from '../../utils/api';
 import { notify } from '../../store/toastStore';
@@ -305,7 +304,7 @@ export function SimulationDashboard({ result, onNewDraft, onVSMode }: Simulation
         </div>
       </div>
 
-      <main className="max-w-7xl mx-auto px-4 py-4 pb-8">
+      <main className={cn('max-w-7xl mx-auto px-4', view === 'overview' ? 'py-3 pb-4 lg:h-[calc(100dvh-132px)] lg:min-h-[360px] lg:overflow-hidden' : 'py-4 pb-8')}>
         <motion.div key={view} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.15 }}>
           {view === 'overview' && (
             <OverviewView result={result} streak={streak} isUndefeated={isUndefeated} isChampionship={isChampionship} totalGames={totalGames} />
@@ -328,10 +327,6 @@ export function SimulationDashboard({ result, onNewDraft, onVSMode }: Simulation
               setHasStarted={setPlayoffsStarted}
               seriesGames={playoffSeriesGames}
               onSeriesGames={handleSeriesGamesUpdate}
-              onResetBracket={() => {
-                setPlayoffSeriesGames({});
-                setAdvancement(null);
-              }}
             />
           </div>
         </motion.div>
@@ -378,12 +373,12 @@ export function SimulationDashboard({ result, onNewDraft, onVSMode }: Simulation
         )}
 
         {view === 'overview' && (
-          <div className="mt-5 flex flex-wrap items-center justify-center gap-3">
-            <button onClick={onVSMode} className="btn-gold px-6 py-2.5 text-base gap-2">
-              <Trophy className="w-5 h-5" aria-hidden="true" />
+          <div className="mt-4 flex flex-wrap items-center justify-center gap-3">
+            <button onClick={onVSMode} className="btn-gold px-5 py-2 text-sm gap-2">
+              <Trophy className="w-4 h-4" aria-hidden="true" />
               VS MODE: CHALLENGE A LEGEND
             </button>
-            <button onClick={onNewDraft} className="btn-secondary px-6 py-2.5 text-base">
+            <button onClick={onNewDraft} className="btn-secondary px-5 py-2 text-sm">
               NEW DRAFT
             </button>
           </div>
@@ -451,7 +446,7 @@ function SeriesAdvancementModal({ info, onClose }: { info: AdvancementInfo | nul
           {' '}vs <strong className="text-white" title={info.nextOpponent}>{teamAbbreviation(info.nextOpponent)}</strong>
         </>
       ) : (
-        <> — opponent still to be decided.</>
+        <>Your next opponent is still to be decided.</>
       )}
     </>
   ) : (
@@ -518,8 +513,8 @@ function OverviewView({
   ];
 
   return (
-    <div className="space-y-4">
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+    <div className="grid gap-3 lg:grid-cols-5">
+      <div className="grid grid-cols-3 gap-2.5 lg:col-span-2 lg:grid-cols-1 lg:gap-2">
         <StatCard
           label="FINAL RECORD"
           value={`${result.wins}-${result.losses}`}
@@ -537,30 +532,20 @@ function OverviewView({
         />
       </div>
 
-      <div className="card-elevated p-4">
-        <h3 className="section-title font-display text-xl mb-3">TEAM STATS</h3>
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+      <div className="card-elevated p-3 lg:col-span-3">
+        <h3 className="section-title font-display text-lg mb-2">TEAM STATS</h3>
+        <div className="grid grid-cols-4 gap-2">
           <TeamMetric label="OFF RTG" value={(teamStats?.offensiveRating ?? 0).toFixed(1)} color="#00d4aa" />
           <TeamMetric label="DEF RTG" value={(teamStats?.defensiveRating ?? 0).toFixed(1)} color="#ff3b30" />
           <TeamMetric label="NET RTG" value={(teamStats?.netRating ?? 0).toFixed(1)} color="#ffd700" />
           <TeamMetric label="PACE" value={(teamStats?.pace ?? 0).toFixed(1)} color="#007aff" />
         </div>
-        <div className="mt-2.5 grid grid-cols-3 sm:grid-cols-5 gap-2.5">
+        <div className="mt-2 grid grid-cols-5 gap-2">
           {avgMetrics.map((m) => (
             <TeamMetric key={m.label} label={m.label} value={m.value.toFixed(1)} color={m.color} />
           ))}
         </div>
       </div>
-
-      {isUndefeated && (
-        <div className="relative p-8 bg-gradient-to-br from-broadcast-gold/10 to-broadcast-accent/10 border-2 border-broadcast-gold/50 rounded-2xl text-center overflow-hidden">
-          <div className="relative z-10">
-            <div className="text-6xl font-display font-bold gradient-text mb-4">{result.wins} - 0</div>
-            <p className="text-broadcast-text-secondary text-lg mb-4">PERFECT SEASON ACHIEVED</p>
-            <p className="text-broadcast-text-muted">You&apos;ve joined the immortals. The only team to ever go undefeated.</p>
-          </div>
-        </div>
-      )}
     </div>
   );
 }
@@ -623,7 +608,7 @@ function GamesView({ result, onSelectGame }: { result: SimulationResult; onSelec
   return (
     <div className="space-y-2">
       <p className="text-xs text-broadcast-text-muted px-1">
-        82-game schedule is shuffled every season — opponents and home/away are drawn fresh, so no team is ever locked to game #82.
+        Fresh 82-game schedule every season. Opponents and home/away splits are redrawn, so no matchup is ever locked to game 82.
       </p>
       {reversed.map((game) => (
         <GameRow key={game.gameNumber} game={game} onSelect={onSelectGame} />
@@ -644,9 +629,11 @@ interface RosterBadge {
 function RosterTable({
   groups,
   badgeFor,
+  hideGroupLabels,
 }: {
   groups: Array<{ label: string; rows: SimulatedPlayerStats[] }>;
   badgeFor: (playerId: string) => RosterBadge[];
+  hideGroupLabels?: boolean;
 }) {
   const statKeys = Object.keys(STAT_LABELS) as Array<keyof PlayerStats>;
   const total = groups.reduce((t, g) => t + g.rows.length, 0);
@@ -668,11 +655,13 @@ function RosterTable({
           {groups.map((group) => (
             group.rows.length > 0 && (
               <tbody key={group.label}>
-                <tr>
-                  <td colSpan={statKeys.length + 2} className="bg-white/[0.02] px-4 py-1.5 text-[10px] font-bold uppercase tracking-[0.18em] text-broadcast-text-muted">
-                    {group.label} • {total > 0 ? group.rows.length : 0}
-                  </td>
-                </tr>
+                {!hideGroupLabels && (
+                  <tr>
+                    <td colSpan={statKeys.length + 2} className="bg-white/[0.02] px-4 py-1.5 text-[10px] font-bold uppercase tracking-[0.18em] text-broadcast-text-muted">
+                      {group.label} • {total > 0 ? group.rows.length : 0}
+                    </td>
+                  </tr>
+                )}
                 {group.rows.map((player) => (
                   <tr key={player.playerId} className="border-t border-white/5 transition-colors hover:bg-white/[0.03]">
                     <td className="px-4 py-2.5">
@@ -725,18 +714,84 @@ function PlayersView({ result }: { result: SimulationResult }) {
     else if (opts?.third === playerId) badges.push({ label: '3RD', className: 'border-broadcast-purple/50 bg-broadcast-purple/15 text-broadcast-purple' });
     return badges;
   };
+  type SortKey = 'pts' | 'reb' | 'ast' | 'stl' | 'blk' | 'pf' | 'mpg';
+  const SORT_BUTTONS: Array<{ key: SortKey; label: string; unit: string; long: string }> = [
+    { key: 'pts', label: 'POINTS', unit: 'PPG', long: 'points' },
+    { key: 'reb', label: 'REBOUNDS', unit: 'RPG', long: 'rebounds' },
+    { key: 'ast', label: 'ASSISTS', unit: 'APG', long: 'assists' },
+    { key: 'stl', label: 'STEALS', unit: 'SPG', long: 'steals' },
+    { key: 'blk', label: 'BLOCKS', unit: 'BPG', long: 'blocks' },
+    { key: 'pf', label: 'FOULS', unit: 'PF', long: 'fouls' },
+    { key: 'mpg', label: 'MPG', unit: 'MPG', long: 'minutes' },
+  ];
+  const [sortKey, setSortKey] = useState<SortKey>('pts');
+  const valueOf = (p: SimulatedPlayerStats, key: SortKey): number =>
+    key === 'mpg' ? (p.minutesPerGame ?? 0) : p.averages[key];
+  const sorted = useMemo(() => {
+    return result.playerStats.slice().sort((a, b) => {
+      const diff = valueOf(b, sortKey) - valueOf(a, sortKey);
+      if (diff !== 0) return diff;
+      const at = sortKey === 'mpg' ? (a.minutesPerGame ?? 0) : a.totals[sortKey];
+      const bt = sortKey === 'mpg' ? (b.minutesPerGame ?? 0) : b.totals[sortKey];
+      return bt - at;
+    });
+  }, [result.playerStats, sortKey]);
+  const leader = sorted[0] ?? null;
+  const leaderMeta = SORT_BUTTONS.find((b) => b.key === sortKey)!;
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between px-1">
         <h3 className="text-xs font-bold uppercase tracking-[0.18em] text-broadcast-text-secondary">Rotation</h3>
         <span className="text-xs text-broadcast-text-muted">{result.playerStats.length} players • {result.games.length} games</span>
       </div>
+      {leader && (
+        <div className="card-elevated flex items-center gap-4 p-4" aria-label={`Team leader in ${leaderMeta.long}: ${leader.playerName}`}>
+          <div
+            className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl font-display text-sm font-bold text-white ring-1 ring-white/25"
+            style={{ backgroundColor: getPositionColor(leader.position ?? '') }}
+            aria-hidden="true"
+          >
+            {leader.position ?? '•'}
+          </div>
+          <div className="min-w-0 flex-1">
+            <div className="text-[10px] font-bold uppercase tracking-[0.18em] text-broadcast-gold">Team leader · {leaderMeta.label}</div>
+            <div className="truncate font-display text-xl font-bold text-white" title={leader.playerName}>
+              {leader.playerName}
+            </div>
+            <div className="mt-0.5 text-xs text-broadcast-text-secondary">
+              Leads the team at {valueOf(leader, sortKey).toFixed(1)} {leaderMeta.long} per game
+              {sortKey !== 'mpg' && typeof leader.minutesPerGame === 'number' ? ` • ${leader.minutesPerGame.toFixed(1)} min` : ''}
+            </div>
+          </div>
+          <div className="shrink-0 text-right">
+            <div className="font-display text-4xl font-bold text-broadcast-accent">{valueOf(leader, sortKey).toFixed(1)}</div>
+            <div className="text-[10px] font-bold uppercase tracking-[0.18em] text-broadcast-text-muted">{leaderMeta.unit}</div>
+          </div>
+        </div>
+      )}
+      <div className="flex flex-wrap gap-1.5" role="tablist" aria-label="Sort rotation by stat">
+        {SORT_BUTTONS.map((b) => (
+          <button
+            key={b.key}
+            type="button"
+            role="tab"
+            aria-selected={sortKey === b.key}
+            onClick={() => setSortKey(b.key)}
+            className={cn(
+              'rounded-lg px-2.5 py-1 text-[11px] font-bold uppercase tracking-wider transition-colors',
+              sortKey === b.key
+                ? 'bg-broadcast-accent text-broadcast-dark'
+                : 'border border-broadcast-border bg-broadcast-card text-broadcast-text-secondary hover:text-white',
+            )}
+          >
+            {b.label}
+          </button>
+        ))}
+      </div>
       <RosterTable
-        groups={[
-          { label: 'Starters', rows: result.playerStats.slice(0, 5) },
-          { label: 'Bench', rows: result.playerStats.slice(5, 10) },
-        ]}
+        groups={[{ label: 'Rotation', rows: sorted }]}
         badgeFor={badgeFor}
+        hideGroupLabels
       />
     </div>
   );
@@ -765,11 +820,28 @@ function TeamsView({ result }: { result: SimulationResult }) {
   const [selected, setSelected] = useState<string | null>(null);
   const active = teams.find((t) => t.name === selected) ?? teams[0] ?? null;
   const activeIndex = active ? teams.findIndex((t) => t.name === active.name) : -1;
-  const goTeam = (dir: 1 | -1) => {
+  const goTeam = useCallback((dir: 1 | -1) => {
     if (teams.length === 0) return;
-    const next = ((activeIndex < 0 ? 0 : activeIndex) + dir + teams.length) % teams.length;
+    const current = activeIndex < 0 ? 0 : activeIndex;
+    const next = (current + dir + teams.length) % teams.length;
     setSelected(teams[next]!.name);
-  };
+  }, [teams, activeIndex]);
+  // Flip through teams with [ and ] (skipped while typing in a field).
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement | null;
+      if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.tagName === 'SELECT' || target.isContentEditable)) return;
+      if (e.key === '[') {
+        e.preventDefault();
+        goTeam(-1);
+      } else if (e.key === ']') {
+        e.preventDefault();
+        goTeam(1);
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [goTeam]);
   const roster = useMemo(() => {
     if (!active) return [];
     const norm = normalizeTeamName(active.name);
@@ -804,6 +876,9 @@ function TeamsView({ result }: { result: SimulationResult }) {
               </>
             ) : null}
             <span className="tabular-nums">{teams.length > 0 ? `${activeIndex + 1}/${teams.length}` : '0/0'}</span>
+            {teams.length > 1 && (
+              <span className="ml-2 hidden sm:inline" aria-hidden="true">[ ] to switch</span>
+            )}
           </div>
         </div>
         <button
@@ -1045,7 +1120,6 @@ function PlayoffsView({
   setHasStarted,
   seriesGames,
   onSeriesGames,
-  onResetBracket,
 }: {
   result: SimulationResult;
   onOpen: (home: string, away: string, userTeamName: string, seriesKey: string, onComplete: (winner: string, games?: PlayoffGameResult[]) => void) => void;
@@ -1056,7 +1130,6 @@ function PlayoffsView({
   setHasStarted: React.Dispatch<React.SetStateAction<boolean>>;
   seriesGames: Record<string, PlayoffGameResult[]>;
   onSeriesGames: (seriesKey: string, games: PlayoffGameResult[]) => void;
-  onResetBracket: () => void;
 }) {
   const [backgroundSimulation, setBackgroundSimulation] = useState<{ seriesKey: string; game: number } | null>(null);
   const [pendingSeries, setPendingSeries] = useState<{ home: string; away: string; seriesKey: string } | null>(null);
@@ -1171,7 +1244,7 @@ function PlayoffsView({
   // NOTE: this must NOT cancel a running drain when `winners` changes; doing
   // so stalled the bracket after a single series. The loop reads live
   // `winnersRef` each iteration, so concurrent effect runs just return early.
-  // Abort happens only on RESET/unmount.
+  // Abort happens only on unmount.
   useEffect(() => {
     if (!hasStarted || drainingRef.current) return;
     drainingRef.current = true;
@@ -1273,7 +1346,7 @@ function PlayoffsView({
       winnersRef.current = { ...winnersRef.current, ...initial };
       setWinners((previous) => ({ ...previous, ...initial }));
     }
-    notify.success('Playoff simulation started — other series simulate automatically.');
+    notify.success('Playoffs are underway. The other series will take care of themselves.');
   }, [allSeriesKeys, participantsFor, setWinners]);
 
   const handleConfirmSeries = useCallback(() => {
@@ -1293,19 +1366,6 @@ function PlayoffsView({
       void runBackgroundPlayoffs();
     }
   }, [pendingSeries, onOpen, userTeamName, runBackgroundPlayoffs, setWinner, setHasStarted, onSeriesGames]);
-
-  const handleReset = useCallback(() => {
-    simulationAborted.current = true;
-    otherSeriesStarted.current = false;
-    drainingRef.current = false;
-    drainRoundRef.current = -1;
-    winnersRef.current = {};
-    setWinners({});
-    setHasStarted(false);
-    setBackgroundSimulation(null);
-    setPendingSeries(null);
-    onResetBracket();
-  }, [setWinners, setHasStarted, onResetBracket]);
 
   // Your team can finish outside the top 16 — then no series is clickable and
   // the bracket would sit dead forever. Detect it and offer a full sim.
@@ -1346,7 +1406,7 @@ function PlayoffsView({
             if (reviewable) onReview(home, away, userTeamName, seriesKey);
             else setPendingSeries({ home, away, seriesKey });
           }}
-          title={`${home} vs ${away}${reviewable && alreadyDecided ? ` • ${savedGameCount} games saved — click to review` : ''}`}
+          title={`${home} vs ${away}${reviewable && alreadyDecided ? ` • ${savedGameCount} games saved. Click to review.` : ''}`}
           className={cn(
             'w-full rounded-lg border p-3 text-center transition-all min-h-[80px] flex flex-col justify-center',
             clickable
@@ -1355,9 +1415,9 @@ function PlayoffsView({
                 ? 'border-broadcast-accent/40 bg-broadcast-card'
                 : 'border-broadcast-border bg-broadcast-card opacity-70',
           )}
-          aria-label={`${teamAbbreviation(home)} vs ${teamAbbreviation(away)}${playClickable ? ' - Click to simulate' : ''}${
-            reviewable ? ` - Click to review ${savedGameCount} games` : ''
-          }${decidedWinner ? ` - Winner: ${teamAbbreviation(decidedWinner)}` : ''}`}
+          aria-label={`${teamAbbreviation(home)} vs ${teamAbbreviation(away)}${playClickable ? ', click to simulate' : ''}${
+            reviewable ? `, click to review ${savedGameCount} games` : ''
+          }${decidedWinner ? `, winner ${teamAbbreviation(decidedWinner)}` : ''}`}
         >
           <div className="space-y-1">
             <div className="truncate text-base font-bold tracking-wide text-white" title={home}>
@@ -1372,7 +1432,7 @@ function PlayoffsView({
           </div>
           {homeBye || awayBye ? (
             !winners[seriesKey] && byeWinner ? (
-              <div className="mt-2 text-xs font-bold text-broadcast-text-muted">BYE — ADVANCES</div>
+              <div className="mt-2 text-xs font-bold text-broadcast-text-muted">BYE ADVANCES</div>
             ) : null
           ) : null}
           {isSimulating && !alreadyDecided && (
@@ -1398,6 +1458,7 @@ function PlayoffsView({
 
   const eastChampion = winners['EAST-conference-final-0'] ?? 'East Champion';
   const westChampion = winners['WEST-conference-final-0'] ?? 'West Champion';
+  const [playoffSection, setPlayoffSection] = useState<'bracket' | 'stats'>('bracket');
 
   return (
     <div className="space-y-4">
@@ -1406,27 +1467,40 @@ function PlayoffsView({
           <h2 className="section-title">
             NBA PLAYOFFS <span className="text-broadcast-accent">• {result.era?.label ?? '2020s'}</span>
           </h2>
-          <p className="mt-1 text-xs text-broadcast-text-secondary">Best-of-seven series • simulate your team, review every playoff matchup</p>
+          <p className="mt-1 text-xs text-broadcast-text-secondary">Best of seven. Play your series, then check back on the rest.</p>
         </div>
-        {hasStarted && (
-          <button
-            onClick={handleReset}
-            className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-broadcast-card border border-broadcast-border text-broadcast-text-secondary hover:text-white hover:border-broadcast-accent/50 transition-colors text-xs font-bold"
-            aria-label="Reset playoff simulation"
-          >
-            <RefreshCw className="w-4 h-4" aria-hidden="true" />
-            RESET
-          </button>
-        )}
+        <div className="flex gap-1.5 rounded-xl border border-broadcast-border bg-broadcast-card p-1" role="tablist" aria-label="Playoff sections">
+          {(['bracket', 'stats'] as const).map((section) => (
+            <button
+              key={section}
+              type="button"
+              role="tab"
+              aria-selected={playoffSection === section}
+              onClick={() => setPlayoffSection(section)}
+              className={cn(
+                'rounded-lg px-3 py-1 text-xs font-bold uppercase tracking-wider transition-colors',
+                playoffSection === section
+                  ? 'bg-broadcast-accent text-broadcast-dark'
+                  : 'text-broadcast-text-secondary hover:text-white',
+              )}
+            >
+              {section === 'bracket' ? 'Bracket' : 'Player stats'}
+            </button>
+          ))}
+        </div>
       </div>
 
+      {playoffSection === 'stats' ? (
+        <PlayoffTeamStats result={result} />
+      ) : (
+        <>
       {!userInBracket && (
         <div className="rounded-xl border border-broadcast-gold/40 bg-broadcast-gold/10 p-4 text-center" role="status">
           <p className="text-sm font-bold text-broadcast-gold">
             YOUR TEAM MISSED THE PLAYOFFS{userRank > 0 ? ` (RANKED #${userRank})` : ''}
           </p>
           <p className="mt-1 text-xs text-broadcast-text-secondary">
-            Only the top 16 reach the bracket — but you can still crown a champion.
+            Only the top 16 make the bracket, but you can still crown a champion.
           </p>
           {!hasStarted && (
             <button onClick={handleSimulateAll} className="btn-gold mt-3 px-5 py-2 text-sm">
@@ -1502,8 +1576,8 @@ function PlayoffsView({
           </div>
         </div>
       </div>
-
-      {hasStarted && <PlayoffTeamStats result={result} />}
+        </>
+      )}
 
       {backgroundSimulation && (
         <div
@@ -1514,15 +1588,6 @@ function PlayoffsView({
           SIMULATING GAME {backgroundSimulation.game} • {backgroundSimulation.seriesKey.replace('-', ' ')}
         </div>
       )}
-
-      <p className="text-sm text-broadcast-text-muted">
-        Balanced 8v8 conferences (snake-seeded) •{' '}
-        {userInBracket ? (
-          <>Simulate your series to unlock the next round • click any finished series to review its games.</>
-        ) : (
-          <>Your team is out — every series simulates automatically once started • click any finished series to review.</>
-        )}
-      </p>
 
       {pendingSeries && (
         <div
@@ -1576,8 +1641,8 @@ function PlayoffTeamStats({ result }: { result: SimulationResult }) {
   return (
     <section className="card-elevated overflow-hidden">
       <div className="border-b border-broadcast-border p-4">
-        <h3 className="font-display text-sm font-bold tracking-wider text-broadcast-accent">OTHER PLAYOFF TEAMS — PLAYER STATS</h3>
-        <p className="mt-1 text-xs text-broadcast-text-muted">Read-only season production. Viewing these stats does not simulate their games.</p>
+        <h3 className="font-display text-sm font-bold tracking-wider text-broadcast-accent">PLAYER STATS BY TEAM</h3>
+        <p className="mt-1 text-xs text-broadcast-text-muted">Season numbers for scouting. Browsing them won&apos;t sim anything.</p>
       </div>
       <div className="max-h-[420px] overflow-auto">
         <table className="w-full min-w-[680px] text-xs">
@@ -1940,7 +2005,7 @@ function PlayoffsModal({
         )}
         {lineupIssue && (
           <p className="mt-2 text-center text-xs text-broadcast-red">
-            Playoff lineup incomplete for this save — start a new season to play the bracket.
+            Playoff lineup is incomplete on this save. Start a new season to play the bracket.
           </p>
         )}
 
@@ -2058,7 +2123,7 @@ const PlayoffGameSummary = memo(function PlayoffGameSummary({
             <th className="py-1.5 text-center font-semibold">Ast</th>
             <th className="py-1.5 text-center font-semibold">Stl</th>
             <th className="py-1.5 text-center font-semibold">Blk</th>
-            <th className="py-1.5 text-center font-semibold" title="Personal fouls (capped at 5 — never benches anyone)">PF</th>
+            <th className="py-1.5 text-center font-semibold" title="Personal fouls (6 means fouled out)">PF</th>
           </tr>
         </thead>
         <tbody>
@@ -2069,8 +2134,8 @@ const PlayoffGameSummary = memo(function PlayoffGameSummary({
                 <td className="whitespace-nowrap py-1.5 pr-2 text-left font-medium text-white">{player.name}</td>
                 <td className="py-1.5 text-center tabular-nums text-broadcast-text-secondary">{minutes[player.id] ?? 0}</td>
                 {(['pts', 'reb', 'ast', 'stl', 'blk', 'pf'] as const).map((stat) => (
-                  <td key={stat} className="py-1.5 text-center font-semibold tabular-nums text-white">
-                    {playerStats[stat] ?? 0}
+                  <td key={stat} className="py-1.5 text-center font-semibold tabular-nums text-white" title={stat === 'pf' && (playerStats[stat] ?? 0) >= 6 ? 'Fouled out (6th foul)' : undefined}>
+                    {playerStats[stat] ?? 0}{(stat === 'pf' && (playerStats[stat] ?? 0) >= 6) ? '*' : ''}
                   </td>
                 ))}
               </tr>
@@ -2410,6 +2475,22 @@ const SortHeader = memo(function SortHeader({
 function StandingsView({ result }: { result: SimulationResult }) {
   const standings = useMemo(() => result.standings ?? [], [result.standings]);
   const userRank = useMemo(() => standings.findIndex((s) => s.isUser) + 1, [standings]);
+  const [conf, setConf] = useState<'all' | 'east' | 'west'>('all');
+
+  // Conference split uses the same snake seeding as the playoff bracket, run
+  // over the full table so every team lands somewhere (top 16 match the bracket).
+  const { ordered, confOf } = useMemo(() => {
+    const ordered = standings.slice().sort((a, b) => b.wins - a.wins || b.pointDiff - a.pointDiff);
+    const confOf = new Map<string, 'east' | 'west'>();
+    ordered.forEach((t, i) => {
+      const pair = Math.floor(i / 2) % 2 === 0;
+      confOf.set(t.team, (i % 2 === 0) === pair ? 'east' : 'west');
+    });
+    return { ordered, confOf };
+  }, [standings]);
+  const visible = conf === 'all' ? ordered : ordered.filter((t) => confOf.get(t.team) === conf);
+  const eastCount = ordered.filter((t) => confOf.get(t.team) === 'east').length;
+  const westCount = ordered.length - eastCount;
 
   if (standings.length === 0) {
     return (
@@ -2422,16 +2503,36 @@ function StandingsView({ result }: { result: SimulationResult }) {
 
   return (
     <div className="space-y-3">
-      <p className="text-sm text-broadcast-text-muted px-1">
-        {standings.length} teams • 82 games each • every team&apos;s games vs you count, the rest are simulated against each other
-        {userRank > 0 && (
-          <>
-            {' '}
-            • your team is ranked <span className="font-bold text-broadcast-accent">#{userRank}</span>
-          </>
-        )}
-        .
-      </p>
+      <div className="flex flex-wrap items-center justify-between gap-2 px-1">
+        <p className="text-sm text-broadcast-text-muted">
+          {standings.length} teams, 82 games each. Games against you count as played, and the rest get simulated between CPU teams.
+          {userRank > 0 && (
+            <>
+              {' '}
+              You sit <span className="font-bold text-broadcast-accent">#{userRank}</span> overall.
+            </>
+          )}
+        </p>
+        <div className="flex gap-1.5 rounded-xl border border-broadcast-border bg-broadcast-card p-1" role="tablist" aria-label="Conference filter">
+          {(['all', 'east', 'west'] as const).map((c) => (
+            <button
+              key={c}
+              type="button"
+              role="tab"
+              aria-selected={conf === c}
+              onClick={() => setConf(c)}
+              className={cn(
+                'rounded-lg px-3 py-1 text-xs font-bold uppercase tracking-wider transition-colors',
+                conf === c
+                  ? 'bg-broadcast-accent text-broadcast-dark'
+                  : 'text-broadcast-text-secondary hover:text-white',
+              )}
+            >
+              {c === 'all' ? `All (${ordered.length})` : c === 'east' ? `East (${eastCount})` : `West (${westCount})`}
+            </button>
+          ))}
+        </div>
+      </div>
       <div className="card overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-sm min-w-[680px]">
@@ -2443,6 +2544,9 @@ function StandingsView({ result }: { result: SimulationResult }) {
                 </th>
                 <th scope="col" className="text-left py-2 px-2">
                   TEAM
+                </th>
+                <th scope="col" className="text-left py-2 px-2">
+                  CONF
                 </th>
                 <th scope="col" className="text-center py-2 px-2">
                   W
@@ -2468,12 +2572,15 @@ function StandingsView({ result }: { result: SimulationResult }) {
               </tr>
             </thead>
             <tbody>
-              {standings.map((s, i) => (
+              {visible.map((s) => {
+                const overallRank = ordered.indexOf(s) + 1;
+                const teamConf = confOf.get(s.team);
+                return (
                 <tr
                   key={s.team}
                   className={cn('border-b border-broadcast-border/50', s.isUser ? 'bg-broadcast-accent/10 hover:bg-broadcast-accent/15' : 'hover:bg-broadcast-border/30')}
                 >
-                  <td className="py-2 pl-3 pr-2 text-broadcast-text-muted font-mono">{i + 1}</td>
+                  <td className="py-2 pl-3 pr-2 text-broadcast-text-muted font-mono">{overallRank}</td>
                   <td className="py-2 px-2 font-medium text-white whitespace-nowrap">
                     {s.isUser && (
                       <span className="mr-1.5 inline-block rounded bg-broadcast-accent/20 border border-broadcast-accent/30 px-1 py-px text-xs font-bold text-broadcast-accent align-middle">
@@ -2481,6 +2588,14 @@ function StandingsView({ result }: { result: SimulationResult }) {
                       </span>
                     )}
                     <span title={s.isUser ? 'Your Team' : formatTeamName(s.team)}>{s.isUser ? 'YOUR TEAM' : formatTeamName(s.team)}</span>
+                  </td>
+                  <td className="py-2 px-2">
+                    <span className={cn(
+                      'inline-block rounded px-1.5 py-px text-[11px] font-bold uppercase tracking-wider',
+                      teamConf === 'east' ? 'bg-blue-500/15 text-blue-400' : 'bg-broadcast-red/15 text-broadcast-red',
+                    )}>
+                      {teamConf === 'east' ? 'E' : 'W'}
+                    </span>
                   </td>
                   <td className="py-2 px-2 text-center font-bold text-broadcast-accent">{s.wins}</td>
                   <td className="py-2 px-2 text-center font-bold text-broadcast-red">{s.losses}</td>
@@ -2492,7 +2607,8 @@ function StandingsView({ result }: { result: SimulationResult }) {
                     {s.pointDiff >= 0 ? `+${s.pointDiff}` : s.pointDiff}
                   </td>
                 </tr>
-              ))}
+                );
+              })}
             </tbody>
           </table>
         </div>
@@ -2573,7 +2689,7 @@ function GameBoxScoreModal({ game, result, onClose }: { game: GameResult; result
         aria-label={`Box score for game ${game.gameNumber}`}
       >
         <div className="p-4 border-b border-broadcast-border flex items-center justify-between sticky top-0 bg-broadcast-card/95 backdrop-blur z-10">
-          <h3 className="font-display text-xl font-bold">BOX SCORE - GAME #{game.gameNumber}</h3>
+          <h3 className="font-display text-xl font-bold">BOX SCORE · GAME #{game.gameNumber}</h3>
           <button ref={closeRef} onClick={onClose} className="p-2 rounded-lg hover:bg-broadcast-border transition-colors" aria-label="Close box score">
             <X className="w-5 h-5 text-broadcast-text-secondary" aria-hidden="true" />
           </button>
@@ -2749,7 +2865,7 @@ const BoxScoreTable = memo(function BoxScoreTable({
                 <td className="whitespace-nowrap py-2 pl-1 pr-2 font-medium">
                   <button
                     type="button"
-                    title={`${perf.playerName} — hover for season + card stats`}
+                    title={`${perf.playerName}. Hover for season and card stats`}
                     onMouseEnter={(e) => onHover?.(perf, !!isUser, teamLabel ?? title, e)}
                     onFocus={(e) => onHover?.(perf, !!isUser, teamLabel ?? title, e)}
                     onMouseLeave={onLeave}
@@ -2809,12 +2925,12 @@ const StatCard = memo(function StatCard({
   trendLabel?: string;
 }) {
   return (
-    <div className="card-elevated p-4">
-      <div className="flex items-center justify-between mb-1.5">
+    <div className="card-elevated p-3">
+      <div className="flex items-center justify-between mb-1">
         <span className="text-xs text-broadcast-text-muted uppercase tracking-wider">{label}</span>
-        <Icon className={cn('w-5 h-5', iconColor)} aria-hidden="true" />
+        <Icon className={cn('w-4 h-4', iconColor)} aria-hidden="true" />
       </div>
-      <div className="font-display text-4xl font-bold text-white">{value}</div>
+      <div className="font-display text-3xl font-bold text-white">{value}</div>
       {trend && (
         <div className={cn('mt-1 text-xs font-medium', trend === 'positive' ? 'text-green-400' : 'text-red-400')}>
           {trend === 'positive' ? 'Above .500' : 'Below .500'}
@@ -2827,9 +2943,9 @@ const StatCard = memo(function StatCard({
 
 const TeamMetric = memo(function TeamMetric({ label, value, color }: { label: string; value: string; color: string }) {
   return (
-    <div className="text-center p-2.5 bg-broadcast-darker rounded-lg">
-      <div className="text-xs text-broadcast-text-muted uppercase tracking-wider mb-1">{label}</div>
-      <div className="font-display text-3xl font-bold" style={{ color }}>
+    <div className="text-center p-2 bg-broadcast-darker rounded-lg">
+      <div className="text-[11px] text-broadcast-text-muted uppercase tracking-wider mb-0.5">{label}</div>
+      <div className="font-display text-2xl font-bold" style={{ color }}>
         {value}
       </div>
     </div>

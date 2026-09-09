@@ -128,7 +128,7 @@ export function PlayerPool({ pool, draftedPlayerIds, draftedPersonKeys, onDraftP
         className="space-y-4"
       >
         <div className="flex items-center justify-between mb-4">
-          <h3 className="section-title font-display text-lg">AVAILABLE PLAYERS — {franchiseName} • {decadeLabel}</h3>
+          <h3 className="section-title font-display text-lg">AVAILABLE PLAYERS • {franchiseName} • {decadeLabel}</h3>
           <div className="flex items-center gap-2 text-sm text-broadcast-text-secondary" aria-live="polite">
             <span className="px-2 py-1 bg-broadcast-accent/20 text-broadcast-accent rounded border border-broadcast-accent/30">
               {draftableCount}/{availablePlayers.length} DRAFTABLE
@@ -237,13 +237,13 @@ export function PlayerPool({ pool, draftedPlayerIds, draftedPersonKeys, onDraftP
                 aria-label={
                   isDraftable
                     ? `Draft ${player.name}, ${formatHeight(player.heightIn, player.position)}, plays ${getPlayerPositions(player).join('/')}${selectedSlotPosition ? `, selected slot ${selectedSlotPosition}${fitsSelected ? ' fits' : ' does not fit'}` : `, fits ${fits.join(', ')}`}. Drag to a slot or click to draft.`
-                    : `${player.name}, ${formatHeight(player.heightIn, player.position)}, plays ${getPlayerPositions(player).join('/')} — doesn't fit open slots ${emptyPositions.join(', ')}`
+                    : `${player.name}, ${formatHeight(player.heightIn, player.position)}, plays ${getPlayerPositions(player).join('/')} (doesn't fit open slots ${emptyPositions.join(', ')})`
                 }
                 title={
                   !isDraftable
                     ? `No open slot for ${getPlayerPositions(player).join('/')}`
                     : selectedSlotPosition && !fitsSelected
-                      ? `${player.name} doesn't fit the selected ${selectedSlotPosition} slot — pick another slot or player`
+                      ? `${player.name} doesn't fit the selected ${selectedSlotPosition} slot. Pick another slot or player.`
                       : `Draft ${player.name} → ${selectedSlotPosition ?? fits.join(' or ')} (or drag)`
                 }
               >
@@ -312,7 +312,7 @@ export function PlayerPool({ pool, draftedPlayerIds, draftedPersonKeys, onDraftP
         {availablePlayers.length > 0 && draftableCount === 0 && (
           <div className="text-center p-6 card border-broadcast-gold/30" role="alert">
             <p className="text-broadcast-text-secondary mb-3">
-              Nobody in this pool fits your open slots ({emptyPositions.join(', ')}). Re-spin for free — this pool was supposed to be filtered, so this is unexpected.
+              Nobody in this pool fits your open slots ({emptyPositions.join(', ')}). Re-spin for free. This pool should have been filtered, so this is unexpected.
             </p>
           </div>
         )}

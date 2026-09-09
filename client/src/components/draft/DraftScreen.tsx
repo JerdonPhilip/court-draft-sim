@@ -84,7 +84,7 @@ export function DraftScreen() {
       if (slot && !slot.player) {
         if (!canPlayPosition(player, slot.position)) {
           const plays = getPlayerPositions(player).join('/');
-          notify.error(`Player not suitable for the position — ${player.name} plays ${plays}, not ${slot.position}.`);
+          notify.error(`Player not suitable for the position. ${player.name} plays ${plays}, not ${slot.position}.`);
           return;
         }
         draftPlayer(player, explicit);
@@ -219,7 +219,7 @@ export function DraftScreen() {
               !isSpinning && !isLineupComplete && (
                 <div className="text-center p-8 card">
                   <p className="text-broadcast-text-secondary mb-1 font-medium">No active pool.</p>
-                  <p className="text-broadcast-text-muted text-sm mb-4">{neededLabels ? `Spin to scout prospects for your open positions — ${neededLabels}.` : 'Spin to scout the next batch of prospects.'}</p>
+                  <p className="text-broadcast-text-muted text-sm mb-4">{neededLabels ? `Spin to scout prospects for your open positions: ${neededLabels}.` : 'Spin to scout the next batch of prospects.'}</p>
                   <button onClick={() => void spinDraftPool()} className="btn-primary px-6 py-3" disabled={isSpinning || isLoading}>
                     <RotateCcw className="w-4 h-4" aria-hidden="true" />
                     SPIN POOL
@@ -240,7 +240,7 @@ export function DraftScreen() {
                   <Zap className="w-6 h-6 text-broadcast-gold" aria-hidden="true" />
                 </div>
                 <p className="text-broadcast-text-secondary mb-4">
-                  Your 10-man rotation is ready. Picks are locked — choose which era to take them against.
+                  Your 10-man rotation is ready. Picks are locked, so choose which era to take them against.
                 </p>
                 <button
                   onClick={() => void finalizeDraft()}
