@@ -322,7 +322,8 @@ export function VSModeScreen({ onBack }: VSModeScreenProps) {
                 </div>
                 <p className="text-xs text-broadcast-text-secondary mb-4">
                   Starters pair by slot{yourSixth ? ', plus your 6th man vs their first sub' : ''}. ± is the single-player impact edge.
-                  SIM is each man's points from a one-game preview sim{minutesValid ? '' : ' (needs 240 minutes)'} — re-sim after minutes edits.
+                  Base is the historical average; SIM is engine output at these minutes (pace, matchup and competition adjusted) — that's why SIM differs from base.
+                  {minutesValid ? ' Re-sim after minutes edits.' : ' Needs 240 minutes.'}
                 </p>
                 {preview && preview.teamId === selectedTeam.id && (
                   <p className="mb-3 text-center text-sm font-bold">
@@ -355,6 +356,7 @@ export function VSModeScreen({ onBack }: VSModeScreenProps) {
                           oppMin={cpuPreview ? Math.round(cpuPreview[opp.id] ?? 0) : null}
                           simYou={live ? preview.homeStats[you.id]?.pts : undefined}
                           simOpp={live ? preview.awayStats[opp.id]?.pts : undefined}
+                          oppColor={oppColors?.color}
                         />
                       );
                     })}
@@ -370,6 +372,7 @@ export function VSModeScreen({ onBack }: VSModeScreenProps) {
                           oppMin={cpuPreview ? Math.round(cpuPreview[opp.id] ?? 0) : null}
                           simYou={live ? preview.homeStats[yourSixth!.id]?.pts : undefined}
                           simOpp={live ? preview.awayStats[opp.id]?.pts : undefined}
+                          oppColor={oppColors?.color}
                           sixth
                         />
                       );
@@ -594,7 +597,7 @@ function ScoutingRow({ label, value }: { label: string; value: string }) {
   );
 }
 
-function MatchupRow({ you, opp, youMin, oppMin, simYou, simOpp, sixth = false }: { you: Player; opp: Player; youMin: number; oppMin: number | null; simYou?: number; simOpp?: number; sixth?: boolean }) {
+function MatchupRow({ you, opp, youMin, oppMin, simYou, simOpp, oppColor, sixth = false }: { you: Player; opp: Player; youMin: number; oppMin: number | null; simYou?: number; simOpp?: number; oppColor?: string | null; sixth?: boolean }) {
   // Raw base impact (NOT 0-100 strength: that scale prorates single players
   // ×1/5 and rounds, compressing Jordan-vs-Iverson into a fake +1 YOU).
   // Scaled by minutes share WITHOUT renormalizing, so the edge mirrors real
@@ -618,8 +621,7 @@ function MatchupRow({ you, opp, youMin, oppMin, simYou, simOpp, sixth = false }:
             )}
           </div>
           <div className="text-[11px] text-broadcast-text-secondary">
-            {you.overall} OVR • {you.stats.pts} PPG • {youMin} MIN
-            {simYou !== undefined && <span className="font-bold text-broadcast-accent"> • SIM {simYou}</span>}
+            {you.overall} OVR • {simYou !== undefined ? (<><span className="font-bold text-broadcast-accent">SIM {simYou}</span> <span>({you.stats.pts} base)</span></>) : (<>{you.stats.pts} PPG</>)} • {youMin} MIN
           </div>
         </div>
       </div>
@@ -638,8 +640,7 @@ function MatchupRow({ you, opp, youMin, oppMin, simYou, simOpp, sixth = false }:
         <div className="min-w-0">
           <div className="truncate text-sm font-medium text-white">{opp.name}</div>
           <div className="text-[11px] text-broadcast-text-secondary">
-            {opp.overall} OVR • {opp.stats?.pts ?? 0} PPG • {oppMin === null ? '—' : `${oppMin} MIN`}
-            {simOpp !== undefined && <span className="font-bold text-broadcast-accent"> • SIM {simOpp}</span>}
+            {opp.overall} OVR • {simOpp !== undefined ? (<><span className="font-bold" style={oppColor ? { color: oppColor } : undefined}>SIM {simOpp}</span> <span>({opp.stats?.pts ?? 0} base)</span></>) : (<>{opp.stats?.pts ?? 0} PPG</>)} • {oppMin === null ? '—' : `${oppMin} MIN`}
           </div>
         </div>
         <div
