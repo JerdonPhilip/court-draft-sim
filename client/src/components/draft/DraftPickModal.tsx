@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import { motion } from 'framer-motion';
 import { ChevronRight, X } from 'lucide-react';
 import { cn, getPositionColor, bestTextOn, splitPlayerName } from '../../utils/helpers';
+import { useIsSmallScreen } from '../../utils/useIsSmallScreen';
 import { useLockBodyScroll } from '../../utils/useLockBodyScroll';
 import { canPlayPosition, getPlayerPositions } from '../../types/game';
 import type { LineupSlot, Player } from '../../types/game';
@@ -21,7 +22,9 @@ interface DraftPickModalProps {
  * Type scales fluidly with clamp() — no breakpoint jumps.
  */
 export function DraftPickModal({ player, slots, onPick, onClose }: DraftPickModalProps) {
-  useLockBodyScroll(true);
+  // Phone-only sheet: desktop uses the inline slot panel instead.
+  const isSmallScreen = useIsSmallScreen();
+  useLockBodyScroll(isSmallScreen);
   const firstOptionRef = useRef<HTMLButtonElement>(null);
 
   const fits = useMemo(
@@ -87,7 +90,7 @@ export function DraftPickModal({ player, slots, onPick, onClose }: DraftPickModa
     );
   };
 
-  if (typeof document === 'undefined') return null;
+  if (typeof document === 'undefined' || !isSmallScreen) return null;
 
   return createPortal(
     <div

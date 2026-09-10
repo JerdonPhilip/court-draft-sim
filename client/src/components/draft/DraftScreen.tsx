@@ -3,6 +3,7 @@ import { AnimatePresence, motion } from 'framer-motion';
 import { RotateCcw, Trophy, Zap } from 'lucide-react';
 import { useGameStore } from '../../store/gameStore';
 import { notify } from '../../store/toastStore';
+import { useIsSmallScreen } from '../../utils/useIsSmallScreen';
 import { SlotMachine } from './SlotMachine';
 import { PlayerPool } from './PlayerPool';
 import { LineupBuilder } from './LineupBuilder';
@@ -58,6 +59,15 @@ export function DraftScreen() {
   const [draggedPlayer, setDraggedPlayer] = useState<Player | null>(null);
   // Pick modal: tap a player with several open fits, choose STARTER/BENCH inline.
   const [pickPlayer, setPickPlayer] = useState<Player | null>(null);
+  // Phone-only modals: on desktop the slot chooser renders as an inline panel
+  // (no overlay duplication).
+  const isSmallScreen = useIsSmallScreen();
+  const pickFits = useMemo(() => {
+    if (!pickPlayer) return [];
+    return lineup.slots
+      .map((s, i) => ({ slot: s, index: i }))
+      .filter(({ slot }) => !slot.player && canPlayPosition(pickPlayer, slot.position));
+  }, [pickPlayer, lineup]);
 
   // A new pool invalidates any open pick dialog (the player may be gone).
   // Track pool identity by content, not just franchise/decade: a re-spin
@@ -89,6 +99,16 @@ export function DraftScreen() {
   }, [lineup]);
 
   const handleDraftPlayer = useCallback((player: Player, targetSlot?: number) => {
+    // Slot-first: if the user already picked an open slot and the player fits
+    // it, draft straight in — no chooser modal (desktop flow stays modal-free).
+    // The modal only appears for genuine ambiguity (no usable selection).
+    if (targetSlot === undefined && selectedSlot !== null) {
+      const sel = lineup.slots[selectedSlot];
+      if (sel && !sel.player && canPlayPosition(player, sel.position)) {
+        draftPlayer(player, selectedSlot);
+        return;
+      }
+    }
     // No forced slot: single fit drafts instantly, several fits open the
     // starter/bench picker so nothing is ever auto-routed without consent.
     if (targetSlot === undefined) {
@@ -256,17 +276,57 @@ export function DraftScreen() {
             />
 
             {pool ? (
-              <PlayerPool
-                pool={pool}
-                draftedPlayerIds={draftedPlayers ?? []}
-                draftedPersonKeys={draftedPersonKeys ?? []}
-                onDraftPlayer={(player) => handleDraftPlayer(player)}
-                onDragStartPlayer={setDraggedPlayer}
-                onDragEndPlayer={() => setDraggedPlayer(null)}
-                emptyPositions={emptyPositions}
-                lineupSlots={lineup.slots}
-                selectedSlotPosition={selectedPosition}
-              />
+              <>
+                {!isSmallScreen && pickPlayer && (
+                  <div
+                    className="rounded-xl border border-broadcast-gold/40 bg-broadcast-card p-4 shadow-glow-gold"
+                    role="dialog"
+                    aria-label={`Draft ${pickPlayer.name} — choose starter or bench slot`}
+                  >
+                    <div className="mb-3 flex items-center justify-between gap-3">
+                      <p className="min-w-0 truncate text-sm font-bold text-white">
+                        Draft <span className="text-broadcast-gold">{pickPlayer.name}</span>
+                        <span className="ml-2 text-xs font-semibold text-broadcast-text-secondary">
+                          {pickFits.length} open fit{pickFits.length === 1 ? '' : 's'}
+                        </span>
+                      </p>
+                      <button
+                        type="button"
+                        onClick={() => setPickPlayer(null)}
+                        className="btn-ghost shrink-0 px-3 py-1.5 text-xs"
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      {pickFits.map(({ slot, index }) => (
+                        <button
+                          key={index}
+                          type="button"
+                          onClick={() => handleConfirmPick(pickPlayer, index)}
+                          className="rounded-xl border border-white/10 bg-white/[0.03] px-4 py-2.5 text-left text-sm font-bold text-white transition-colors hover:border-broadcast-gold/60 hover:bg-broadcast-gold/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-broadcast-gold"
+                        >
+                          {index < 5 ? 'Starter' : 'Bench'} {slot.position}
+                          {slot.position !== pickPlayer.position && (
+                            <span className="ml-2 text-[11px] font-semibold text-broadcast-text-secondary">flex</span>
+                          )}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                <PlayerPool
+                  pool={pool}
+                  draftedPlayerIds={draftedPlayers ?? []}
+                  draftedPersonKeys={draftedPersonKeys ?? []}
+                  onDraftPlayer={(player) => handleDraftPlayer(player)}
+                  onDragStartPlayer={setDraggedPlayer}
+                  onDragEndPlayer={() => setDraggedPlayer(null)}
+                  emptyPositions={emptyPositions}
+                  lineupSlots={lineup.slots}
+                  selectedSlotPosition={selectedPosition}
+                />
+              </>
             ) : (
               !isSpinning && !isLineupComplete && (
                 <div className="text-center p-8 card">
@@ -345,7 +405,7 @@ export function DraftScreen() {
       )}
 
       <AnimatePresence>
-        {pickPlayer && (
+        {isSmallScreen && pickPlayer && (
           <DraftPickModal
             player={pickPlayer}
             slots={lineup.slots}

@@ -1,6 +1,6 @@
 {
   "name": "court-draft-sim",
-  "version": "1.4.0",
+  "version": "1.4.2",
   "description": "NBA Roster Building & 82-Game Simulation Game",
   "private": true,
   "license": "MIT",

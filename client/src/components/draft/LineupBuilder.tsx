@@ -1,7 +1,9 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Plus, ChevronDown } from 'lucide-react';
 import { cn, getPositionColor, bestTextOn, getPositionLabel, formatHeight } from '../../utils/helpers';
+import { useIsSmallScreen } from '../../utils/useIsSmallScreen';
+import { DraftedPlayerModal } from './DraftedPlayerModal';
 import { canPlayPosition, getPlayerPositions } from '../../types/game';
 import type { LineupSlot, Player } from '../../types/game';
 
@@ -23,7 +25,9 @@ interface SlotProps {
   isSwapPick: boolean;
   swapCompatible: boolean | null;
   expanded: boolean;
+  isSmallScreen: boolean;
   onToggleExpand: (index: number) => void;
+  onShowDetails: (index: number) => void;
   onSelect: (index: number) => void;
   onDropPlayer: (player: Player, slotIndex: number) => void;
   onSetSixthMan: (index: number) => void;
@@ -31,7 +35,7 @@ interface SlotProps {
   onSwapClick: (index: number) => void;
 }
 
-function Slot({ slot, index, isSelected, draggedPlayer, sixthManAuto, optionAuto, swapMode, isSwapPick, swapCompatible, expanded, onToggleExpand, onSelect, onDropPlayer, onSetSixthMan, onSetOption, onSwapClick }: SlotProps) {
+function Slot({ slot, index, isSelected, draggedPlayer, sixthManAuto, optionAuto, swapMode, isSwapPick, swapCompatible, expanded, isSmallScreen, onToggleExpand, onShowDetails, onSelect, onDropPlayer, onSetSixthMan, onSetOption, onSwapClick }: SlotProps) {
   const hasPlayer = !!slot.player;
   const expectedPos = slot.position;
   const roleLabel = slot.role === 'bench' ? 'Bench' : 'Starter';
@@ -146,9 +150,9 @@ function Slot({ slot, index, isSelected, draggedPlayer, sixthManAuto, optionAuto
         </span>
         <button
           type="button"
-          onClick={() => (swapMode ? onSwapClick(index) : onToggleExpand(index))}
-          aria-expanded={expanded}
-          aria-label={swapMode ? `Swap ${p.name}` : `${expanded ? 'Collapse' : 'Expand'} ${p.name} details`}
+          onClick={() => (swapMode ? onSwapClick(index) : isSmallScreen ? onShowDetails(index) : onToggleExpand(index))}
+          aria-expanded={isSmallScreen ? undefined : expanded}
+          aria-label={swapMode ? `Swap ${p.name}` : isSmallScreen ? `Show ${p.name} details` : `${expanded ? 'Collapse' : 'Expand'} ${p.name} details`}
           title={hoverTitle}
           className="flex min-w-0 flex-1 items-center gap-2 rounded-md text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-broadcast-accent"
         >
@@ -286,6 +290,10 @@ interface LineupBuilderProps {
 export function LineupBuilder({ lineup, selectedSlot, draggedPlayer, sixthManExplicit, optionsExplicit, onSelectSlot, onDropPlayer, onSetSixthMan, onSetOption, onSwapPlayers }: LineupBuilderProps) {
   const [swapPick, setSwapPick] = useState<number | null>(null);
   const [expandedIdx, setExpandedIdx] = useState<number | null>(null);
+  // Phone-only drafted-player sheet: row taps open the modal below lg so the
+  // list never gets pushed down; desktop keeps the inline expand (no duplication).
+  const isSmallScreen = useIsSmallScreen();
+  const [detailsIdx, setDetailsIdx] = useState<number | null>(null);
   const filled = lineup.filter(s => s.player).length;
   const total = lineup.length || 10;
   const starters = lineup.slice(0, 5);
@@ -334,7 +342,9 @@ export function LineupBuilder({ lineup, selectedSlot, draggedPlayer, sixthManExp
       isSwapPick={swapPick === index}
       swapCompatible={swappableWithPick(index)}
       expanded={expandedIdx === index}
+      isSmallScreen={isSmallScreen}
       onToggleExpand={handleToggleExpand}
+      onShowDetails={(idx) => { if (isSmallScreen) setDetailsIdx(idx); }}
       onSelect={onSelectSlot}
       onDropPlayer={onDropPlayer}
       onSetSixthMan={onSetSixthMan}
@@ -342,6 +352,13 @@ export function LineupBuilder({ lineup, selectedSlot, draggedPlayer, sixthManExp
       onSwapClick={handleSwapClick}
     />
   );
+  const detailsSlot = detailsIdx !== null ? lineup[detailsIdx] ?? null : null;
+  // Belt-and-suspenders: the sheet is phone-only. If the viewport grows to
+  // desktop while it is open (rotate, resize, devtools), close it so a
+  // desktop click can never leave a modal on screen.
+  useEffect(() => {
+    if (!isSmallScreen && detailsIdx !== null) setDetailsIdx(null);
+  }, [isSmallScreen, detailsIdx]);
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between gap-3">
@@ -353,7 +370,7 @@ export function LineupBuilder({ lineup, selectedSlot, draggedPlayer, sixthManExp
         )}
       </div>
       {filled > 0 && (sixthSet && optionsSet) && (
-        <p className="-mt-2 text-[11px] text-broadcast-text-muted">Tap a row for details. ⇄ swaps starters ↔ bench (positions must fit).</p>
+        <p className="-mt-2 text-[11px] text-broadcast-text-muted">Tap a row for details (sheet on phones, expand on desktop). ⇄ swaps starters ↔ bench (positions must fit).</p>
       )}
       {swapMode && (
         <div className="flex items-center justify-between gap-3 rounded-xl border border-broadcast-gold/40 bg-broadcast-gold/10 px-3 py-2">
@@ -381,6 +398,22 @@ export function LineupBuilder({ lineup, selectedSlot, draggedPlayer, sixthManExp
           {bench.map((slot, i) => renderSlot(slot, i + 5))}
         </div>
       </div>
+
+      <AnimatePresence>
+        {isSmallScreen && detailsSlot?.player && detailsIdx !== null && (
+          <DraftedPlayerModal
+            slotIndex={detailsIdx}
+            slot={detailsSlot}
+            slots={lineup}
+            sixthManAuto={!!detailsSlot.isSixthMan && !sixthManExplicit}
+            optionAuto={!!detailsSlot.optionRank && !(optionsExplicit?.[detailsSlot.optionRank] ?? false)}
+            onSetSixthMan={onSetSixthMan}
+            onSetOption={onSetOption}
+            onSwapPlayers={onSwapPlayers}
+            onClose={() => setDetailsIdx(null)}
+          />
+        )}
+      </AnimatePresence>
     </div>
   );
 }
