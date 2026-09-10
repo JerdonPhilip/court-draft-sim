@@ -60,9 +60,12 @@ export function DraftScreen() {
   const [pickPlayer, setPickPlayer] = useState<Player | null>(null);
 
   // A new pool invalidates any open pick dialog (the player may be gone).
+  // Track pool identity by content, not just franchise/decade: a re-spin
+  // landing on the same combo deals new players.
+  const poolKey = pool ? `${pool.franchise}|${pool.decade}|${pool.players.map(p => p.id).join(',')}` : null;
   useEffect(() => {
     setPickPlayer(null);
-  }, [pool?.franchise, pool?.decade]);
+  }, [poolKey]);
 
   // Default the selection to the first open slot; advance it as picks land.
   useEffect(() => {
@@ -138,7 +141,7 @@ export function DraftScreen() {
     handleDraftPlayer(player, slotIndex);
   }, [handleDraftPlayer]);
 
-  const handleSpinComplete = useCallback((_pool: unknown) => {
+  const handleSpinComplete = useCallback(() => {
     // No-op: store already holds the pool. Stable ref avoids retriggering SlotMachine effects.
   }, []);
 

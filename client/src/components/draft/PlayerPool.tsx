@@ -114,7 +114,6 @@ export function PlayerPool({ pool, draftedPlayerIds, draftedPersonKeys, onDraftP
   const displayPlayers = useMemo(() => {
     if (showUnavailable) return visiblePlayers;
     return visiblePlayers.filter(p => fittingEmptySlots(p, lineupSlots).length > 0);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [visiblePlayers, lineupSlots, showUnavailable]);
 
   if (!pool) return null;
@@ -123,7 +122,7 @@ export function PlayerPool({ pool, draftedPlayerIds, draftedPersonKeys, onDraftP
   const decadeLabel = DECADES.find(d => d.id === pool.decade)?.label ?? pool.decade;
 
   const draftableCount = availablePlayers.filter(p => fittingEmptySlots(p, lineupSlots).length > 0).length;
-  const hiddenCount = visiblePlayers.length - displayPlayers.length;
+  const unfitCount = visiblePlayers.length - availablePlayers.filter(p => fittingEmptySlots(p, lineupSlots).length > 0).length;
   const isFiltered = posFilter !== 'ALL';
 
   return (
@@ -175,18 +174,18 @@ export function PlayerPool({ pool, draftedPlayerIds, draftedPersonKeys, onDraftP
               {pos}
             </button>
           ))}
-          {hiddenCount > 0 && (
+          {unfitCount > 0 && (
             <button
               type="button"
               onClick={() => setShowUnavailable(v => !v)}
               aria-pressed={showUnavailable}
               className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs font-bold text-broadcast-text-secondary transition-colors hover:border-broadcast-accent/30 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-broadcast-accent"
             >
-              {showUnavailable ? 'HIDE UNFIT' : `SHOW ALL (${hiddenCount} UNFIT)`}
+              {showUnavailable ? 'HIDE UNFIT' : `SHOW ALL (${unfitCount} UNFIT)`}
             </button>
           )}
           <div className="ml-auto flex items-center gap-2">
-            {(isFiltered || hiddenCount > 0) && (
+            {(isFiltered || unfitCount > 0) && (
               <span className="text-xs text-broadcast-text-muted" aria-live="polite">
                 {displayPlayers.length} of {availablePlayers.length}
               </span>

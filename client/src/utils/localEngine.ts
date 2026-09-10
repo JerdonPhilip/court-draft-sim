@@ -281,7 +281,8 @@ export function localRunVSMode(
     });
     const userScore = isHome ? gameResult.homeScore : gameResult.awayScore;
     const historicalScore = isHome ? gameResult.awayScore : gameResult.homeScore;
-    const winner = userScore > historicalScore ? 'user' : userScore < historicalScore ? 'historical' : 'user';
+    // OT guarantees no ties; random overtime winner if it ever happens.
+    const winner = userScore === historicalScore ? (Math.random() < 0.5 ? 'user' : 'historical') : userScore > historicalScore ? 'user' : 'historical';
     if (winner === 'user') userWins++;
     else historicalWins++;
     const userStats = isHome ? gameResult.homePlayerStats : gameResult.awayPlayerStats;

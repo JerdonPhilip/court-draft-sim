@@ -1,11 +1,11 @@
 # Court Draft Sim
 
-An NBA roster-building and 82-game simulation game inspired by 82-0.com. Build your ultimate 5-man lineup through a 5-round draft with a slot machine mechanic, then simulate a full 82-game season with a non-linear win curve algorithm.
+An NBA roster-building and 82-game simulation game inspired by 82-0.com. Build your ultimate 10-man rotation (5 starters + 5 bench) through the draft with a slot machine mechanic, then simulate a full 82-game season with a non-linear win curve algorithm.
 
 ## Features
 
 - **Slot Machine Draft Engine**: Spin for random NBA franchise + decade combinations to create your draft pool
-- **5-Round Draft**: Fill PG, SG, SF, PF, C positions with strategic picks
+- **10-Man Draft**: Fill 5 starter + 5 bench slots (PG, SG, SF, PF, C each) with strategic picks
 - **Franchise/Decade Rerolls**: Limited tactical rerolls — keep the decade and roll a new team, or vice versa
 - **82-Game Simulation**: Non-linear win curve that makes 82-0 progressively harder unless all stats are balanced
 - **Era Seasons**: Take your roster against a full 82-game schedule in any decade (1960s–2020s) with real historical lineups, or the default mixed league
@@ -14,10 +14,9 @@ An NBA roster-building and 82-game simulation game inspired by 82-0.com. Build y
 
 ## Tech Stack
 
-- **Frontend**: Vite + React 18 + TypeScript + Tailwind CSS + Lucide React
-- **Backend**: Node.js + Express + TypeScript
-- **State Management**: Zustand with persistence
-- **Drag & Drop**: @dnd-kit
+- **Frontend**: Vite + React 18 + TypeScript + Tailwind CSS + Lucide React + VitePWA (offline shell, local-engine fallback)
+- **Backend**: Node.js + Express + TypeScript (helmet/cors/compression/morgan/rate-limit/zod/dotenv)
+- **State Management**: Zustand with persistence (quota-safe)
 - **Animations**: Framer Motion
 
 ## Project Structure
@@ -110,10 +109,9 @@ alone hosts the full game at `http://localhost:3001/` — no internet needed.
 
 ### Draft Phase
 1. **Spin** the slot machine to get a random Franchise + Decade combination (4 manual re-spins per game; dealt pools are always free)
-2. **Review** 5-6 available players from that franchise/era
-3. **Draft** one player for your current position slot (PG→SG→SF→PF→C)
-4. **Repeat** for 5 rounds
-5. **Use Rerolls** strategically (3 Franchise Rerolls, 3 Decade Rerolls per game)
+2. **Review** available players from that franchise/era
+3. **Draft** one player per open slot until the 10-man rotation is full
+4. **Use Rerolls** strategically (3 Franchise Rerolls, 3 Decade Rerolls per game)
 
 ### Simulation Phase
 - Pick your season: mixed modern league or any era (1960s–2020s) with real historical lineups
@@ -135,9 +133,11 @@ GET  /api/draft/pools               # All franchise/decade combinations
 GET  /api/draft/franchises          # All franchises
 GET  /api/draft/decades             # All decades
 POST /api/draft/spin                # Spin for random pool
+POST /api/draft/reroll              # Reroll one axis (keep franchise|decade)
 GET  /api/draft/pool/:franchise/:decade  # Get specific pool
 
 GET  /api/players                   # All players (with filters)
+GET  /api/players/search?q=         # Search (prefer over /search/:query back-compat)
 GET  /api/players/:id               # Single player
 GET  /api/players/by-franchise-decade/:franchise/:decade
 GET  /api/players/random/:franchise/:decade?count=5

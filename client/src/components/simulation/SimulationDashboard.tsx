@@ -123,7 +123,6 @@ export function SimulationDashboard({ result, onNewDraft, onVSMode }: Simulation
   const restoredProgress = useMemo(() => {
     const saved = useGameStore.getState().playoffProgress;
     return saved && saved.seasonKey === seasonKey ? saved : null;
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [seasonKey]);
   const [playoffWinners, setPlayoffWinners] = useState<Record<string, string>>(() => restoredProgress?.winners ?? {});
   const [playoffsStarted, setPlayoffsStarted] = useState<boolean>(() => restoredProgress?.hasStarted ?? false);
@@ -725,17 +724,17 @@ function PlayersView({ result }: { result: SimulationResult }) {
     { key: 'mpg', label: 'MPG', unit: 'MPG', long: 'minutes' },
   ];
   const [sortKey, setSortKey] = useState<SortKey>('pts');
-  const valueOf = (p: SimulatedPlayerStats, key: SortKey): number =>
-    key === 'mpg' ? (p.minutesPerGame ?? 0) : p.averages[key];
+  const valueOf = useCallback((p: SimulatedPlayerStats, key: SortKey): number =>
+    key === 'mpg' ? (p.minutesPerGame ?? 0) : p.averages[key], []);
   const sorted = useMemo(() => {
     return result.playerStats.slice().sort((a, b) => {
       const diff = valueOf(b, sortKey) - valueOf(a, sortKey);
-      if (diff !== 0) return diff;
+      if (diff !== 0) return sortKey === 'pf' ? -diff : diff; // fewest fouls leads
       const at = sortKey === 'mpg' ? (a.minutesPerGame ?? 0) : a.totals[sortKey];
       const bt = sortKey === 'mpg' ? (b.minutesPerGame ?? 0) : b.totals[sortKey];
       return bt - at;
     });
-  }, [result.playerStats, sortKey]);
+  }, [result.playerStats, sortKey, valueOf]);
   const leader = sorted[0] ?? null;
   const leaderMeta = SORT_BUTTONS.find((b) => b.key === sortKey)!;
   return (

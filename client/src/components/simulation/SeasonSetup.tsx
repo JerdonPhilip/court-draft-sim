@@ -303,7 +303,7 @@ export function SeasonSetup({ onBack }: SeasonSetupProps) {
           )}
 
           <div className="mt-2.5 space-y-1.5">
-            {slots.map((slot, i) => {
+            {slots.map((slot) => {
               const p = slot.player;
               if (!p) return null;
               const v = Math.round(minutes?.[p.id] ?? 0);

@@ -51,7 +51,16 @@ export const useToastStore = create<ToastState>()((set, get) => ({
       return last.id;
     }
     const id = `toast-${Date.now().toString(36)}-${seq++}`;
-    set({ toasts: [...visible.slice(-(MAX_VISIBLE - 1)), { ...toast, id }] });
+    const next = [...visible.slice(-(MAX_VISIBLE - 1)), { ...toast, id }];
+    // Clear timers for evicted toasts so they can't phantom-dismiss the new ones.
+    const nextIds = new Set(next.map(t => t.id));
+    for (const [tid, t] of timers) {
+      if (!nextIds.has(tid)) {
+        clearTimeout(t);
+        timers.delete(tid);
+      }
+    }
+    set({ toasts: next });
     scheduleDismiss(id, toast.durationMs ?? DEFAULT_DURATION_MS[toast.kind]);
     return id;
   },
@@ -65,7 +74,11 @@ export const useToastStore = create<ToastState>()((set, get) => ({
     set((prev) => ({ toasts: prev.toasts.filter(to => to.id !== id) }));
   },
 
-  clear: () => set({ toasts: [] }),
+  clear: () => {
+    for (const t of timers.values()) clearTimeout(t);
+    timers.clear();
+    set({ toasts: [] });
+  },
 }));
 
 /** Centralized notifications — use these instead of inline banners. */

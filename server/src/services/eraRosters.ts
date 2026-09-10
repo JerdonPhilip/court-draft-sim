@@ -179,7 +179,9 @@ export function getAllEraLeagues(): Array<Omit<EraLeague, 'opponents'>> {
   for (const decade of DECADES) {
     const league = getEraLeague(decade.id);
     if (!league) continue;
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const { opponents: _drop, ...summary } = league;
+    void _drop;
     leagues.push(summary);
   }
   return leagues;

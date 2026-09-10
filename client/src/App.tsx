@@ -49,7 +49,8 @@ function legalFromHash(): LegalDoc | null {
 }
 
 export default function App() {
-  const { phase, draftState, simulationResult, vsMatchup, historicalTeams, setHistoricalTeams, initializeDraft, runSimulation, setPhase, error, setError } = useGameStore();
+  const { phase, draftState, simulationResult, historicalTeams, setHistoricalTeams, initializeDraft, runSimulation, setPhase, error, setError } = useGameStore();
+  const isLoading = useGameStore(s => s.isLoading);
   const initialized = useRef(false);
   const [legalDoc, setLegalDoc] = useState<LegalDoc | null>(() => legalFromHash());
   const [apiOnline, setApiOnline] = useState<boolean | null>(null);
@@ -120,7 +121,17 @@ export default function App() {
   };
 
   const legalModal = legalDoc ? <LegalModal doc={legalDoc} onClose={closeLegal} /> : null;
-  const withChrome = (node: React.ReactNode) => <>{node}<Footer onOpenLegal={openLegal} /><Toasts />{legalModal}</>;
+  const chrome = <><Footer onOpenLegal={openLegal} /><Toasts />{legalModal}</>;
+  const withChrome = (node: React.ReactNode) => <>{node}{chrome}</>;
+
+  // Retry once if we landed in simulation without a pending load
+  // (e.g. persisted phase). Side-effect belongs in an effect, not render —
+  // otherwise StrictMode double-renders double-sim.
+  useEffect(() => {
+    if (phase === 'simulation' && !error && !isLoading && !simulationResult) {
+      void runSimulation();
+    }
+  }, [phase, error, isLoading, simulationResult, runSimulation]);
 
   if (phase === 'welcome') {
     const filled = draftState.lineup.slots.filter(s => s.player !== null).length;
@@ -157,10 +168,6 @@ export default function App() {
       return withChrome(<ErrorScreen message={error} onRetry={() => { setError(null); setPhase('draft'); }} />);
     }
     // The setup screen kicks off runSimulation; this is a transient state.
-    // Retry once if we landed here without a pending load (e.g. persisted phase).
-    if (!useGameStore.getState().isLoading && !simulationResult) {
-      void runSimulation();
-    }
     return withChrome(<LoadingScreen message="Simulating your 82-game season..." />);
   }
 
@@ -192,6 +199,5 @@ export default function App() {
     );
   }
 
-  void vsMatchup;
   return withChrome(<DraftScreen />);
 }

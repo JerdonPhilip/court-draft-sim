@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { Plus, ChevronDown } from 'lucide-react';
 import { cn, getPositionColor, bestTextOn, getPositionLabel, formatHeight } from '../../utils/helpers';
 import { canPlayPosition, getPlayerPositions } from '../../types/game';
-import type { LineupSlot, Player, Position } from '../../types/game';
+import type { LineupSlot, Player } from '../../types/game';
 
 /** "Michael Jordan" -> "M. Jordan" for compact rows. */
 function compactName(fullName: string): string {

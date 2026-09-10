@@ -63,7 +63,7 @@ export function WelcomeScreen({ filledCount, maxRounds, hasProgress, apiOnline, 
             )}
           </div>
           <p className="mt-1.5 text-[11px] text-broadcast-text-muted" role="status">
-            {apiOnline === null ? 'Checking server…' : apiOnline ? 'Server online.' : 'Server offline — draft works locally; sim needs the API.'}
+            {apiOnline === null ? 'Checking server…' : apiOnline ? 'Server online.' : 'Server offline — playing locally (same engine).'}
           </p>
         </div>
 

@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { persist } from 'zustand/middleware';
+import { persist, createJSONStorage } from 'zustand/middleware';
 import {
   DraftState,
   Player,
@@ -12,7 +12,7 @@ import {
   canPlayPosition,
   personKeyOf,
 } from '../types/game';
-import { POSITIONS, MAX_REROLLS_PER_AXIS, MAX_MANUAL_SPINS, ROSTER_SLOTS, MAX_ROSTER_SIZE } from '../data/constants';
+import { MAX_REROLLS_PER_AXIS, MAX_MANUAL_SPINS, ROSTER_SLOTS, MAX_ROSTER_SIZE } from '../data/constants';
 import { buildDefaultMinutes } from '../utils/helpers';
 import { api } from '../utils/api';
 import { notify } from './toastStore';
@@ -508,6 +508,7 @@ export const useGameStore = create<GameStore>()(
 
       setPlayerMinutes: (playerId, mins) => {
         const { draftState } = get();
+        if (!Number.isFinite(mins)) return; // ignore NaN/empty input, don't poison store
         const base = draftState.minutes ?? buildDefaultMinutes(draftState.lineup.slots);
         // Hard cap: one player's raise can never push the team total past 240.
         const othersSum = Object.entries(base)
@@ -609,11 +610,15 @@ export const useGameStore = create<GameStore>()(
           let total = 0;
           let largest = '';
           ids.forEach(id => {
-            next[id] = Math.round(scaled[id] ?? 0);
+            next[id] = Math.max(0, Math.min(48, Math.round(scaled[id] ?? 0)));
             total += next[id]!;
             if (!largest || next[id]! > next[largest]!) largest = id;
           });
-          if (largest) next[largest]! += TEAM_MINUTES_TARGET - total;
+          if (largest) {
+            // Clamp remainder so the fix-up never violates the 0-48 invariant.
+            const remainder = TEAM_MINUTES_TARGET - total;
+            next[largest]! = Math.max(0, Math.min(48, next[largest]! + remainder));
+          }
         }
         set({
           draftState: {
@@ -711,7 +716,8 @@ export const useGameStore = create<GameStore>()(
 
           set({ simulationResult: { ...(data.result as SimulationResult), sixthManId: sixthManId ?? null, optionIds: options }, phase: 'results', isLoading: false });
         } catch (error) {
-          set({ error: error instanceof Error ? error.message : String(error), isLoading: false, phase: 'results' });
+          // Clear stale results so Back returns to draft, not old standings.
+          set({ error: error instanceof Error ? error.message : String(error), isLoading: false, phase: 'results', simulationResult: null });
         }
       },
 
@@ -720,6 +726,12 @@ export const useGameStore = create<GameStore>()(
         const players = draftState.lineup.slots.map(s => s.player).filter((p): p is Player => p !== null);
         if (players.length < draftState.maxRounds) {
           const msg = `Fill all ${draftState.maxRounds} roster spots before VS Mode`;
+          set({ error: msg });
+          notify.warning(msg);
+          return;
+        }
+        if (!isMinutesValid(draftState.lineup.slots, draftState.minutes)) {
+          const msg = `Minutes must total 240 before VS Mode (now ${Math.round(minutesSum(draftState.minutes))}).`;
           set({ error: msg });
           notify.warning(msg);
           return;
@@ -761,6 +773,46 @@ export const useGameStore = create<GameStore>()(
     {
       name: 'court-draft-sim-store',
       version: 12,
+      storage: createJSONStorage(() => ({
+        getItem: (key) => {
+          try {
+            return localStorage.getItem(key);
+          } catch {
+            return null;
+          }
+        },
+        setItem: (key, value) => {
+          try {
+            localStorage.setItem(key, value);
+          } catch (err) {
+            // Quota exceeded: retry with trimmed playoff logs, then drop
+            // results entirely rather than bricking persistence.
+            try {
+              const parsed = JSON.parse(value) as { state?: Record<string, unknown> };
+              const st = parsed?.state as Record<string, unknown> | undefined;
+              if (st && typeof st === 'object') {
+                if (st.playoffProgress && typeof st.playoffProgress === 'object') {
+                  (st.playoffProgress as Record<string, unknown>).seriesGames = {};
+                }
+                try {
+                  localStorage.setItem(key, JSON.stringify(parsed));
+                  return;
+                } catch { /* fall through */ }
+                st.simulationResult = null;
+                st.vsMatchup = null;
+                st.playoffProgress = null;
+                localStorage.setItem(key, JSON.stringify(parsed));
+              }
+            } catch {
+              try { localStorage.removeItem(key); } catch { /* ignore */ }
+            }
+            console.warn('Persist quota exceeded, trimmed saved results', err);
+          }
+        },
+        removeItem: (key) => {
+          try { localStorage.removeItem(key); } catch { /* ignore */ }
+        },
+      })),
       partialize: (state) => ({
         phase: state.phase === 'simulation' || state.phase === 'season-setup' ? 'draft' : state.phase,
         hasSeenWelcome: (state as { hasSeenWelcome?: boolean }).hasSeenWelcome ?? false,
@@ -775,7 +827,7 @@ export const useGameStore = create<GameStore>()(
         selectedEra: (state as { selectedEra?: string | null }).selectedEra ?? null,
         playoffProgress: (state as { playoffProgress?: PlayoffProgress | null }).playoffProgress ?? null,
       } as unknown as GameStore),
-      migrate: (persisted: unknown, version: number) => {
+      migrate: (persisted: unknown, _version: number) => {
         if (typeof persisted !== 'object' || persisted === null) {
           return persisted as GameStore;
         }

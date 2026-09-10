@@ -42,28 +42,48 @@ import {
   foulPronenessMultiplier,
 } from './eraEngine.js';
 import type { EraContext, PlayerAttributes } from '../types/player.js';
-import { secureRandomInt as randomInt, secureRandom } from './random.js';
+import { secureRandom } from './random.js';
 
 // --- 2K attribute + era integration (spec v1.4.0, Parts 6-9) ---
-// Resolved/modified attributes are cached by player id (deterministic).
+// Cache is content-aware: user-supplied Player objects with the same id but
+// different stats must not share entries (cache poisoning). Keys include a
+// fingerprint of everything that feeds resolve/apply. Bounded to avoid leaks.
 const resolvedAttrCache = new Map<string, PlayerAttributes>();
 const modifiedAttrCache = new Map<string, PlayerAttributes>();
+const ATTR_CACHE_MAX = 5000;
+
+function attrFingerprint(p: Player): string {
+  const s = p.stats;
+  const a = p.attributes ?? {};
+  return `${p.id}|${p.position}|${p.decade ?? ''}|${p.overall}|${s.pts},${s.reb},${s.ast},${s.stl},${s.blk},${(s as { pf?: unknown }).pf ?? ''}|${JSON.stringify(a)}|${p.pace ?? ''},${p.tsPct ?? ''},${p.tov ?? ''},${p.usageRate ?? ''},${p.defRating ?? ''},${p.clutch ?? ''}`;
+}
+
+function cacheSetBounded(map: Map<string, PlayerAttributes>, key: string, value: PlayerAttributes): void {
+  if (map.size >= ATTR_CACHE_MAX) {
+    // Evict oldest entry (Map preserves insertion order).
+    const oldest = map.keys().next();
+    if (!oldest.done) map.delete(oldest.value);
+  }
+  map.set(key, value);
+}
 
 function resolvedAttributesOf(player: Player): PlayerAttributes {
-  const hit = resolvedAttrCache.get(player.id);
+  const key = attrFingerprint(player);
+  const hit = resolvedAttrCache.get(key);
   if (hit) return hit;
   const resolved = resolvePlayerAttributes(player);
-  resolvedAttrCache.set(player.id, resolved);
+  cacheSetBounded(resolvedAttrCache, key, resolved);
   return resolved;
 }
 
 function modifiedAttributesOf(player: Player): PlayerAttributes {
-  const hit = modifiedAttrCache.get(player.id);
+  const key = attrFingerprint(player);
+  const hit = modifiedAttrCache.get(key);
   if (hit) return hit;
   const base = resolvedAttributesOf(player);
   const era = getEraContext(player.decade ?? '2020s');
   const modified = applyEraModifiers(base, era, player.position);
-  modifiedAttrCache.set(player.id, modified);
+  cacheSetBounded(modifiedAttrCache, key, modified);
   return modified;
 }
 
@@ -1805,7 +1825,7 @@ export function getBaseTeamImpact(lineup: Player[], sixthManId?: string | null, 
   }
   if (lineup.length > 5) {
     const div = effMin
-      ? lineup.reduce((t, p, i) => t + (p ? (effMin[p.id] ?? 0) / 48 : 0), 0)
+      ? lineup.reduce((t, p) => t + (p ? (effMin[p.id] ?? 0) / 48 : 0), 0)
       : rotationDivisor(lineup, sixthManId);
     total = total / (div > 0 ? div : 5) * 5;
   }

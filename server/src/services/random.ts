@@ -15,15 +15,40 @@ export function secureRandomInt(max: number): number {
     // Rejection sampling to avoid modulo bias.
     const range = 0x100000000;
     const limit = range - (range % max);
-    const buf = new Uint32Array(1);
+    const buf = getRandomBuffer();
     for (;;) {
-      gCrypto.getRandomValues(buf);
-      const v = buf[0]!;
+      const v = nextBufferedUint32(gCrypto, buf);
       if (v < limit) return v % max;
     }
   }
   // Non-secure fallback (should never trigger on supported platforms).
+  if (!warnedFallback) {
+    warnedFallback = true;
+    console.warn('secureRandomInt: WebCrypto unavailable, falling back to Math.random');
+  }
   return Math.floor(Math.random() * max);
+}
+
+// Batch crypto calls: one getRandomValues fills 64 values, amortizing the
+// overhead across hot sim loops (hundreds of draws per game).
+const BUFFER_SIZE = 64;
+const randomBuffer = new Uint32Array(BUFFER_SIZE);
+let randomCursor = BUFFER_SIZE; // force refill on first use
+let warnedFallback = false;
+
+function getRandomBuffer(): Uint32Array {
+  return randomBuffer;
+}
+
+function nextBufferedUint32(
+  gCrypto: { getRandomValues?: (arr: Uint32Array) => void },
+  buf: Uint32Array,
+): number {
+  if (randomCursor >= buf.length) {
+    gCrypto.getRandomValues!(buf);
+    randomCursor = 0;
+  }
+  return buf[randomCursor++]!;
 }
 
 /** Uniform float in [0, 1) via crypto for auditable fairness (draft + sim). */

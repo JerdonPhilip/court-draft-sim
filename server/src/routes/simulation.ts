@@ -2,7 +2,7 @@ import { Router, Request, Response } from 'express';
 import { z } from 'zod';
 import rateLimit from 'express-rate-limit';
 import { simulateSeason, getTeamStrength, getBaseTeamImpact, strengthVsLeague, calculateNonLinearWinCurve, simulateSingleGame, defaultMinutesFor, counterMinutesFor } from '../services/simulationEngine.js';
-import { DEFAULT_SIMULATION_CONFIG, SIMULATION_CONSTANTS, LEAGUE_AVG_IMPACT } from '../services/constants.js';
+import { DEFAULT_SIMULATION_CONFIG, LEAGUE_AVG_IMPACT } from '../services/constants.js';
 import { getEraLeague, getAllEraLeagues } from '../services/eraRosters.js';
 import { DECADES } from '../data/constants.js';
 import { Player, Position, getPlayerPositions, personKeyOf } from '../types/game.js';
@@ -46,6 +46,7 @@ const playerStatsSchema = z.object({
   ast: z.number().finite().min(0).max(20),
   stl: z.number().finite().min(0).max(8),
   blk: z.number().finite().min(0).max(10),
+  pf: z.number().finite().min(0).max(6).optional().default(0),
 });
 
 const attributesSchema = z.object({
@@ -81,8 +82,8 @@ const attributesSchema = z.object({
 }).optional();
 
 const playerSchema = z.object({
-  id: z.string().min(1).max(100),
-  name: z.string().min(1).max(100),
+  id: z.string().min(1).max(100).refine(s => !/[\r\n]/.test(s), { message: 'Invalid id' }),
+  name: z.string().min(1).max(100).refine(s => !/[\r\n]/.test(s), { message: 'Invalid name' }),
   position: z.enum(['PG', 'SG', 'SF', 'PF', 'C']),
   secondaryPositions: z.array(z.enum(['PG', 'SG', 'SF', 'PF', 'C'])).max(4).optional(),
   heightIn: z.number().int().min(60).max(95),
@@ -90,8 +91,9 @@ const playerSchema = z.object({
   decade: z.string().min(1).max(20),
   era: z.string().min(1).max(50),
   stats: playerStatsSchema,
-  overall: z.number().finite().min(0).max(100),
+  overall: z.number().finite().min(40).max(99),
   archetype: z.string().min(1).max(50),
+  imageUrl: z.string().max(500).optional(),
   pace: z.number().finite().min(80).max(115).optional(),
   tsPct: z.number().finite().min(0.3).max(0.75).optional(),
   tov: z.number().finite().min(0).max(8).optional(),
@@ -176,6 +178,34 @@ const lineupSchema = z.array(playerSchema).min(5).max(10)
     { message: 'Lineup must not contain the same player twice (different eras count as the same player)' }
   )
   .refine(
+    (lineup) => {
+      // Block namesake-joker spoofing: a known namesake id must carry its
+      // real display name (e.g. Johnny Davis). Otherwise an attacker can
+      // smuggle a duplicate superstar under a joker id.
+      const expected = new Map([
+        ['johnny-davis-20s', 'johnny davis'],
+        ['gerald-henderson-10s', 'gerald henderson'],
+      ]);
+      const norm = (s: string) => s.trim().toLowerCase().replace(/\s+/g, ' ');
+      for (const p of lineup) {
+        const want = expected.get(p.id);
+        if (want && norm(p.name) !== want && !norm(p.name).startsWith(want)) return false;
+      }
+      // Even with valid names, identical display names from different ids
+      // are only allowed for the known namesake pairs above.
+      const byName = new Map<string, string[]>();
+      for (const p of lineup) {
+        const k = norm(p.name);
+        byName.set(k, [...(byName.get(k) ?? []), p.id]);
+      }
+      for (const ids of byName.values()) {
+        if (ids.length > 1 && !ids.every(id => expected.has(id))) return false;
+      }
+      return true;
+    },
+    { message: 'Invalid namesake player name' }
+  )
+  .refine(
     (lineup) => lineupCoversAllPositions(lineup),
     { message: 'Lineup must be able to cover all 5 positions in starters (and bench if 10-man), counting secondary positions' }
   );
@@ -221,7 +251,7 @@ const vsModeSchema = z.object({
 });
 
 router.get('/eras', (req: Request, res: Response) => {
-  const leagues = getAllEraLeagues().map(l => {
+  const leagues = getAllEraLeaguesCached().map(l => {
     const diff = l.avgImpact - LEAGUE_AVG_IMPACT;
     return {
       id: l.decade,
@@ -236,6 +266,30 @@ router.get('/eras', (req: Request, res: Response) => {
   res.json({ eras: leagues });
 });
 
+// Memoize era leagues: exhaustive C(n,5) search per request is a DoS vector.
+let eraLeaguesCache: ReturnType<typeof getAllEraLeagues> | null = null;
+let eraLeaguesCachedAt = 0;
+const ERA_CACHE_TTL_MS = 5 * 60_000;
+function getAllEraLeaguesCached() {
+  const now = Date.now();
+  if (!eraLeaguesCache || now - eraLeaguesCachedAt > ERA_CACHE_TTL_MS) {
+    eraLeaguesCache = getAllEraLeagues();
+    eraLeaguesCachedAt = now;
+  }
+  return eraLeaguesCache;
+}
+
+function validateMinutes(minutes: Record<string, number> | undefined, players: Player[]): string | null {
+  if (!minutes) return null;
+  const roster = new Set(players.map(p => p.id));
+  const keys = Object.keys(minutes);
+  if (keys.length === 0) return 'Minutes plan must not be empty';
+  for (const k of keys) {
+    if (!roster.has(k)) return `Minutes contain unknown player ${k}`;
+  }
+  return null;
+}
+
 router.post('/season', seasonLimiter, (req: Request, res: Response) => {
   const result = simulateSeasonSchema.safeParse(req.body);
   if (!result.success) {
@@ -245,8 +299,16 @@ router.post('/season', seasonLimiter, (req: Request, res: Response) => {
   const { lineup, era, config, sixthManId, options } = result.data;
   const players = lineup as Player[];
   const minutes = (result.data as { minutes?: Record<string, number> }).minutes ?? null;
+  const minutesError = validateMinutes(minutes ?? undefined, players);
+  if (minutesError) {
+    return res.status(400).json({ error: minutesError });
+  }
 
   // Sixth Man must be a bench player (indices 5-9) in 10-man rotations.
+  // A 5-man roster with sixthManId is a client bug — reject, don't ignore.
+  if (sixthManId && players.length === 5) {
+    return res.status(400).json({ error: 'sixthManId requires a 10-man rotation' });
+  }
   if (sixthManId && players.length === 10 && !players.slice(5, 10).some(p => p.id === sixthManId)) {
     return res.status(400).json({ error: 'sixthManId must be a bench player (roster spots 6-10)' });
   }
@@ -277,26 +339,30 @@ router.post('/season', seasonLimiter, (req: Request, res: Response) => {
   }
   const simulationConfig = { ...DEFAULT_SIMULATION_CONFIG, ...config };
 
-  const seasonResult = simulateSeason(players, opponentPool, simulationConfig, opponentNames, sixthManId ?? null, options ?? null, minutes);
-  const teamStrength = getTeamStrength(players, sixthManId ?? null, options ?? null, minutes);
-  // Project against the league actually played: era leagues differ in
-  // strength (a 60s season is easier than a modern one), so the same
-  // roster projects differently per era.
-  const effectiveStrength = eraAvgImpact === undefined
-    ? teamStrength
-    : strengthVsLeague(getBaseTeamImpact(players, sixthManId ?? null, options ?? null, minutes), eraAvgImpact);
-  const projectedWins = calculateNonLinearWinCurve(effectiveStrength);
+  try {
+    const seasonResult = simulateSeason(players, opponentPool, simulationConfig, opponentNames, sixthManId ?? null, options ?? null, minutes);
+    const teamStrength = getTeamStrength(players, sixthManId ?? null, options ?? null, minutes);
+    // Project against the league actually played: era leagues differ in
+    // strength (a 60s season is easier than a modern one), so the same
+    // roster projects differently per era.
+    const effectiveStrength = eraAvgImpact === undefined
+      ? teamStrength
+      : strengthVsLeague(getBaseTeamImpact(players, sixthManId ?? null, options ?? null, minutes), eraAvgImpact);
+    const projectedWins = calculateNonLinearWinCurve(effectiveStrength);
 
-  const formattedResult = formatSeasonResult({
-    seasonResult,
-    players,
-    opponentPool,
-    projectedWins,
-    teamStrength,
-    eraMeta,
-  });
+    const formattedResult = formatSeasonResult({
+      seasonResult,
+      players,
+      opponentPool,
+      projectedWins,
+      teamStrength,
+      eraMeta,
+    });
 
-  res.json({ result: formattedResult });
+    res.json({ result: formattedResult });
+  } catch (err) {
+    res.status(400).json({ error: err instanceof Error ? err.message : 'Simulation failed' });
+  }
 });
 
 router.post('/game', gameLimiter, (req: Request, res: Response) => {
@@ -318,6 +384,10 @@ router.post('/game', gameLimiter, (req: Request, res: Response) => {
   if (awayOptionsError) {
     return res.status(400).json({ error: awayOptionsError });
   }
+  const homeMinError = validateMinutes(homeMinutes ?? undefined, homePlayers);
+  if (homeMinError) return res.status(400).json({ error: homeMinError });
+  const awayMinError = validateMinutes(awayMinutes ?? undefined, awayPlayers);
+  if (awayMinError) return res.status(400).json({ error: awayMinError });
   try {
     const gameResult = simulateSingleGame({
       homeTeam: homePlayers,
@@ -340,6 +410,7 @@ router.post('/game', gameLimiter, (req: Request, res: Response) => {
         homeScore: gameResult.homeScore,
         awayScore: gameResult.awayScore,
         otPeriods: gameResult.otPeriods,
+        pace: gameResult.pace,
         homePlayerStats: gameResult.homePlayerStats,
         awayPlayerStats: gameResult.awayPlayerStats,
         homeMinutes: gameResult.homeMinutes,
@@ -385,6 +456,9 @@ router.post('/vs-mode', vsLimiter, (req: Request, res: Response) => {
         }
       })()
     : null;
+  if (userSixth && (userLineup as Player[]).length === 5) {
+    return res.status(400).json({ error: 'sixthManId requires a 10-man rotation' });
+  }
   if (userSixth && (userLineup as Player[]).length === 10 && !(userLineup as Player[]).slice(5, 10).some(p => p.id === userSixth)) {
     return res.status(400).json({ error: 'sixthManId must be a bench player (roster spots 6-10)' });
   }
@@ -392,7 +466,12 @@ router.post('/vs-mode', vsLimiter, (req: Request, res: Response) => {
   if (userOptionsError) {
     return res.status(400).json({ error: userOptionsError });
   }
+  const userMinError = validateMinutes(userMinutesPlan ?? undefined, userLineup as Player[]);
+  if (userMinError) {
+    return res.status(400).json({ error: userMinError });
+  }
 
+  try {
   const seriesResults = [];
   let userWins = 0;
   let historicalWins = 0;
@@ -416,8 +495,10 @@ router.post('/vs-mode', vsLimiter, (req: Request, res: Response) => {
 
     const userScore = isHome ? gameResult.homeScore : gameResult.awayScore;
     const historicalScore = isHome ? gameResult.awayScore : gameResult.homeScore;
-    // Overtime guarantees no ties, but handle defensively.
-    const winner = userScore > historicalScore ? 'user' : userScore < historicalScore ? 'historical' : 'user';
+    // Overtime guarantees no ties; a tie here is a defensive impossibility —
+    // count it as a historical win to match single-game tie handling below
+    // (single games report tie explicitly; series must advance someone).
+    const winner = userScore > historicalScore ? 'user' : 'historical';
 
     if (winner === 'user') userWins++;
     else historicalWins++;
@@ -471,6 +552,9 @@ router.post('/vs-mode', vsLimiter, (req: Request, res: Response) => {
       games: seriesResults,
     },
   });
+  } catch (err) {
+    res.status(400).json({ error: err instanceof Error ? err.message : 'VS simulation failed' });
+  }
 });
 
 router.get('/historical-teams', (req: Request, res: Response) => {

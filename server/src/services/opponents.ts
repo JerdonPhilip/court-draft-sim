@@ -36,8 +36,10 @@ export function generateOpponentPools(): { pools: Player[][]; names: string[] } 
   };
   const makePlayer = (i: number, j: number, pos: Position, overall: number, span: number, floor: number, contender: boolean): Player => {
     const star = (overall - floor) / span; // 0..1
+    // Unique per generation so content-aware caches never return stale pools.
+    const uid = `${Date.now().toString(36)}${Math.floor(Math.random() * 1e6).toString(36)}`;
     return {
-      id: `opp-${i}-${j}`,
+      id: `opp-${uid}-${i}-${j}`,
       name: `${OPPONENT_NAMES[i]} Player ${j + 1}`,
       position: pos,
       heightIn: Math.round(randomStat(HEIGHT_RANGE[pos][0], HEIGHT_RANGE[pos][1])),

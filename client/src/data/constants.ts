@@ -69,6 +69,6 @@ export const ARCHETYPES: Record<Position, string[]> = {
   C: ['Rim Protector', 'Post Dominator', 'Stretch Five', 'Playmaking Big', 'Two-Way Center'],
 };
 
-export function getArchetypesForPosition(position: Position): string[] {
-  return ARCHETYPES[position];
+export function getArchetypesForPosition(position: string): string[] {
+  return (ARCHETYPES as Record<string, string[]>)[position] ?? [];
 }

@@ -14,9 +14,9 @@ export interface PlayerStats {
 /** Planned regulation minutes per player ID (must sum to ~240; normalized server-side). */
 export type MinutesMap = Record<string, number>;
 
-import type { PlayerAttributes, EngineTraits, EraContext } from './player.js';
+import type { PlayerAttributes } from './player.js';
 
-export type { PlayerAttributes, EngineTraits, EraContext } from './player.js';
+export type { PlayerAttributes } from './player.js';
 
 export interface Player {
   id: string;

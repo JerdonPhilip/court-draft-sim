@@ -288,7 +288,7 @@ export interface VSBoxScore {
 }
 
 export interface AppState {
-  phase: 'draft' | 'season-setup' | 'simulation' | 'results' | 'vs-mode';
+  phase: 'welcome' | 'draft' | 'season-setup' | 'simulation' | 'results' | 'vs-mode';
   draftState: DraftState;
   simulationResult: SimulationResult | null;
   vsMatchup: VSModeMatchup | null;

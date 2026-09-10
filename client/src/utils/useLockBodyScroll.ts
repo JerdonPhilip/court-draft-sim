@@ -1,17 +1,25 @@
 import { useEffect } from 'react';
 
+let lockCount = 0;
+let savedOverflow = '';
+
 /**
  * Locks background page scroll while mounted (e.g. open modals).
- * Restores the previous overflow on unmount; safe to stack since each
- * instance restores exactly what it replaced.
+ * Ref-counted so stacked modals unlock only when the last one closes.
  */
 export function useLockBodyScroll(active = true): void {
   useEffect(() => {
     if (!active || typeof document === 'undefined') return;
-    const prev = document.body.style.overflow;
-    document.body.style.overflow = 'hidden';
+    if (lockCount === 0) {
+      savedOverflow = document.body.style.overflow;
+      document.body.style.overflow = 'hidden';
+    }
+    lockCount += 1;
     return () => {
-      document.body.style.overflow = prev;
+      lockCount = Math.max(0, lockCount - 1);
+      if (lockCount === 0) {
+        document.body.style.overflow = savedOverflow;
+      }
     };
   }, [active]);
 }

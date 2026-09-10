@@ -86,7 +86,7 @@ export function eraPace(decade: string | undefined): number {
 }
 
 export function eraLeagueTS(decade: string | undefined): number {
-  return ERA_TS[decade ?? ''] ?? ERA_TS['2010s']!;
+  return ERA_TS[decade ?? ''] ?? ERA_TS['2020s']!;
 }
 
 type TraitInput = Pick<Player, 'position' | 'stats' | 'overall' | 'decade'> &
@@ -140,7 +140,7 @@ export function clutchOf(p: TraitInput): number {
 
 /** Section 1.4 efficiency modifier: TS% vs era average (spec v2 drops the TOV term). */
 export function efficiencyFactor(p: TraitInput): number {
-  return Math.max(0.5, tsPctOf(p) / eraLeagueTS(p.decade));
+  return Math.max(0.5, Math.min(1.25, tsPctOf(p) / eraLeagueTS(p.decade)));
 }
 
 /** Perimeter gravity: high-volume guards space the floor; pre-1980 ~0 (no line). */
@@ -323,7 +323,7 @@ export function estimateAttributes(
   if (height < 76 && verticalEstBase < 95) dunkRaw = Math.min(dunkRaw, 85);
   const dunkEst = clampAttr(dunkRaw);
 
-  let verticalRaw = verticalBase + (dunkEst >= 80 ? 8 : 0);
+  const verticalRaw = verticalBase + (dunkEst >= 80 ? 8 : 0);
 
   const standingRaw = big
     ? 50 + reb * 1.5 + strengthEst * 0.4

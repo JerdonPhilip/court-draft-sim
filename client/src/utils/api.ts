@@ -24,8 +24,9 @@ const API_BASE = (import.meta.env.VITE_API_URL as string | undefined)?.replace(/
 /** True for transport failures (offline, DNS, CORS-blocked, timeout) — safe to serve locally. */
 export function isNetworkError(err: unknown): boolean {
   if (err instanceof TypeError) return true; // fetch() rejects with TypeError on network failure
+  if (err instanceof ApiError) return false; // real HTTP status, don't mask
   const msg = err instanceof Error ? err.message : String(err);
-  return /failed to fetch|networkerror|load failed|timed out|network request failed/i.test(msg);
+  return /failed to fetch|networkerror|load failed|timed out|network request failed|invalid JSON response|unexpected token/i.test(msg);
 }
 
 /** Online-first with local-engine fallback: instant local when the browser knows it's offline. */
@@ -155,18 +156,18 @@ export const api = {
     ),
     spin: (excludeFranchise?: string, excludeDecade?: string, neededPositions?: Position[]) =>
       onlineOrLocal(
-        () => fetchAPI<{ pool: DraftPool }>('/draft/spin', {
+        () => withRetry(() => fetchAPI<{ pool: DraftPool }>('/draft/spin', {
           method: 'POST',
           body: JSON.stringify({ excludeFranchise, excludeDecade, neededPositions }),
-        }),
+        })),
         () => localSpin(excludeFranchise, excludeDecade, neededPositions),
       ),
     reroll: (keep: 'franchise' | 'decade', franchise: string, decade: string, neededPositions?: Position[]) =>
       onlineOrLocal(
-        () => fetchAPI<{ pool: DraftPool }>('/draft/reroll', {
+        () => withRetry(() => fetchAPI<{ pool: DraftPool }>('/draft/reroll', {
           method: 'POST',
           body: JSON.stringify({ keep, franchise, decade, neededPositions }),
-        }),
+        })),
         () => localReroll(keep, franchise, decade, neededPositions),
       ),
     getPool: (franchise: string, decade: string) =>
@@ -204,10 +205,10 @@ export const api = {
   simulation: {
     runSeason: (lineup: Player[], config?: Record<string, number>, era?: string | null, sixthManId?: string | null, options?: { first?: string | null; second?: string | null; third?: string | null } | null, minutes?: MinutesMap | null) =>
       onlineOrLocal(
-        () => fetchAPI<{ result: SimulationResult }>('/simulation/season', {
+        () => withRetry(() => fetchAPI<{ result: SimulationResult }>('/simulation/season', {
           method: 'POST',
           body: JSON.stringify({ lineup, config, ...(era ? { era } : {}), ...(sixthManId ? { sixthManId } : {}), ...(options ? { options } : {}), ...(minutes ? { minutes } : {}) }),
-        }, 30000),
+        }, 30000)),
         () => localRunSeason(lineup, config, era, sixthManId, options, minutes),
       ),
     runGame: (homeTeam: Player[], awayTeam: Player[], seriesGameNumber?: number, homeSixthManId?: string | null, awaySixthManId?: string | null, homeOptions?: { first?: string | null; second?: string | null; third?: string | null } | null, awayOptions?: { first?: string | null; second?: string | null; third?: string | null } | null, homeMinutes?: MinutesMap | null, awayMinutes?: MinutesMap | null) =>
@@ -222,10 +223,10 @@ export const api = {
       ),
     runVSMode: (userLineup: Player[], historicalTeamId: string, seriesLength: 1 | 7, sixthManId?: string | null, options?: { first?: string | null; second?: string | null; third?: string | null } | null, userMinutes?: MinutesMap | null) =>
       onlineOrLocal(
-        () => fetchAPI<{ result: VSModeMatchup }>('/simulation/vs-mode', {
+        () => withRetry(() => fetchAPI<{ result: VSModeMatchup }>('/simulation/vs-mode', {
           method: 'POST',
           body: JSON.stringify({ userLineup, historicalTeamId, seriesLength, ...(sixthManId ? { sixthManId } : {}), ...(options ? { options } : {}), ...(userMinutes ? { userMinutes } : {}) }),
-        }, 30000),
+        }, 30000)),
         () => localRunVSMode(userLineup, historicalTeamId, seriesLength, sixthManId, options, userMinutes),
       ),
     getHistoricalTeams: () =>

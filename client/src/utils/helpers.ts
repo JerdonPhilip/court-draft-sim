@@ -14,11 +14,13 @@ export function cn(...inputs: ClassValue[]) {
 
 export function formatNumber(num: number, decimals = 1): string {
   if (!Number.isFinite(num)) return '—';
-  if (num >= 1000000) {
-    return (num / 1000000).toFixed(decimals) + 'M';
+  const abs = Math.abs(num);
+  const sign = num < 0 ? '-' : '';
+  if (abs >= 1000000) {
+    return sign + (abs / 1000000).toFixed(decimals) + 'M';
   }
-  if (num >= 1000) {
-    return (num / 1000).toFixed(decimals) + 'K';
+  if (abs >= 1000) {
+    return sign + (abs / 1000).toFixed(decimals) + 'K';
   }
   return Number.isInteger(num) ? String(num) : num.toFixed(decimals);
 }
@@ -165,7 +167,13 @@ export function otLabel(otPeriods: number | undefined): string {
 export function formatHeight(heightIn: number | undefined, position?: string): string {
   const baseline = (position ? POSITION_HEIGHT_BASELINE[position] : undefined) ?? 79;
   const h = typeof heightIn === 'number' && Number.isFinite(heightIn) ? heightIn : baseline;
-  return `${Math.floor(h / 12)}'${Math.round(h % 12)}"`;
+  let feet = Math.floor(h / 12);
+  let inches = Math.round(h % 12);
+  if (inches === 12) {
+    feet += 1;
+    inches = 0;
+  }
+  return `${feet}'${inches}"`;
 }
 
 export function heightEdgeLabel(heightIn: number | undefined, position: string): string | null {
@@ -187,12 +195,12 @@ const IMPACT_WEIGHTS: Record<string, { pts: number; reb: number; ast: number; st
 
 const STAT_SHARE = { pts: 0.35, reb: 0.20, ast: 0.20, stl: 0.12, blk: 0.13 };
 
-function traitEraPace(decade: string | undefined): number {
+export function traitEraPace(decade: string | undefined): number {
   return ERA_PACE[decade ?? ''] ?? ERA_PACE['2020s']!;
 }
 
 function traitEraTS(decade: string | undefined): number {
-  return ERA_TS[decade ?? ''] ?? ERA_TS['2010s']!;
+  return ERA_TS[decade ?? ''] ?? ERA_TS['2020s']!;
 }
 
 function traitTsPct(p: StrengthInput): number {
@@ -204,6 +212,7 @@ function traitTov(p: StrengthInput): number {
   if (typeof p.tov === 'number' && Number.isFinite(p.tov)) return p.tov;
   return Math.max(0.5, Math.min(5, 1.2 + p.stats.ast * 0.18 + (p.stats.pts > 20 ? 0.5 : 0) - (p.overall - 80) * 0.02));
 }
+export { traitTov };
 
 function traitUsage(p: StrengthInput): number {
   if (typeof p.usageRate === 'number' && Number.isFinite(p.usageRate)) return p.usageRate;
@@ -211,7 +220,7 @@ function traitUsage(p: StrengthInput): number {
 }
 
 function traitEfficiency(p: StrengthInput): number {
-  return Math.max(0.5, traitTsPct(p) / traitEraTS(p.decade));
+  return Math.max(0.5, Math.min(1.25, traitTsPct(p) / traitEraTS(p.decade)));
 }
 
 function traitThreePar(p: StrengthInput): number {
@@ -287,7 +296,8 @@ export function defaultMinutesForOrdered(players: Array<{ id: string; overall?: 
   const byOverall = (a: { id: string; overall?: number }, b: { id: string; overall?: number }) => (b.overall ?? 0) - (a.overall ?? 0);
   const starters = players.slice(0, 5).slice().sort(byOverall);
   const topOverall = starters[0]?.overall ?? 0;
-  const loads = topOverall >= 93 ? [44, 36, 33, 31, 26] : [40, 36, 33, 31, 30];
+  // Both branches sum to 180 so starters + 5x12 bench = 240.
+  const loads = topOverall >= 93 ? [44, 38, 34, 33, 31] : [40, 37, 35, 34, 34];
   starters.forEach((p, rank) => { map[p.id] = loads[rank] ?? 30; });
   players.slice(5).slice().sort(byOverall).forEach((p, rank) => {
     map[p.id] = [12, 12, 12, 12][rank] ?? 12;
@@ -541,6 +551,18 @@ export function debounce<T extends (...args: never[]) => unknown>(
 
   return (...args: Parameters<T>) => {
     if (timeout) clearTimeout(timeout);
+    timeout = setTimeout(() => (func as (...a: Parameters<T>) => unknown)(...args), wait);
+  };
+}
+
+/** Type-safe debounce for functions with arguments. */
+export function debounceArgs<A extends unknown[]>(
+  func: (...args: A) => unknown,
+  wait: number
+): (...args: A) => void {
+  let timeout: ReturnType<typeof setTimeout> | null = null;
+  return (...args: A) => {
+    if (timeout) clearTimeout(timeout);
     timeout = setTimeout(() => func(...args), wait);
   };
 }
@@ -598,8 +620,15 @@ export function formatTeamName(team: string | undefined | null): string {
   if (!trimmed) return '—';
   const full = FRANCHISE_NAME_BY_ID.get(trimmed.toLowerCase());
   if (full) return full;
+  const SMALL_WORDS = new Set(['la', 'okc']);
+  const SMALL_FIX: Record<string, string> = { la: 'LA', okc: 'OKC' };
   return trimmed
     .split(/[\s_-]+/)
-    .map(w => (w ? w.charAt(0).toUpperCase() + w.slice(1) : w))
+    .map(w => {
+      if (!w) return w;
+      const lower = w.toLowerCase();
+      if (SMALL_WORDS.has(lower)) return SMALL_FIX[lower]!;
+      return w.charAt(0).toUpperCase() + w.slice(1);
+    })
     .join(' ');
 }
